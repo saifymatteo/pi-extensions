@@ -1,0 +1,36 @@
+{
+  "name": "@saifymatteo/pi-user-image-previews",
+  "version": "0.0.0",
+  "description": "Adds collapsible UI-only previews for newly submitted image attachments.",
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "pi-package"
+  ],
+  "files": [
+    "src",
+    "README.md",
+    "NOTICE.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saifymatteo/pi-extensions.git",
+    "directory": "packages/pi-user-image-previews"
+  }
+}
