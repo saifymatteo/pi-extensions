@@ -1,0 +1,44 @@
+# Publish one package to npm on <package>-v<version> tags — auth via npm Trusted
+# Publishing (OIDC), no NPM_TOKEN. Each package versions and publishes
+# independently; tag only the package you changed, e.g. pi-session-id-v0.1.0.
+name: Publish to npm
+on:
+  push:
+    tags:
+      - "*-v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      - name: Ensure npm supports trusted publishing (>= 11.5)
+        run: npm install -g npm@latest
+      - name: Parse tag and assert it matches the package version
+        id: parse
+        run: |
+          node -e '
+            const match = process.env.GITHUB_REF_NAME.match(/^(.+)-v(\d+\.\d+\.\d+(?:[-+][\w.]+)?)$/);
+            if (!match) { console.error("Tag " + process.env.GITHUB_REF_NAME + " must be <package>-v<version>"); process.exit(1); }
+            const [, pkg, version] = match;
+            let manifest;
+            try { manifest = require("./packages/" + pkg + "/package.json"); }
+            catch { console.error("No package directory: packages/" + pkg); process.exit(1); }
+            if (manifest.version !== version) { console.error("Tag version " + version + " does not match " + manifest.name + " package.json version " + manifest.version); process.exit(1); }
+            console.log("package=" + pkg);
+            console.log("version=" + version);
+          ' >> "$GITHUB_OUTPUT"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run check
+      - run: npm test
+      - name: Publish the tagged package (${{ steps.parse.outputs.package }}@${{ steps.parse.outputs.version }})
+        run: npm publish --ignore-scripts --access public
+        working-directory: packages/${{ steps.parse.outputs.package }}
