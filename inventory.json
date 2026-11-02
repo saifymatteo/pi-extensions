@@ -1,0 +1,70 @@
+{
+  "extensions": [
+    {
+      "directory": "pi-bg-bash"
+    },
+    {
+      "directory": "pi-claude-usage"
+    },
+    {
+      "directory": "pi-clipboard-image"
+    },
+    {
+      "directory": "pi-codeblock-borders"
+    },
+    {
+      "directory": "pi-codegraph"
+    },
+    {
+      "directory": "pi-compact-tools"
+    },
+    {
+      "directory": "pi-decisions"
+    },
+    {
+      "directory": "pi-load-pi-dotenv"
+    },
+    {
+      "directory": "pi-model-go"
+    },
+    {
+      "directory": "pi-root-guard"
+    },
+    {
+      "directory": "pi-session-finder"
+    },
+    {
+      "directory": "pi-session-id"
+    },
+    {
+      "directory": "pi-session-nav"
+    },
+    {
+      "directory": "pi-session-rename"
+    },
+    {
+      "directory": "pi-session-retention"
+    },
+    {
+      "directory": "pi-skill-usage-log"
+    },
+    {
+      "directory": "pi-tool-usage-log"
+    },
+    {
+      "directory": "pi-tts"
+    },
+    {
+      "directory": "pi-user-image-previews"
+    },
+    {
+      "directory": "pi-vision"
+    },
+    {
+      "directory": "pi-wait"
+    },
+    {
+      "directory": "pi-zvec"
+    }
+  ]
+}

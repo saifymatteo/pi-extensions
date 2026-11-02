@@ -1,0 +1,12 @@
+node_modules/
+.codegraph/
+.zvec-grep/
+.dev/
+coverage/
+*.tgz
+.env
+.env.*
+!.env.example
+auth.json
+coding-agent.json
+.DS_Store
