@@ -15,6 +15,7 @@ npm run check
 npm test
 npm run pack:check
 npm run smoke
+npm run context   # optional: per-package context-cost measurement
 ```
 
 The completed checks and their limits are recorded in [VERIFICATION.md](VERIFICATION.md), including an initial temp-directory isolation gap and its correction.
@@ -25,6 +26,7 @@ Host-provided Pi packages (`@earendil-works/*`) are declared only as package pee
 - `test`: behavioral checks with explicit host stubs, temporary data, and no provider calls. This is not a full upstream regression suite.
 - `pack:check`: asks npm to show each standalone package's and the root collection's prospective contents without publishing or creating archives.
 - `smoke`: loads each package through isolated host help/startup. Checks module/factory loading, not session events, interactive rendering, models, external CLIs, or backend compatibility. The host is located automatically (`PI_HOST`, `pi` on PATH, then `pi-bolt` for a Pi-Bolt build, then the local `~/.pi-bolt` install). Pi-Bolt is optional; set `PI_HOST` to another executable to compare hosts. A pass here does not prove compatibility with a different host build.
+- `context`: measures what each package adds to the first-turn context window. Current result: the whole collection costs about **1.7k tokens** on top of stock Pi, and 17 of 22 packages contribute nothing (they register hooks, commands, or UI patches only). Measured by capturing the actual request Pi sends to a local provider, against the pinned stock host, with machine state excluded. First-turn static cost only: runtime injections (tool results, hook-driven messages) are not measured. Not part of the `check` gate.
 
 ## Isolated sessions
 
@@ -105,7 +107,7 @@ pi install git:github.com/saifymatteo/pi-extensions
 pi install npm:@saifymatteo/pi-extensions   # after the first root release
 ```
 
-The root manifest explicitly lists every package, matching the monorepo collection pattern. **Loading the root enables all listed resources**, including shell overrides, guardrails, UI patches, logging, and session housekeeping. It is not the recommended first test. Pi's package resource filters can select only particular root entrypoints. Prefer one package at a time while evaluating compatibility, and do not combine the root collection with individually installed packages from this repository: they are different package identities, so commands and hooks can duplicate.
+The root manifest explicitly lists every package, matching the monorepo collection pattern. **Loading the root enables all listed resources**, including shell overrides, guardrails, UI patches, logging, and session housekeeping. It is not the recommended first test. Impact is small and measured: loading everything adds about 1.7k tokens to the first-turn context window on stock Pi; only bg-bash, zvec, codegraph, wait, and vision contribute — the rest register hooks, commands, or UI patches that cost nothing until used. Pi's package resource filters can select only particular root entrypoints. Prefer one package at a time while evaluating compatibility, and do not combine the root collection with individually installed packages from this repository: they are different package identities, so commands and hooks can duplicate.
 
 Configuration paths are unchanged by packaging: for example, many adapters read `<agent-dir>/extensions/<name>.json`, not a config next to the package source. Examples are inert files for manual review, never automatically installed settings. Loading the dotenv extension before service adapters matters when config references environment variables; the root manifest places it first.
 

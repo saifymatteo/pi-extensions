@@ -13,7 +13,8 @@
     "test": "node --test test/*.test.mjs packages/*/test/*.test.mjs",
     "pack:check": "node scripts/check-pack.mjs",
     "dev": "node scripts/dev.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "context": "node scripts/context-audit.mjs"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "1.4.0",

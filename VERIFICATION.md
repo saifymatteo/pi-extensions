@@ -2,7 +2,7 @@
 
 ## Verified in this workspace
 
-Host: `1.4.0 (Pi-Bolt 1.0.7, win32-x64-jit, JIT on)`; Node.js `24.21.0`.
+Host: `pi` 1.4.0 (win32-x64-jit, JIT on); Node.js `24.21.0`.
 
 The latest verification run completed successfully:
 
@@ -22,6 +22,7 @@ npm run smoke
 | Offline behavioral tests | 34 passed, 0 failed | Covered mocked/fixture behaviors including navigation, clipboard outcomes, retention safeguards, service selection, TTS output protection, async-work leases, CLI delegation, environment isolation, and UI data handling |
 | npm package dry-run | 22 passed | Expected source/docs/example file lists; no archives created, no publication |
 | Native host help/startup | 22 passed | Each package resolves imports and initializes through the host; a registered probe flag confirms that extension factories execute |
+| Context-cost audit (`npm run context`) | Measured; see below | Captures the actual first-turn request Pi sends to a local provider and reports per-package system-prompt and tool-schema deltas; runs against the pinned stock host with machine state excluded; first-turn static cost only |
 
 Runtime behavior of the collected extensions is preserved; deliberate divergences are two relative dialog imports relocated inside the session-retention package and 21 type-only fixes (assertions and annotations, required for `tsc` against the published host types) in six files. The compact renderer was read in chunks to avoid truncation. No source import points outside its own package.
 
@@ -46,3 +47,5 @@ The final launcher and smoke checks redirect `TMPDIR`, `TMP`, `TEMP`, and `PI_CO
 The package READMEs identify source limitations rather than silently repairing them: finder Alt+I inserts `/find` instead of its registered `/session-global`; root-guard shell parsing can both over-block and miss writes; some adapters auto-create configuration/indexes on session startup; session retention can permanently purge already-approved expired Trash; service adapters and UI patches have their documented compatibility/privacy caveats.
 
 Configuration isolation is not filesystem/process sandboxing. Provider credentials elsewhere in the inherited shell environment still exist; extension code retains the user's OS permissions.
+
+Context-cost audit (latest run, stock pi 1.4.0 from node_modules): installing the whole collection costs about 1.7k tokens of first-turn context on top of the stock baseline (system prompt 2,763 chars / ~691 tokens, 4 built-in tools). The root adds 2,952 system-prompt chars (~738 tokens) and 3,659 tool-schema chars (~915 tokens), 7 tools total. Contributors: bg-bash +272 tokens (rewrites the built-in bash tool description and schema, registering no new tool), zvec +392, vision +230 (the bundled vision-tools skill listing), codegraph +235, wait +207 (one tool each). The other 17 packages register hooks, commands, or UI patches that add nothing to the first-turn request. Per-package deltas sum exactly to the root delta, so package costs are additive. The audit runs fully isolated (redirected agent dir and user profile) and asserts the baseline contains no machine extensions or skills. Runtime context (tool results, hook-injected messages, skill bodies on use) is not measured.
