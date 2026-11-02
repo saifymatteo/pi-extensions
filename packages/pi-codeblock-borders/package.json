@@ -1,0 +1,35 @@
+{
+  "name": "@saifymatteo/pi-codeblock-borders",
+  "version": "0.0.0",
+  "license": "AGPL-3.0-only",
+  "description": "Decorated code fences",
+  "engines": {
+    "node": ">=24"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "files": [
+    "src",
+    "README.md",
+    "NOTICE.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "keywords": [
+    "pi-package"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saifymatteo/pi-extensions.git",
+    "directory": "packages/pi-codeblock-borders"
+  }
+}
