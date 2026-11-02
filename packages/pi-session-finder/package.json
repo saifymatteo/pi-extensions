@@ -1,0 +1,36 @@
+{
+  "name": "@saifymatteo/pi-session-finder",
+  "version": "0.0.0",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "files": [
+    "src",
+    "README.md",
+    "NOTICE.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "description": "Search saved sessions across projects; open or fork them.",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saifymatteo/pi-extensions.git",
+    "directory": "packages/pi-session-finder"
+  }
+}
