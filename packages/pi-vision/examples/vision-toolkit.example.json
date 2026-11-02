@@ -1,0 +1,12 @@
+{
+  "model": "example-vision/example-model",
+  "fallbacks": [],
+  "imagePolicy": "native",
+  "lang": "en",
+  "providers": {
+    "example-vision": {
+      "baseUrl": "https://example.invalid/v1",
+      "apiKey": "$PI_VISION_API_KEY"
+    }
+  }
+}
