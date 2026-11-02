@@ -1,0 +1,5 @@
+{
+  "autoInit": false,
+  "syncOnSettle": false,
+  "embedding": "local/potion-code-16m-v2"
+}
