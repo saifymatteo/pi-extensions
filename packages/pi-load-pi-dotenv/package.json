@@ -1,0 +1,32 @@
+{
+  "name": "@saifymatteo/pi-load-pi-dotenv",
+  "version": "0.0.0",
+  "description": "Loads environment variables from the Pi agent directory without replacing existing environment values.",
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "pi-package"
+  ],
+  "files": [
+    "src",
+    "README.md",
+    "NOTICE.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saifymatteo/pi-extensions.git",
+    "directory": "packages/pi-load-pi-dotenv"
+  }
+}
