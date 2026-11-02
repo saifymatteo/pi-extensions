@@ -10,6 +10,10 @@ Reads `<agent-dir>/extensions/vision-toolkit.json`: `model`, optional `fallbacks
 
 Resolution also consults agent `models.json`, `models-store.json`, `auth.json`, and optional `haoyiyin/9router.json`. None of those real files are bundled. An explicit provider/model ID and override can resolve without a static catalog entry. Requires an image-capable OpenAI Chat Completions service; no CLI. Self-description requires current-model credentials in auth.json.
 
+## Bundled skill
+
+The package bundles the `vision-tools` skill (`skills/vision-tools`): `bin/` launcher CLIs (`crop`, `detect`, `glance`, `ground`, `trace`, `vision-doctor`), Python tools under `scripts/`, reference guides, and `SKILL.md`. The extension's guidance messages point the agent at `vision-doctor` and the skill. Requires Python 3 with Pillow (PIL); the CLIs are Python scripts, not compiled binaries. Based on [Anionex/agent-vision-toolkit](https://github.com/Anionex/agent-vision-toolkit) (MIT), modified in this repository — see [NOTICE.md](NOTICE.md).
+
 ## Host limitations and security
 
 The hook expects host-cloned request messages; rewriting should not mutate stored sessions. No config files are created. Missing/broken config leaves native-capable models native, but text-only models receive explicit failure markers rather than images. Image pixels and focus hints from surrounding user/assistant messages are transmitted to the model service; descriptions enter main-model context. Do not pass sensitive screenshots. Up to four concurrent requests, in-process cache, 180s per-request timeout and transient retries; configured HTTP failures can fail over. This is a lossy bridge, not an image security boundary.
@@ -18,7 +22,7 @@ Inherited caveats: cache keys include model ID but not provider/base URL; changi
 
 ## Tests
 
-From the monorepo root with its existing test dependencies available:
+From the repository root with its existing test dependencies available:
 
 ```sh
 node --test packages/pi-vision/test/*.test.mjs
@@ -28,12 +32,12 @@ Tests use the shared test-only TypeScript/VM loader, fixtures, and host/service 
 
 ## Running locally
 
-From the monorepo root:
+From the repository root:
 
 ```sh
 pi -e ./packages/pi-vision
 ```
 
-Node >=24; host imports are peers, not bundled dependencies. Load only one copy: for an isolated session use `--no-extensions` with explicit `-e` paths so the original live extension is not also discovered. Set `PI_CODING_AGENT_DIR` to a disposable agent directory before launch; unset means the normal `~/.pi/agent` fallback. Extension config continues to resolve there, never relative to this package.
+Node >=24; host imports are peers, not bundled dependencies. Load only one copy: for an isolated session use `--no-extensions` with explicit `-e` paths so another installed copy is not also discovered. Set `PI_CODING_AGENT_DIR` to a disposable agent directory before launch; unset means the normal `~/.pi/agent` fallback. Extension config continues to resolve there, never relative to this package.
 
-Examples are manually authored, sanitized reference documents, not runtime defaults. Review and manually create only the needed files in the isolated agent directory; do not copy live credentials or endpoints. No example is automatically loaded or copied. Loading an extension grants Pi-process OS permissions. This private package is UNLICENSED; publication requires clearance (NOTICE.md).
+Examples are manually authored, sanitized reference documents, not runtime defaults. Review and manually create only the needed files in the isolated agent directory; do not copy live credentials or endpoints. No example is automatically loaded or copied. Loading an extension grants Pi-process OS permissions. Licensed AGPL-3.0-only; see [NOTICE.md](NOTICE.md).

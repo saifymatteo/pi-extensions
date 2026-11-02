@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+"""vision-doctor: validate the vision-tools config chain before a task, and
+diagnose any vision error afterwards.
+
+Resolves vision-toolkit.json the same way every tool in this skill does
+(model + fallbacks -> providers -> models.json/models-store.json ->
+package-provider configs -> auth.json), prints what each candidate resolved
+to, and can fire one real 1-token request (--smoke) to prove the chain
+end-to-end. On any vision error, run this first: never scrape auth.json and
+never hand-export VISION_* environment variables.
+"""
+
+import argparse
+import base64
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+# Windows consoles default to cp1252; descriptions can contain any Unicode.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+from vision_client import (  # noqa: E402
+    VisionError,
+    apply_resolved_to_env,
+    describe_image,
+    resolve_vision_config,
+)
+
+# 8x8 red PNG: a fixed tiny image so --smoke costs one token of attention.
+SMOKE_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAGElEQVR4nGP8z8Dwn4EIwESMolGK"
+    "SjEAAJ0QBAE5tHqKAAAAAElFTkSuQmCC"
+)
+
+SMOKE_PROMPT = "What colour is this square? Answer with one word."
+
+
+def fingerprint(key):
+    if not key:
+        return None
+    return key[:6] + "..." + key[-4:] if len(key) > 12 else "***"
+
+
+def print_resolution(resolution):
+    cfg = resolution["cfg"]
+    print("extensions/vision-toolkit.json (%s):" % resolution["agent_dir"])
+    shown = {k: v for k, v in cfg.items() if k != "providers"}
+    print("  " + repr(shown))
+    if cfg.get("providers"):
+        print("  providers overrides present for: %s" % ", ".join(cfg["providers"]))
+    print()
+    attempts = resolution["attempts"]
+    if not attempts:
+        print("no candidates found in vision-toolkit.json")
+        return
+    # Group by base spec: a bare-id primary resolves through several providers
+    # in search order (openrouter -> anthropic -> ... -> 9router); those
+    # attempts are one candidate's resolution trail, not configured fallbacks.
+    groups = []
+    for attempt in attempts:
+        base = attempt["spec"].split(" (as ")[0]
+        if not groups or groups[-1][0] != base:
+            groups.append((base, []))
+        groups[-1][1].append(attempt)
+    for gi, (base, group) in enumerate(groups):
+        head = "primary candidate" if gi == 0 else "fallback candidate %d" % gi
+        print("%s: %s" % (head, base))
+        ok = next((a for a in group if a.get("ok")), None)
+        for a in group:
+            if a is not ok:
+                print("  tried as %s" % a["spec"])
+                print("    FAILED: %s" % a["error"])
+        if ok is not None:
+            if len(group) > 1:
+                print("  resolved as %s" % ok["spec"])
+            _print_attempt(ok)
+        else:
+            print("  status    -> FAILED: %s" % group[0]["error"])
+        print()
+
+
+def _print_attempt(attempt):
+    print("  model     -> %s/%s" % (attempt["provider"], attempt["model_id"]))
+    print("  catalog   -> %s" % ("static catalog entry" if attempt.get("in_catalog")
+                                  else "runtime provider (id validated at request time)"))
+    print("  image     -> %s" % ({True: "yes", False: "NO - not vision-capable",
+                                  None: "unknown (runtime catalog)"}[attempt["image_capable"]]))
+    print("  baseUrl   -> %s  (from %s)" % (attempt["base_url"], attempt["base_source"]))
+    print("  apiKey    -> %s  (from %s)" % (fingerprint(attempt.get("key_fingerprint") or ""),
+                                            attempt["key_source"]))
+    print("  protocol  -> %s" % attempt["protocol"])
+    print("  status    -> OK")
+
+def main():
+    parser = argparse.ArgumentParser(description="Validate the vision-tools config chain.")
+    parser.add_argument("--smoke", action="store_true",
+                        help="send one tiny real image request through the primary candidate")
+    parser.add_argument("--json", action="store_true", help="machine-readable resolution report")
+    args = parser.parse_args()
+
+    resolution = resolve_vision_config()
+    config = resolution["config"]
+
+    if args.json:
+        import json
+        report = {"config": None, "attempts": resolution["attempts"],
+                  "cfg": {k: v for k, v in resolution["cfg"].items() if k != "providers"}}
+        if config:
+            report["config"] = {k: v for k, v in config.items() if k != "api_key"}
+            report["config"]["key_fingerprint"] = fingerprint(config.get("api_key"))
+        print(json.dumps(report, indent=1, default=str))
+        return 0 if config else 1
+
+    print("vision-doctor: resolving the vision-tools chain\n")
+    print_resolution(resolution)
+
+    if not config:
+        print("SUMMARY: UNRESOLVED - no candidate has both a key and a baseUrl.")
+        print("Fix the first failing candidate above, then re-run vision-doctor.")
+        return 1
+
+    fallback_count = max(0, len(resolution["resolved"]) - 1)
+    extra = ""
+    if fallback_count:
+        extra = " (+%d fallback(s) resolved)" % fallback_count
+    print("SUMMARY: primary resolves%s." % extra)
+    primary = resolution["resolved"][0] if resolution["resolved"] else None
+    if primary and primary.get("image_capable") is False:
+        print("WARNING: the primary model is not vision-capable - pick one with "
+              '"image" input.')
+    if not args.smoke:
+        print("Run 'vision-doctor --smoke' to verify the API end-to-end.")
+        return 0
+
+    if fallback_count:
+        print("Note: --smoke tests the PRIMARY only; the CLIs fail over to "
+              "fallbacks automatically when it errors.")
+    apply_resolved_to_env(config)
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as fh:
+        fh.write(SMOKE_PNG)
+        smoke_path = fh.name
+    try:
+        data_url = "data:image/png;base64," + base64.b64encode(SMOKE_PNG).decode()
+        started = time.time()
+        answer = describe_image(data_url, SMOKE_PROMPT, max_tokens=16)
+        elapsed = time.time() - started
+        print("SMOKE OK (%s, %.1fs): %s" % (config["model_id"], elapsed, answer.strip()[:80]))
+        return 0
+    except VisionError as exc:
+        print("SMOKE FAILED: %s" % exc)
+        print("The chain resolves but the API call failed. If this persists "
+              "(auth, model unknown, or upstream 4xx), fix the primary or let a "
+              'fallback take over by moving it up in "fallbacks".')
+        return 2
+    finally:
+        try:
+            Path(smoke_path).unlink()
+        except OSError:
+            pass
+
+
+if __name__ == "__main__":
+    sys.exit(main())

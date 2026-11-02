@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Vision Toolkit"
+  short_description: "Native-first workflows and optional image processing"
+  default_prompt: "Use $vision-tools for native-first inspection, task-specific verification, and image-processing tools only when needed."
