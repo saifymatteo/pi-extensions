@@ -1,0 +1,32 @@
+{
+  "name": "@saifymatteo/pi-root-guard",
+  "version": "0.0.0",
+  "description": "Blocks selected write/edit and simple bash writes into Pi and Claude configuration roots.",
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "pi-package"
+  ],
+  "files": [
+    "src",
+    "README.md",
+    "NOTICE.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saifymatteo/pi-extensions.git",
+    "directory": "packages/pi-root-guard"
+  }
+}
