@@ -21,6 +21,9 @@ assert.deepEqual(manifest.publishConfig, { access: 'public' });
 assert.ok(manifest.files.includes('packages'), 'Root tarball must bundle the packages');
 assert.deepEqual([...manifest.pi.extensions].sort(), inventory.extensions.map(e => `./packages/${e.directory}/src/index.ts`).sort());
 assert.equal(manifest.pi.extensions[0], './packages/pi-load-pi-dotenv/src/index.ts', 'Load environment before configured services');
+for (const skillPath of manifest.pi.skills ?? []) {
+  assert.ok(existsSync(resolve(root, skillPath)), `root: skill path not found: ${skillPath}`);
+}
 let count = 0;
 for (const { directory } of inventory.extensions) {
   const packageRoot = resolve(root, 'packages', directory);
@@ -33,6 +36,11 @@ for (const { directory } of inventory.extensions) {
   assert.ok(pkg.files.includes('src') && pkg.files.includes('README.md') && pkg.files.includes('NOTICE.md'));
   for (const name of ['README.md', 'NOTICE.md', 'LICENSE', 'src/index.ts']) assert.ok(existsSync(resolve(packageRoot, name)), `${directory}: missing ${name}`);
   assert.ok(pkg.files.includes('LICENSE'), `${directory}: LICENSE must ship in the tarball`);
+  for (const skillPath of pkg.pi.skills ?? []) {
+    assert.ok(pkg.files.some(entry => skillPath.startsWith(`./${entry}`) || skillPath === `./${entry}`), `${directory}: skill path must ship in the tarball`);
+    const skillRoot = resolve(packageRoot, skillPath);
+    assert.ok(files(skillRoot).some(path => path.split(/[\\/]/).at(-1) === 'SKILL.md'), `${directory}: skill ${skillPath} missing SKILL.md`);
+  }
   for (const path of files(packageRoot).filter(p => p.endsWith('.ts'))) {
     const source = readFileSync(path, 'utf8');
     assert.ok(!source.includes('[Showing lines '), `${path}: incomplete source read`);

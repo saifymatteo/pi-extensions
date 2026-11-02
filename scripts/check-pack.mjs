@@ -30,11 +30,15 @@ for (const entry of inventory.extensions) {
     assert.ok(rootPaths.includes(required), `root: collection tarball missing ${required}`);
   }
 }
+assert.ok(rootPaths.includes('packages/pi-vision/skills/vision-tools/SKILL.md'), 'root: collection tarball missing the vision-tools skill');
 console.log(`PASS ${rootPackage.name}: ${rootPaths.length} prospective files (collection)`);
 for (const pkg of packages) {
   const paths = pkg.files.map(file => file.path);
   for (const required of ['package.json', 'src/index.ts', 'README.md', 'NOTICE.md', 'LICENSE']) assert.ok(paths.includes(required), `${pkg.name}: missing ${required}`);
-  for (const path of paths) assert.ok(['package.json', 'README.md', 'NOTICE.md', 'LICENSE'].includes(path) || path.startsWith('src/') || path.startsWith('examples/'), `${pkg.name}: unexpected packed file ${path}`);
+  if (JSON.parse(readFileSync(resolve(root, 'packages', pkg.name.replace('@saifymatteo/', ''), 'package.json'), 'utf8')).pi?.skills) {
+    assert.ok(paths.some(path => path.startsWith('skills/')), `${pkg.name}: bundled skill missing from tarball`);
+  }
+  for (const path of paths) assert.ok(['package.json', 'README.md', 'NOTICE.md', 'LICENSE'].includes(path) || path.startsWith('src/') || path.startsWith('examples/') || path.startsWith('skills/'), `${pkg.name}: unexpected packed file ${path}`);
   console.log(`PASS ${pkg.name}: ${paths.length} prospective files`);
 }
 console.log(`Verified ${packages.length} standalone package file lists. No archives created or packages published.`);
