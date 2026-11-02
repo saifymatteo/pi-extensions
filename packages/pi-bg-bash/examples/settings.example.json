@@ -1,0 +1,6 @@
+{
+  "runTimeout": {
+    "maxSeconds": 120,
+    "codemodeMaxSeconds": 300
+  }
+}
