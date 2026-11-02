@@ -1,0 +1,25 @@
+{
+  "providers": {
+    "example-services": {
+      "baseUrl": "http://localhost:8000/v1",
+      "apiKey": "$PI_SERVICE_API_KEY",
+      "models": [
+        {
+          "id": "example-classifier",
+          "type": "classifier",
+          "api": "openai-decisions",
+          "contextWindow": 8192,
+          "input": [
+            "text",
+            "image"
+          ]
+        },
+        {
+          "id": "example-tts",
+          "type": "tts",
+          "api": "openai-audio-speech"
+        }
+      ]
+    }
+  }
+}
