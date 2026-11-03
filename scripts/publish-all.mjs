@@ -1,6 +1,8 @@
 // Publishes every workspace package (inventory order), then the root collection tarball.
-// Usage: node scripts/publish-all.mjs [-- --otp=NNNNNN]
+// Usage: node scripts/publish-all.mjs [--interactive] [-- --otp=NNNNNN]
 // Extra args after `--` are forwarded to every `npm publish` (e.g. --otp=NNNNNN).
+// --interactive: hand npm the terminal so its own web-auth/OIDC flow (browser 2FA
+// authorization) can run per publish; results are tracked by exit code only.
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -9,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const extra = args.includes('--') ? args.slice(args.indexOf('--') + 1) : [];
+const interactive = args.includes('--interactive');
 
 const npm = (cmdArgs, opts = {}) =>
   spawnSync('npm', cmdArgs, { cwd: root, encoding: 'utf8', shell: true, ...opts });
@@ -35,26 +38,29 @@ const skipped = [];
 const failed = [];
 
 for (const { name, cwd } of targets) {
-  process.stdout.write(`publish ${name} ... `);
-  const result = npm(['publish', '--json', ...extra], { cwd });
-  const out = `${result.stdout}\n${result.stderr}`;
+  console.log(`publish ${name} ...`);
+  const result = interactive
+    ? npm(['publish', ...extra], { cwd, stdio: 'inherit' })
+    : npm(['publish', '--json', ...extra], { cwd });
   if (result.status === 0) {
-    const data = JSON.parse(result.stdout);
-    console.log(`OK ${data.version ?? ''} (${data.filename ?? ''})`);
     published.push(name);
-  } else if (/previously published|EPUBLISHCONFLICT/i.test(out)) {
-    console.log('SKIP already published');
-    skipped.push(name);
-  } else if (/EOTP|one-time password/i.test(out)) {
-    console.log('FAIL needs OTP');
-    failed.push(name);
-    console.error('OTP required. Re-run with: node scripts/publish-all.mjs -- --otp=NNNNNN');
-    break;
+    console.log(`-> OK ${name}`);
   } else {
-    console.log('FAIL');
+    if (!interactive) {
+      const out = `${result.stdout}\n${result.stderr}`;
+      if (/previously published|EPUBLISHCONFLICT/i.test(out)) {
+        console.log(`-> SKIP ${name} (already published)`);
+        skipped.push(name);
+        continue;
+      }
+      if (/EOTP|one-time password/i.test(out)) {
+        console.error(`-> FAIL ${name}: web-auth required; re-run with --interactive`);
+        break;
+      }
+      console.error(out.trim());
+    }
     failed.push(name);
-    console.error(out.trim());
-    break;
+    console.error(`-> FAIL ${name} (exit ${result.status})`);
   }
 }
 
