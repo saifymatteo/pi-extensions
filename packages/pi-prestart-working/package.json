@@ -1,0 +1,35 @@
+{
+  "name": "@saifymatteo/pi-prestart-working",
+  "version": "0.0.0",
+  "description": "Show a labelled Working spinner while before_agent_start hooks run.",
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "pi-package"
+  ],
+  "files": [
+    "src",
+    "README.md",
+    "NOTICE.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saifymatteo/pi-extensions.git",
+    "directory": "packages/pi-prestart-working"
+  }
+}
