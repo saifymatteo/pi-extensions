@@ -1,6 +1,6 @@
 {
   "name": "@saifymatteo/pi-claude-usage",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Displays Claude subscription rate-limit windows from provider message diagnostics.",
   "type": "module",
   "license": "AGPL-3.0-only",

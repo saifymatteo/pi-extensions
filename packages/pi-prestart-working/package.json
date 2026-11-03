@@ -1,6 +1,6 @@
 {
   "name": "@saifymatteo/pi-prestart-working",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Show a labelled Working spinner while before_agent_start hooks run.",
   "type": "module",
   "license": "AGPL-3.0-only",

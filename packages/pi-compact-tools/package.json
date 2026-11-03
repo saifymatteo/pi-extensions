@@ -1,6 +1,6 @@
 {
   "name": "@saifymatteo/pi-compact-tools",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Groups consecutive tool calls into compact expandable transcript cards.",
   "type": "module",
   "license": "AGPL-3.0-only",
