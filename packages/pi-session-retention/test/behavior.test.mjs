@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, utimes, access, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, utimes, access, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RetentionStore, RETENTION_MS } from '../src/core.ts';
 import { otherPiProcesses, maintenanceGuard } from '../src/safety.ts';
 
 test('retention round trip protects current families, requires guard and restores without overwrite', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'pi-retention-package-'));
+  const dir = await mkdtemp(join(await realpath(tmpdir()), 'pi-retention-package-'));
   try {
     const root = join(dir, 'sessions'), trash = join(dir, 'trash');
     await mkdir(root);

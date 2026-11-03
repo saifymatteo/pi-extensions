@@ -94,6 +94,11 @@ function normalize(p: string): string {
   return p.replaceAll('\\', '/')
 }
 
+function isModelInvocationDisabled(content: string): boolean {
+  const frontmatter = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1]
+  return frontmatter?.split(/\r?\n/).some((line) => /^disable-model-invocation:\s*true\s*(?:#.*)?$/i.test(line)) ?? false
+}
+
 export interface UsageRow {
   skill: string
   loads: number
@@ -102,12 +107,15 @@ export interface UsageRow {
 }
 
 /** Counts sessions, not tool calls; accepts legacy six- and metadata eight-column TSV.
- *  `installed` names never seen in the log are added as zero rows, so unused skills are visible. */
-export function summarizeUsage(log: string, installed: string[] = []): { skills: UsageRow[]; skipped: number } {
+ *  When supplied, `installed` filters removed skills and adds unseen skills as zero rows. */
+export function summarizeUsage(log: string, installed?: string[]): { skills: UsageRow[]; skipped: number } {
   const { skills, skipped } = summarizeLog(log)
-  const seen = new Set(skills.map((row) => row.skill))
-  const unused = [...new Set(installed)].filter((skill) => !seen.has(skill)).sort((a, b) => a.localeCompare(b))
-  return { skills: [...skills, ...unused.map((skill) => ({ skill, loads: 0, uses: 0, lastUsed: null }))], skipped }
+  if (installed === undefined) return { skills, skipped }
+  const available = new Set(installed)
+  const filtered = skills.filter((row) => available.has(row.skill))
+  const seen = new Set(filtered.map((row) => row.skill))
+  const unused = [...available].filter((skill) => !seen.has(skill)).sort((a, b) => a.localeCompare(b))
+  return { skills: [...filtered, ...unused.map((skill) => ({ skill, loads: 0, uses: 0, lastUsed: null }))], skipped }
 }
 
 function summarizeLog(log: string, byAgent = false) {
@@ -267,23 +275,31 @@ export default function register(pi: ExtensionAPI): void {
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
         }
-        const installed = pi.getCommands().filter((command) => command.source === 'skill').map((command) => command.name.replace(/^skill:/, ''))
+        const skillCommands = pi.getCommands().filter((command) => command.source === 'skill')
+        const installed = skillCommands.map((command) => command.name.replace(/^skill:/, ''))
+        const invocationDisabled = new Map<string, boolean>()
+        await Promise.all(skillCommands.map(async (command, index) => {
+          const path = command.sourceInfo?.path
+          if (typeof path !== 'string') return
+          try { invocationDisabled.set(installed[index], isModelInvocationDisabled(await readFile(path, 'utf8'))) }
+          catch { /* Missing/unreadable skill metadata is reported as invocation-enabled. */ }
+        }))
         const { skills, skipped } = summarizeUsage(log, installed)
         const time = usageTimeFormat()
         const lines = ['Skill usage — all logged sessions and projects', '',
           'Counts are unique sessions, not tool calls. Used = read followed by tool activity in the same request.',
-          'Older entries used a same-model-turn rule and may undercount. Every installed skill is listed; 0 / never = not used since logging began.', '',
-          `| Skill | Loaded sessions | Used sessions | Last used (${markdownCell(time.label)}) |`,
-          '| --- | ---: | ---: | --- |']
+          'Older entries used a same-model-turn rule and may undercount. User invoke shows disable-model-invocation from skill frontmatter; 0 / never = not used since logging began.', '',
+          `| Skill | User invoke | Loaded sessions | Used sessions | Last used (${markdownCell(time.label)}) |`,
+          '| --- | --- | ---: | ---: | --- |']
         for (const row of skills) {
-          lines.push(`| ${markdownCell(row.skill)} | ${row.loads} | ${row.uses} | ${row.lastUsed ? markdownCell(time.format(new Date(row.lastUsed))) : 'never'} |`)
+          lines.push(`| ${markdownCell(row.skill)} | ${invocationDisabled.get(row.skill) ? 'Yes' : '-'} | ${row.loads} | ${row.uses} | ${row.lastUsed ? markdownCell(time.format(new Date(row.lastUsed))) : 'never'} |`)
         }
         if (skills.some((row) => row.loads)) {
           lines.push('', 'By selected agent model and thinking level (unique sessions within each group; groups may overlap):',
             'Legacy metadata is unknown. Only the first load/use per session is logged; this is not every model that later used the skill.', '',
             '| Skill | Model | Thinking | Loaded sessions | Used sessions |',
             '| --- | --- | --- | ---: | ---: |')
-          for (const row of summarizeLog(log, true).skills) {
+          for (const row of summarizeLog(log, true).skills.filter((row) => installed.includes(row.skill))) {
             lines.push(`| ${markdownCell(row.skill)} | ${markdownCell(row.model!)} | ${markdownCell(row.thinking!)} | ${row.loads} | ${row.uses} |`)
           }
         }

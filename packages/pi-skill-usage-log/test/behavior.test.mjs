@@ -24,8 +24,10 @@ test('skill use requires follow-up activity in the request and is deduped per se
 });
 test('skill summary dedupes sessions, rejects malformed rows and includes unused skills', () => {
   const row = '2026-01-01T00:00:00.000Z\tsid\tcwd\tskill:complete\texample\t/path';
-  const summary = summarizeUsage(row + '\n' + row + '\nbad', ['unused']);
+  const removed = '2026-01-01T00:00:00.000Z\tsid\tcwd\tskill:complete\tremoved\t/path';
+  const summary = summarizeUsage(row + '\n' + row + '\n' + removed + '\nbad', ['example', 'unused']);
   assert.equal(summary.skipped, 1);
+  assert.equal(summary.skills.length, 2, 'removed skills are filtered out');
   assert.equal(summary.skills[0].uses, 1);
   assert.equal(summary.skills[1].skill, 'unused');
   assert.equal(summary.skills[1].lastUsed, null);

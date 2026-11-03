@@ -46,8 +46,8 @@ export interface ToolUsageBreakdown extends ToolUsageRow {
 const toolGroup = (tool: string) => tool.match(/^(mcp__.+?__)./)?.[1].concat('*') ?? tool
 
 /** Malformed/partial rows are ignored, not allowed to spoil the whole report.
- *  `installed` names never seen in the log are added as zero rows, so unused tools are visible. */
-export function summarizeToolUsage(log: string, installed: string[] = []): {
+ *  When supplied, `installed` filters removed tools and adds unseen tools as zero rows. */
+export function summarizeToolUsage(log: string, installed?: string[]): {
   tools: ToolUsageRow[]; breakdown: ToolUsageBreakdown[]; skipped: number
 } {
   const tools = new Map<string, { row: ToolUsageRow; sessions: Set<string> }>()
@@ -97,8 +97,13 @@ export function summarizeToolUsage(log: string, installed: string[] = []): {
       if (lastUsed > aggregate.row.lastUsed!) aggregate.row.lastUsed = lastUsed
     }
   }
-  for (const tool of installed.map(toolGroup)) {
-    if (!tools.has(tool)) tools.set(tool, { row: { tool, calls: 0, sessions: 0, errors: 0, nested: 0, durationMs: 0, lastUsed: null }, sessions: new Set() })
+  if (installed !== undefined) {
+    const available = new Set(installed.map(toolGroup))
+    for (const tool of tools.keys()) if (!available.has(tool)) tools.delete(tool)
+    for (const [key, group] of groups) if (!available.has(group.row.tool)) groups.delete(key)
+    for (const tool of available) {
+      if (!tools.has(tool)) tools.set(tool, { row: { tool, calls: 0, sessions: 0, errors: 0, nested: 0, durationMs: 0, lastUsed: null }, sessions: new Set() })
+    }
   }
   const sort = (a: ToolUsageRow, b: ToolUsageRow) => b.calls - a.calls || a.tool.localeCompare(b.tool)
   return {
