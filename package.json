@@ -37,6 +37,7 @@
       "./packages/pi-compact-tools/src/index.ts",
       "./packages/pi-decisions/src/index.ts",
       "./packages/pi-model-go/src/index.ts",
+      "./packages/pi-prestart-working/src/index.ts",
       "./packages/pi-root-guard/src/index.ts",
       "./packages/pi-session-finder/src/index.ts",
       "./packages/pi-session-id/src/index.ts",

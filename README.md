@@ -68,6 +68,7 @@ Each directory under `packages/` is an independently loadable, independently pub
 | [pi-codeblock-borders](packages/pi-codeblock-borders) | Render code fences as rules with titles, line numbers, and highlights |
 | [pi-user-image-previews](packages/pi-user-image-previews) | Collapsible inline previews for newly submitted attachments |
 | [pi-claude-usage](packages/pi-claude-usage) | Show Claude 5h/7d subscription usage in the footer |
+| [pi-prestart-working](packages/pi-prestart-working) | Labelled "Working" spinner while `before_agent_start` hooks run |
 
 ### Tools and service adapters
 
