@@ -1,6 +1,6 @@
 {
   "name": "@saifymatteo/pi-root-guard",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Blocks selected write/edit and simple bash writes into Pi and Claude configuration roots.",
   "type": "module",
   "license": "AGPL-3.0-only",
