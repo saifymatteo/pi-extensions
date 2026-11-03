@@ -6,7 +6,7 @@ When configured, registers classifier providers and the `classify` tool (choice/
 
 ## Configuration and service
 
-Reads `<agent-dir>/extensions/decisions.json` with a unique `models` allowlist and the shared `extensions/service-models.json` registry. Missing selector means no registration. Nothing is created automatically. Examples are inert; the example selector is empty, enabling no models. To opt in, manually review the registry example and set `models` to `["example-services/example-classifier"]` in your isolated selector. Registry models require `type: "classifier"`, `api: "openai-decisions"`, positive `contextWindow` and `input` capabilities.
+Reads the shared `<agent-dir>/extensions/service-models.json` registry and registers every model with `type: "classifier"`. A missing registry or no classifier model means no registration. Nothing is created automatically; opt in by manually creating the registry from `examples/service-models.example.json`. An optional one-line `description` per model is shown to the agent as a strength hint in the `model` parameter. Classifier models require `type: "classifier"`, `api: "openai-decisions"`, positive `contextWindow` and `input` capabilities.
 
 Use an actual OpenAI Decisions-compatible service at your chosen base URL (POST `decisions` under the versioned base). Generic examples use localhost, not a configured personal server. API keys accept `$ENV` or `${ENV}`; if omitted, credentials fall back to agent `auth.json`. Prefer explicit environment references. No external CLI required.
 

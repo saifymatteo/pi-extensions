@@ -12,12 +12,14 @@
           "input": [
             "text",
             "image"
-          ]
+          ],
+          "description": "Example strength hint shown to the agent."
         },
         {
           "id": "example-tts",
           "type": "tts",
-          "api": "openai-audio-speech"
+          "api": "openai-audio-speech",
+          "description": "Example strength hint shown to the agent."
         }
       ]
     }

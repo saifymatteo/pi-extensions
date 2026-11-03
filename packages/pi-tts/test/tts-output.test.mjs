@@ -15,7 +15,6 @@ test('TTS saves mock WAV atomically and does not replace existing output', async
     if (old === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = old;
     rmSync(dir, { recursive: true, force: true });
   });
-  writeFileSync(join(dir, 'extensions', 'tts.json'), JSON.stringify({ models: ['local/voice'] }));
   writeFileSync(join(dir, 'extensions', 'service-models.json'), JSON.stringify({ providers: { local: {
     baseUrl: 'http://localhost:8000/v1', apiKey: '', models: [{ id: 'voice', type: 'tts', api: 'openai-audio-speech' }],
   } } }));

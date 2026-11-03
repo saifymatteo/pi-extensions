@@ -2,11 +2,11 @@
 
 ## Purpose and registrations
 
-Registers `text_to_speech` when a selector exists; no slash commands or playback. Sends narration to a service and saves a new WAV, never overwriting an existing output. Uses standard fetch/streams and Pi tool registration; requires filesystem hard-link support for atomic publication.
+Registers `text_to_speech` when the registry has a `type: "tts"` model; no slash commands or playback. Sends narration to a service and saves a new WAV, never overwriting an existing output. Uses standard fetch/streams and Pi tool registration; requires filesystem hard-link support for atomic publication.
 
 ## Configuration and service
 
-Reads `<agent-dir>/extensions/tts.json` and shared `extensions/service-models.json`. Missing selector leaves the tool absent; no automatic config creation. The inert example selector has an empty model allowlist. Opt in manually with `models: ["example-services/example-tts"]` after reviewing the registry. Selector may set `voice` and `language`; requests can override them. Registry model uses `type: "tts"` and `api: "openai-audio-speech"`.
+Reads the shared `<agent-dir>/extensions/service-models.json` registry and uses every model with `type: "tts"` and `api: "openai-audio-speech"`. A missing registry or no TTS model leaves the tool absent; no automatic config creation. A model may set default `voice` and `language` (requests can override them) and an optional one-line `description`, shown to the agent as a strength hint in the `model` parameter. Opt in by manually creating the registry from `examples/service-models.example.json`.
 
 Requires an OpenAI-compatible speech server (POST `audio/speech` relative to the versioned base URL), not an installed CLI. Keys accept `$ENV` / `${ENV}`; omission falls back to agent `auth.json`, explicit `""` permits keyless TTS. Use environment references rather than embedded credentials.
 

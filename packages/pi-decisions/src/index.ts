@@ -6,7 +6,7 @@
  */
 
 import { constants } from 'node:fs'
-import { loadServiceConfig, configuredApiKey, serviceApiKey } from './lib/service-models'
+import { loadServiceConfig, configuredApiKey, serviceApiKey, modelOptions } from './lib/service-models'
 import { open, stat, mkdtemp, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -280,7 +280,7 @@ async function classify(
 
 export default function decisionsExtension(pi: ExtensionAPI) {
   const piDir = process.env.PI_CODING_AGENT_DIR || join(process.env.HOME || process.env.USERPROFILE || '', '.pi', 'agent')
-  const config = loadServiceConfig(piDir, 'decisions.json', 'classifier')
+  const config = loadServiceConfig(piDir, 'classifier')
   if (!config) return
 
   for (const [providerId, providerConfig] of Object.entries(config.providers)) {
@@ -330,7 +330,7 @@ export default function decisionsExtension(pi: ExtensionAPI) {
       state: Type.Record(Type.String(), Type.Any(), { description: 'Shared JSON object containing the evidence to judge; use {} for image-only questions.' }),
       questions: Type.Record(Type.String({ minLength: 1, maxLength: 128 }), questionSchema, { minProperties: 1, maxProperties: 32 }),
       images: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { maxItems: 4, description: 'Local image paths, relative to cwd or absolute. Max 10 MiB each, 20 MiB total; PNG, JPEG, WebP.' })),
-      model: Type.Optional(Type.String({ description: `Configured provider/model-id. Defaults only when exactly one is configured. Options: ${configuredModels.join(', ')}` })),
+      model: Type.Optional(Type.String({ description: `Configured provider/model-id; required when several are configured. Pick by strength:${modelOptions(config)}` })),
     }, { additionalProperties: false }),
     outputSchema: Type.Object({ provider: Type.String(), model: Type.String(), answers: Type.Record(Type.String(), Type.Any()), usage: Type.Optional(Type.Any()) }),
     async execute(_id, params, signal, _onUpdate, ctx) {
@@ -338,8 +338,8 @@ export default function decisionsExtension(pi: ExtensionAPI) {
       if ('videos' in params) throw new Error('Native video input is not supported by classify')
       validateQuestions(params.questions)
       const spec = params.model ?? (configuredModels.length === 1 ? configuredModels[0] : undefined)
-      if (!spec) throw new Error(`Specify model; configured models: ${configuredModels.join(', ')}`)
-      if (!configuredModels.includes(spec)) throw new Error(`Model is not configured in decisions.json: ${spec}`)
+      if (!spec) throw new Error(`Specify model. Options:${modelOptions(config)}`)
+      if (!configuredModels.includes(spec)) throw new Error(`Model is not configured as a classifier in service-models.json: ${spec}`)
       const slash = spec.indexOf('/')
       const model = ctx.modelRegistry.findOfType('classifier', spec.slice(0, slash), spec.slice(slash + 1))
       if (!model) throw new Error(`Configured classifier is not registered: ${spec}`)

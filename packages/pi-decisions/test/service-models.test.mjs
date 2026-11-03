@@ -20,37 +20,37 @@ function fixture(t) {
   return { dir, save, registry };
 }
 
-test('missing selector disables; allowlists select only matching service type', t => {
-  const { dir, save } = fixture(t);
-  const { loadServiceConfig } = helper();
-  assert.equal(loadServiceConfig(dir, 'decisions.json', 'classifier'), undefined);
-  save('decisions.json', { models: ['local/judge'] });
-  const cfg = loadServiceConfig(dir, 'decisions.json', 'classifier');
-  assert.equal(cfg.providers.local.models.length, 1);
-  assert.equal(cfg.providers.local.models[0].id, 'judge');
-  save('decisions.json', { models: [] });
-  assert.equal(Object.keys(loadServiceConfig(dir, 'decisions.json', 'classifier').providers).length, 0);
-  save('decisions.json', { models: ['local/voice'] });
-  assert.throws(() => loadServiceConfig(dir, 'decisions.json', 'classifier'), /must have type classifier/);
+test('missing registry disables; each type sees only its own models', t => {
+  const { dir, save, registry } = fixture(t);
+  const { loadServiceConfig, modelOptions } = helper();
+  const cfg = loadServiceConfig(dir, 'classifier');
+  assert.deepEqual([...cfg.providers.local.models.map(m => m.id)], ['judge']);
+  assert.deepEqual([...loadServiceConfig(dir, 'tts').providers.local.models.map(m => m.id)], ['voice']);
+  registry.providers.local.models[0].description = 'Accurate on close calls.';
+  save('service-models.json', registry);
+  assert.equal(modelOptions(loadServiceConfig(dir, 'classifier')), '\n- local/judge: Accurate on close calls.');
+  save('service-models.json', { providers: { local: { ...registry.providers.local, models: [registry.providers.local.models[1]] } } });
+  assert.equal(loadServiceConfig(dir, 'classifier'), undefined);
+  rmSync(join(dir, 'extensions', 'service-models.json'));
+  assert.equal(loadServiceConfig(dir, 'classifier'), undefined);
 });
 
-test('invalid allowlists, URLs and model schemas fail without leaking values', t => {
+test('invalid URLs and model schemas fail without leaking values', t => {
   const { dir, save, registry } = fixture(t);
   const { loadServiceConfig } = helper();
-  for (const models of [['local/judge', 'local/judge'], ['local/missing'], [1]]) {
-    save('decisions.json', { models });
-    assert.throws(() => loadServiceConfig(dir, 'decisions.json', 'classifier'));
-  }
-  save('decisions.json', { models: ['local/judge'] });
   registry.providers.local.baseUrl = 'https://user:secret@example.invalid/v1';
   save('service-models.json', registry);
-  assert.throws(() => loadServiceConfig(dir, 'decisions.json', 'classifier'), error => /Invalid baseUrl/.test(error.message) && !error.message.includes('secret'));
+  assert.throws(() => loadServiceConfig(dir, 'classifier'), error => /Invalid baseUrl/.test(error.message) && !error.message.includes('secret'));
   registry.providers.local.baseUrl = 'http://localhost:8000/v1';
   registry.providers.local.models[0].contextWindow = 0;
   save('service-models.json', registry);
-  assert.throws(() => loadServiceConfig(dir, 'decisions.json', 'classifier'), /Invalid or duplicate model/);
-  writeFileSync(join(dir, 'extensions', 'decisions.json'), '{"secret": invalid');
-  assert.throws(() => loadServiceConfig(dir, 'decisions.json', 'classifier'), error => /Malformed JSON/.test(error.message) && !error.message.includes('secret'));
+  assert.throws(() => loadServiceConfig(dir, 'classifier'), /Invalid or duplicate model/);
+  registry.providers.local.models[0].contextWindow = 8192;
+  registry.providers.local.models[0].description = ' ';
+  save('service-models.json', registry);
+  assert.throws(() => loadServiceConfig(dir, 'classifier'), /Invalid or duplicate model/);
+  writeFileSync(join(dir, 'extensions', 'service-models.json'), '{"secret": invalid');
+  assert.throws(() => loadServiceConfig(dir, 'classifier'), error => /Malformed JSON/.test(error.message) && !error.message.includes('secret'));
 });
 
 test('environment resolution, missing environment, explicit keyless and auth fallback', t => {

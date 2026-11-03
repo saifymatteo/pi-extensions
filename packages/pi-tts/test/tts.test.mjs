@@ -23,25 +23,29 @@ function setup(t) {
   return { dir, save };
 }
 
-test('TTS selector validates defaults and passes them to selected model', t => {
+const registry = (model = {}) => ({ providers: { local: { baseUrl: 'http://localhost:8000/v1', apiKey: '', models: [
+  { id: 'voice', type: 'tts', api: 'openai-audio-speech', ...model },
+] } } });
+
+test('TTS registry model carries voice/language defaults; empty values are rejected', t => {
   const { dir, save } = setup(t);
   const { loadServiceConfig } = loadExtension(fileURLToPath(new URL('../src/lib/service-models.ts', import.meta.url)));
-  assert.equal(loadServiceConfig(dir, 'tts.json', 'tts'), undefined);
-  save('tts.json', { models: ['local/voice'], voice: 'example', language: 'en' });
-  const model = loadServiceConfig(dir, 'tts.json', 'tts').providers.local.models[0];
+  save('service-models.json', registry({ voice: 'example', language: 'en' }));
+  const model = loadServiceConfig(dir, 'tts').providers.local.models[0];
   assert.equal(model.voice, 'example');
   assert.equal(model.language, 'en');
-  save('tts.json', { models: ['local/voice'], voice: '' });
-  assert.throws(() => loadServiceConfig(dir, 'tts.json', 'tts'), /allowlist/);
+  save('service-models.json', registry({ voice: '' }));
+  assert.throws(() => loadServiceConfig(dir, 'tts'), /Invalid or duplicate model/);
 });
 
-test('TTS tool stays absent without selector; validation rejects invalid and existing outputs before request', async t => {
+test('TTS tool stays absent without a tts registry model; validation rejects invalid and existing outputs before request', async t => {
   const { dir, save } = setup(t);
   const tools = [];
   const { default: extension } = loadExtension(fileURLToPath(new URL('../src/index.ts', import.meta.url)), { typebox: { Type: schema } });
+  save('service-models.json', { providers: {} });
   extension({ registerTool: tool => tools.push(tool) });
   assert.equal(tools.length, 0);
-  save('tts.json', { models: ['local/voice'] });
+  save('service-models.json', registry());
   extension({ registerTool: tool => tools.push(tool) });
   assert.equal(tools[0].name, 'text_to_speech');
   const run = params => tools[0].execute('test', params, undefined, undefined, { cwd: dir });

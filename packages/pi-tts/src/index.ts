@@ -1,5 +1,5 @@
 /** Generate WAV files through an OpenAI-compatible speech endpoint; never play audio. */
-import { loadServiceConfig, serviceApiKey } from './lib/service-models'
+import { loadServiceConfig, serviceApiKey, modelOptions } from './lib/service-models'
 import { link, lstat, mkdtemp, open, rm, stat } from 'node:fs/promises'
 import { dirname, extname, join, resolve } from 'node:path'
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
@@ -44,7 +44,7 @@ async function readAudio(response: Response, signal: AbortSignal): Promise<Buffe
 
 export default function ttsExtension(pi: ExtensionAPI) {
   const piDir = process.env.PI_CODING_AGENT_DIR || join(process.env.HOME || process.env.USERPROFILE || '', '.pi', 'agent')
-  const config = loadServiceConfig(piDir, 'tts.json', 'tts')
+  const config = loadServiceConfig(piDir, 'tts')
   if (!config) return
   const models = Object.entries(config.providers).flatMap(([provider, cfg]) =>
     cfg.models.map(model => ({ spec: `${provider}/${model.id}`, provider, config: cfg, model })))
@@ -57,12 +57,12 @@ export default function ttsExtension(pi: ExtensionAPI) {
     promptGuidelines: [
       'Use text_to_speech when the user requests spoken narration or an audio file; do not generate or play audio automatically.',
       'Write listener-friendly narration rather than reading Markdown syntax or code verbatim, unless the user requests exact text. Return the saved file path.',
-      'Use only models configured in tts.json. Do not send secrets or silently switch providers after a failure.',
+      'Use only models configured in service-models.json (type tts). Do not send secrets or silently switch providers after a failure.',
     ],
     parameters: Type.Object({
       text: Type.String({ minLength: 1, maxLength: MAX_TEXT_LENGTH, description: 'Narration to synthesize.' }),
       output_file: Type.String({ minLength: 1, description: 'New .wav file, relative to cwd or absolute. Parent directory must exist. Existing files are never overwritten.' }),
-      model: Type.Optional(Type.String({ description: `Configured provider/model-id. Defaults only when exactly one is configured. Options: ${models.map(m => m.spec).join(', ') || '(none; add a model to tts.json)'}` })),
+      model: Type.Optional(Type.String({ description: `Configured provider/model-id; required when several are configured. Pick by strength:${modelOptions(config)}` })),
       voice: Type.Optional(Type.String({ minLength: 1, description: 'Voice supported by the selected model; otherwise uses the configured/server default.' })),
       language: Type.Optional(Type.String({ minLength: 1, description: 'Language supported by the selected model; otherwise uses the configured/server default.' })),
     }, { additionalProperties: false }),
@@ -76,7 +76,7 @@ export default function ttsExtension(pi: ExtensionAPI) {
       }
       const spec = params.model ?? (models.length === 1 ? models[0].spec : undefined)
       const selected = models.find(m => m.spec === spec)
-      if (!selected) throw new Error(`Specify a model configured in tts.json. Options: ${models.map(m => m.spec).join(', ') || '(none)'}`)
+      if (!selected) throw new Error(`Specify a model configured in service-models.json (type tts). Options:${modelOptions(config)}`)
       const output = resolve(ctx.cwd, params.output_file.startsWith('~/') ? join(process.env.HOME || process.env.USERPROFILE || '', params.output_file.slice(2)) : params.output_file)
       try {
         await lstat(output)
