@@ -4,6 +4,8 @@ Reusable pieces of a personal Pi setup, packaged separately from the setup itsel
 
 **Work in progress.** Packages are licensed AGPL-3.0-only ([NOTICE.md](NOTICE.md)) and publish through GitHub Actions when tagged: each extension individually, plus the root as the all-in-one collection [`@saifymatteo/pi-extensions`](https://github.com/saifymatteo/pi-extensions). Git is local for now, with no GitHub repository yet.
 
+![All 24 packages — live captures](gallery.png)
+
 ## Start here
 
 Use Node.js 24 or newer. From this repository:

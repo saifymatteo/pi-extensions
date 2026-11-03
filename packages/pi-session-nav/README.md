@@ -1,5 +1,7 @@
 # pi-session-nav
 
+![pi-session-nav screenshot](screenshot.png)
+
 Navigate visible user and assistant messages on the active conversation branch without adding transcript entries.
 
 ## Running locally

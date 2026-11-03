@@ -1,5 +1,7 @@
 # @saifymatteo/pi-tts
 
+![pi-tts screenshot](screenshot.png)
+
 ## Purpose and registrations
 
 Registers `text_to_speech` when the registry has a `type: "tts"` model; no slash commands or playback. Sends narration to a service and saves a new WAV, never overwriting an existing output. Uses standard fetch/streams and Pi tool registration; requires filesystem hard-link support for atomic publication.

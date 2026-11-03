@@ -1,5 +1,7 @@
 # @saifymatteo/pi-decisions
 
+![pi-decisions screenshot](screenshot.png)
+
 ## Purpose and registrations
 
 When configured, registers classifier providers and the `classify` tool (choice/bool/score; JSON state and optional PNG/JPEG/WebP images). No slash commands. Requires Pi's classifier model registry APIs (`findOfType`, `classify`, provider `classifiers`); older hosts may not implement them.

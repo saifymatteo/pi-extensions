@@ -1,5 +1,7 @@
 # Inline user image previews
 
+![pi-user-image-previews screenshot](screenshot.png)
+
 Adds collapsible UI-only previews for newly submitted image attachments.
 
 ## Try locally

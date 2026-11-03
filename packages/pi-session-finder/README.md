@@ -1,5 +1,7 @@
 # pi-session-finder
 
+![pi-session-finder screenshot](screenshot.png)
+
 Search saved sessions across projects, display their fork families, and open or fork a conversation into the current project.
 
 ## Running locally

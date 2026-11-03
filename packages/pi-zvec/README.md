@@ -1,5 +1,7 @@
 # @saifymatteo/pi-zvec
 
+![pi-zvec screenshot](screenshot.png)
+
 ## Purpose and registrations
 
 Registers `zvec_search` (exact/fts/vector/hybrid/auto), `/zvec-init`, `/zvec-sync`, `/zvec-status`, session and settle-sync hooks, and footer status.

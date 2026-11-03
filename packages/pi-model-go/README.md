@@ -1,5 +1,7 @@
 # pi-model-go
 
+![pi-model-go screenshot](screenshot.png)
+
 Cost-aware model picker showing registry prices/context, OpenCode Go credit multipliers and stencil.so intelligence scores. Source describes it as a port of rizal72/oc-models-pro.
 
 ## Running locally

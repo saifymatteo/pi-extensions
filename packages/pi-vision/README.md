@@ -1,5 +1,7 @@
 # @saifymatteo/pi-vision
 
+![pi-vision screenshot](screenshot.png)
+
 ## Purpose and registrations
 
 Registers a `context` hook, not a tool or slash command. Preserves native images for image-capable session models by default. For text-only/unknown models it replaces image blocks with model-generated descriptions. Optional `describe` / `describe-old` policies self-describe all/older images using the current model on OpenAI Chat Completions connections.

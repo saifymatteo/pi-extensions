@@ -1,5 +1,7 @@
 # pi-codeblock-borders
 
+![pi-codeblock-borders screenshot](screenshot.png)
+
 Render markdown code fences as full-width rules spanning the content area, and upgrade the fence info string with language decoration, titles, and line numbers that Pi's built-in renderer does not support.
 
 ## Running locally

@@ -1,5 +1,7 @@
 # @saifymatteo/pi-wait
 
+![pi-wait screenshot](screenshot.png)
+
 ## Purpose and registrations
 
 Registers the `wait` tool, joining 1..64 unique explicit `shell:<id>` / `agent:<id>` jobs. Returns results in requested order. Timeout releases claims without stopping work; abort/session changes invalidate the join. No commands or configuration files; no external CLI/model service.

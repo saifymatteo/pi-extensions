@@ -1,5 +1,7 @@
 # Pi dotenv loader
 
+![pi-load-pi-dotenv screenshot](screenshot.png)
+
 Loads environment variables from the Pi agent directory without replacing existing environment values.
 
 ## Try locally

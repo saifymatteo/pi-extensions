@@ -1,5 +1,7 @@
 # pi-session-id
 
+![pi-session-id screenshot](screenshot.png)
+
 Copy the current session ID to the system clipboard.
 
 ## Running locally

@@ -1,5 +1,7 @@
 # Compact tool cards
 
+![pi-compact-tools screenshot](screenshot.png)
+
 Groups consecutive tool calls into compact expandable transcript cards.
 
 ## Try locally

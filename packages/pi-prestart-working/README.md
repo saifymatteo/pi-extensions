@@ -1,5 +1,7 @@
 # @saifymatteo/pi-prestart-working
 
+![pi-prestart-working screenshot](screenshot.png)
+
 ## Purpose and registrations
 
 Shows Pi's native "Working" spinner, labelled with the extension currently blocking (e.g. `⠙ Loading hindsight-coding-agents`), while `before_agent_start` hooks run. Pi only raises its working indicator at `turn_start`, so slow handlers otherwise leave the UI silent. No tools, commands, or configuration.

@@ -1,5 +1,7 @@
 # pi-session-rename
 
+![pi-session-rename screenshot](screenshot.png)
+
 Automatically title main interactive sessions from the first submitted prompt and optionally mirror the name to a Herdr tab. Manual names take precedence; failed generation retries on later prompts.
 
 ## Running locally

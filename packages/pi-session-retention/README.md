@@ -1,5 +1,7 @@
 # pi-session-retention
 
+![pi-session-retention screenshot](screenshot.png)
+
 From the monorepo root:
 
 ```sh

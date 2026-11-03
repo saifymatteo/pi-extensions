@@ -1,5 +1,7 @@
 # @saifymatteo/pi-codegraph
 
+![pi-codegraph screenshot](screenshot.png)
+
 ## Purpose and registrations
 
 Registers `codegraph_explore`, `/codegraph-init`, `/codegraph-sync`, `/codegraph-status`, `/codegraph-unlock`, session startup/shutdown and settle-sync hooks, and footer status.

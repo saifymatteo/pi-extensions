@@ -1,5 +1,7 @@
 # @saifymatteo/pi-bg-bash
 
+![pi-bg-bash screenshot](screenshot.png)
+
 ## Purpose and registrations
 
 Overrides `bash` and, when provided by the host, `powershell`, adding `background` and `job`. Registers `/bg`, result/call renderers, timeout injection, sleep-wait guard, session/settlement hooks, and shell provider discovery.

@@ -1,5 +1,7 @@
 # Agent configuration root guard
 
+![pi-root-guard screenshot](screenshot.png)
+
 Blocks selected write/edit and simple bash writes into Pi and Claude configuration roots.
 
 ## Try locally

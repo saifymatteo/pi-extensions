@@ -1,5 +1,7 @@
 # pi-tool-usage-log
 
+![pi-tool-usage-log screenshot](screenshot.png)
+
 Passively record direct and nested tool executions and show aggregate usage, errors, duration, selected model and thinking level.
 
 ## Running locally

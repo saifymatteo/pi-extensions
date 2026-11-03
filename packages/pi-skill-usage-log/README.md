@@ -1,5 +1,7 @@
 # pi-skill-usage-log
 
+![pi-skill-usage-log screenshot](screenshot.png)
+
 Passively record skill loads and subsequent tool activity, then show cross-project usage without adding the report to conversation context.
 
 ## Running locally

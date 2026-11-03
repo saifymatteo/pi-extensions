@@ -1,5 +1,7 @@
 # Clipboard image attachment
 
+![pi-clipboard-image screenshot](screenshot.png)
+
 Attaches clipboard images to the draft, including copied image files on Windows.
 
 ## Try locally

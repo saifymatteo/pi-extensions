@@ -1,5 +1,7 @@
 # Claude subscription usage
 
+![pi-claude-usage screenshot](screenshot.png)
+
 Displays Claude subscription rate-limit windows from provider message diagnostics.
 
 ## Try locally
