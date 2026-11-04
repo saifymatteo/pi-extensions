@@ -77,7 +77,11 @@ export default function (pi: ExtensionAPI) {
 	let tick: ReturnType<typeof setInterval> | undefined;
 
 	function render() {
-		if (!ctx || !usage) return;
+		if (!ctx) return;
+		if (ctx.model?.provider !== "claude-code" || !usage) {
+			ctx.ui.setStatus(STATUS_KEY, undefined);
+			return;
+		}
 		const now = Date.now();
 		const text = formatFooter(usage, now);
 		const p = peak(usage, now);
@@ -113,6 +117,11 @@ export default function (pi: ExtensionAPI) {
 			tick = setInterval(render, TICK_MS);
 			tick.unref?.();
 		}
+	});
+
+	pi.on("model_select", async (_event, sessionCtx) => {
+		ctx = sessionCtx;
+		render();
 	});
 
 	pi.on("session_shutdown", async () => {

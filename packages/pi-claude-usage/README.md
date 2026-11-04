@@ -14,7 +14,7 @@ This uses your normal personal resources unless you isolate the agent home. Foll
 
 ## Configuration and requirements
 
-Uses rate-limit diagnostics from the external pi-claude-code provider; it does not poll Anthropic. Caches the most recent windows in <agent-dir>/state/claude-usage.json. No additional configuration.
+Uses rate-limit diagnostics from the external pi-claude-code provider; it does not poll Anthropic. Caches the most recent windows in <agent-dir>/state/claude-usage.json. The footer is shown only while the selected model uses the `claude-code` provider, not for Claude models accessed through other providers. Switching providers hides or restores it immediately. No additional configuration.
 
 ## Compatibility and safety
 
