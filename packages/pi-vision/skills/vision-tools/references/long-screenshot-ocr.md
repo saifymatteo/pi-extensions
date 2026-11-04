@@ -12,7 +12,7 @@ beyond a temporary file's lifetime. Inspect the script's help before choosing
 options:
 
 ```bash
-python3 scripts/long_screenshot_ocr.py --help
+python3 "<skill-dir>/scripts/long_screenshot_ocr.py" --help
 ```
 
 Prefer native chunk reading by the main agent; the glance-backed script is
@@ -22,7 +22,7 @@ splitter; verify joins even when the cut falls in a low-content band.
 ### Native chunk reading
 
 ```bash
-python3 scripts/long_screenshot_ocr.py work/page.png --split-only
+python3 "<skill-dir>/scripts/long_screenshot_ocr.py" work/page.png --split-only
 ```
 
 This writes ordered chunk images and `manifest.json` without vision calls.
@@ -38,10 +38,10 @@ Choose the content mode; this path makes configured vision calls:
 
 ```bash
 # Web pages, documents, logs, tables, and other general content
-python3 scripts/long_screenshot_ocr.py work/page.png -o work/page.ocr.md
+python3 "<skill-dir>/scripts/long_screenshot_ocr.py" work/page.png -o work/page.ocr.md
 
 # Chat histories: preserve message grouping, senders, timestamps, and quotes
-python3 scripts/long_screenshot_ocr.py work/chat.png --mode chat -o work/chat.ocr.md
+python3 "<skill-dir>/scripts/long_screenshot_ocr.py" work/chat.png --mode chat -o work/chat.ocr.md
 ```
 
 Without `-o`, write `<input-stem>.ocr.md`; store chunks, sidecars, the manifest,
@@ -63,7 +63,7 @@ Use `--resume` after an interrupted run. A chunk is reused only when its image,
 mode, and custom prompt fingerprint still match:
 
 ```bash
-python3 scripts/long_screenshot_ocr.py work/chat.png --mode chat --resume -o work/chat.ocr.md
+python3 "<skill-dir>/scripts/long_screenshot_ocr.py" work/chat.png --mode chat --resume -o work/chat.ocr.md
 ```
 
 If the defaults produce awkward chunks, rerun with `--target-height`,
@@ -85,8 +85,8 @@ context; do not make tiny OCR tiles unless the source text is unusually small.
    unresolved, targeted specialist OCR is available:
 
    ```bash
-   glance work/page_chunks/chunk_002.png --ocr "Re-check the final five lines carefully."
-   glance work/page_chunks/chunk_002.png --region X1,Y1,X2,Y2 --ocr
+   python3 "<skill-dir>/bin/glance" work/page_chunks/chunk_002.png --ocr "Re-check the final five lines carefully."
+   python3 "<skill-dir>/bin/glance" work/page_chunks/chunk_002.png --region X1,Y1,X2,Y2 --ocr
    ```
 
 5. Keep visible spelling and punctuation verbatim. Write `[unreadable]` for

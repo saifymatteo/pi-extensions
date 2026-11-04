@@ -25,16 +25,16 @@ pixels as foreground.
 
 ```bash
 # Known tight region
-python3 scripts/extract_fg.py shot.png \
+python3 "<skill-dir>/scripts/extract_fg.py" shot.png \
   --region X1,Y1,X2,Y2 -o asset.png
 
 # Dark or gray line art
-python3 scripts/extract_fg.py shot.png \
+python3 "<skill-dir>/scripts/extract_fg.py" shot.png \
   --region X1,Y1,X2,Y2 --mode dark -o asset.png
 
 # Center and enlarge a small visual before automatic extraction
-crop shot.png --region X1,Y1,X2,Y2 --scale 4 -o work/asset4x.png
-python3 scripts/extract_fg.py work/asset4x.png
+python3 "<skill-dir>/bin/crop" shot.png --region X1,Y1,X2,Y2 --scale 4 -o work/asset4x.png
+python3 "<skill-dir>/scripts/extract_fg.py" work/asset4x.png
 ```
 
 Use `--exclude-color '#RRGGBB'` when a connected background color would
@@ -47,9 +47,9 @@ clean alpha edges, and no neighboring fragments before reuse.
 ## Rebuild an SVG only when the deliverable needs one
 
 ```bash
-trace asset.png -o asset.svg
-trace asset.png --polygon -o asset.svg
-trace shot.png --region X1,Y1,X2,Y2 -o asset.svg
+python3 "<skill-dir>/bin/trace" asset.png -o asset.svg
+python3 "<skill-dir>/bin/trace" asset.png --polygon -o asset.svg
+python3 "<skill-dir>/bin/trace" shot.png --region X1,Y1,X2,Y2 -o asset.svg
 ```
 
 Ship traced paths directly for organic or irregular shapes. For rectangles,

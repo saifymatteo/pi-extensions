@@ -140,13 +140,13 @@ extraction, tighten the final region to the visual's own ink; adjacent text or
 rules inside the region can become foreground components too.
 
 ```bash
-crop shot.png --region X1,Y1,X2,Y2 --scale 4 -o work/icon4x.png
-python3 scripts/extract_fg.py work/icon4x.png
+python3 "<skill-dir>/bin/crop" shot.png --region X1,Y1,X2,Y2 --scale 4 -o work/icon4x.png
+python3 "<skill-dir>/scripts/extract_fg.py" work/icon4x.png
 
 # Or extract directly from a known tight region:
-python3 scripts/extract_fg.py shot.png \
+python3 "<skill-dir>/scripts/extract_fg.py" shot.png \
   --region X1,Y1,X2,Y2 -o work/icon.png
-python3 scripts/extract_fg.py shot.png \
+python3 "<skill-dir>/scripts/extract_fg.py" shot.png \
   --region X1,Y1,X2,Y2 --mode dark -o work/logo.png
 ```
 

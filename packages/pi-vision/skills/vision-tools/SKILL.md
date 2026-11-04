@@ -33,20 +33,35 @@ For browser or accessible GUI work, prefer DOM/accessibility information for
 controls and state. Use screenshot coordinates when that information is
 unavailable or the task specifically concerns appearance.
 
+## Run the packaged scripts
+
+1. Resolve `<skill-dir>` to the absolute directory containing this `SKILL.md`,
+   using the skill location supplied by the host. Replace that placeholder in
+   commands below; keep script paths quoted and keep the project's working
+   directory.
+2. Select a Python 3 interpreter: try `python3 --version`; on Windows, use
+   `python --version` or `py -3 --version` if needed. Substitute that command
+   for `python3` in the examples.
+3. Invoke `bin/<tool>` and `scripts/<name>.py` through that interpreter. The
+   extensionless files in `bin/` are Python scripts, not installed binaries.
+   This works without PATH registration, executable permissions, or agent-home
+   symlinks. Short tool names in prose refer to these same script paths.
+
+Use `--help` on the selected script for additional options.
+
 ## Local tools: use when their output is needed
 
-Resolve `scripts/` paths relative to this skill directory. Use `--help` for
-additional options. These tools do not use the vision API; HTML rendering can
-load resources referenced by the page.
+These tools do not use the vision API; HTML rendering can load resources
+referenced by the page.
 
 | Need | Command |
 | --- | --- |
-| Reusable crop or close-up | `crop shot.png --region X1,Y1,X2,Y2 -o detail.png` |
-| Locate pixel differences | `python3 scripts/pixel_diff.py before.png after.png` |
-| Measure a region's palette | `python3 scripts/dominant_colors.py shot.png --region X1,Y1,X2,Y2` |
-| Vectorize a flat graphic | `trace icon.png -o icon.svg` |
-| Extract a transparent foreground | `python3 scripts/extract_fg.py shot.png --region X1,Y1,X2,Y2 -o icon.png` |
-| Render an HTML file | `python3 scripts/html_shot.py page.html --width 1440 --height 900 -o page.png` |
+| Reusable crop or close-up | `python3 "<skill-dir>/bin/crop" shot.png --region X1,Y1,X2,Y2 -o detail.png` |
+| Locate pixel differences | `python3 "<skill-dir>/scripts/pixel_diff.py" before.png after.png` |
+| Measure a region's palette | `python3 "<skill-dir>/scripts/dominant_colors.py" shot.png --region X1,Y1,X2,Y2` |
+| Vectorize a flat graphic | `python3 "<skill-dir>/bin/trace" icon.png -o icon.svg` |
+| Extract a transparent foreground | `python3 "<skill-dir>/scripts/extract_fg.py" shot.png --region X1,Y1,X2,Y2 -o icon.png` |
+| Render an HTML file | `python3 "<skill-dir>/scripts/html_shot.py" page.html --width 1440 --height 900 -o page.png` |
 
 - `crop --scale 4` enlarges a crop; it adds no missing detail. Coordinates
   measured on that output use the enlarged grid, not the original image.
@@ -84,11 +99,11 @@ separately configured vision chain, not to the main agent model automatically.
 Structured output does not guarantee better recognition or localization.
 
 ```bash
-glance shot.png -q "Read the small status label."
-glance shot.png --region X1,Y1,X2,Y2 --ocr
-glance before.png after.png -q "What changed semantically?"
-ground shot.png "the send button"
-detect shot.png "buttons"
+python3 "<skill-dir>/bin/glance" shot.png -q "Read the small status label."
+python3 "<skill-dir>/bin/glance" shot.png --region X1,Y1,X2,Y2 --ocr
+python3 "<skill-dir>/bin/glance" before.png after.png -q "What changed semantically?"
+python3 "<skill-dir>/bin/ground" shot.png "the send button"
+python3 "<skill-dir>/bin/detect" shot.png "buttons"
 ```
 
 `ground` and `detect` return estimated boxes in original-image pixels, including
@@ -98,9 +113,9 @@ For multi-image questions, pass the images in one call so the model sees them
 together. Native side-by-side inspection is also sufficient for semantic
 comparison; use pixel diff when numerical differences matter.
 
-The long-screenshot OCR script still uses `glance` for automated transcription.
-Its `--split-only` mode makes chunks without API requests for native inspection.
-Keep the `glance` client/config available if using the automated path.
+The long-screenshot OCR script invokes this skill's `bin/glance` with its
+current Python interpreter, falling back to PATH only if the bundled script
+is missing. Its `--split-only` mode makes chunks without API requests.
 
 ### Configuration and failures
 
@@ -112,10 +127,11 @@ conversion on supported connections. Text-only or unknown-capability models
 still use the configured compatibility bridge. This policy does not route CLI
 calls through the main model.
 
-On a model-backed CLI configuration/API error, run `vision-doctor`. Use
-`vision-doctor --smoke` only when a real diagnostic request is needed; it sends
-a test image. Relay failures honestly. Continue with native inspection when
-available; report if the scripted output cannot be produced. Keep provider
+On a model-backed CLI configuration/API error, run
+`python3 "<skill-dir>/bin/vision-doctor"`. Add `--smoke` only when a real
+diagnostic request is needed; it sends a test image. Relay failures honestly.
+Continue with native inspection when available; report if the scripted output
+cannot be produced. Keep provider
 changes user-controlled: do not scrape credentials, hand-export secret overrides,
 or silently switch to an unconfigured provider.
 

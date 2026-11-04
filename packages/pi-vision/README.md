@@ -12,7 +12,7 @@ Resolution also consults agent `models.json`, `models-store.json`, `auth.json`, 
 
 ## Bundled skill
 
-The package bundles the `vision-tools` skill (`skills/vision-tools`): `bin/` launcher CLIs (`crop`, `detect`, `glance`, `ground`, `trace`, `vision-doctor`), Python tools under `scripts/`, reference guides, and `SKILL.md`. The extension's guidance messages point the agent at `vision-doctor` and the skill. Requires Python 3 with Pillow (PIL); the CLIs are Python scripts, not compiled binaries. Based on [Anionex/agent-vision-toolkit](https://github.com/Anionex/agent-vision-toolkit) (MIT), modified in this repository — see [NOTICE.md](NOTICE.md).
+The package bundles the `vision-tools` skill (`skills/vision-tools`): `bin/` launcher CLIs (`crop`, `detect`, `glance`, `ground`, `trace`, `vision-doctor`), Python tools under `scripts/`, reference guides, and `SKILL.md`. Invoke the launchers with Python and their absolute skill-relative paths, for example `python3 "<skill-directory>/bin/crop" image.png --region 0,0,100,100 -o detail.png`. Follow the interpreter-selection guidance in `SKILL.md` if Windows exposes Python as `python` or `py -3`. No PATH registration, executable bit, or agent-home shim is required. The extension does not modify PATH. Automated long-screenshot OCR prefers the bundled `bin/glance` with the current Python interpreter, falling back to PATH only if that script is missing. The extension's guidance messages point the agent at `vision-doctor` and the skill. Requires Python 3 with Pillow (PIL); the CLIs are Python scripts, not compiled binaries. Based on [Anionex/agent-vision-toolkit](https://github.com/Anionex/agent-vision-toolkit) (MIT), modified in this repository — see [NOTICE.md](NOTICE.md).
 
 ## Host limitations and security
 

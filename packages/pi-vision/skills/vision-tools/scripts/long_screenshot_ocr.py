@@ -456,13 +456,13 @@ def command_for_path(path: Path) -> list[str]:
 
 
 def resolve_glance_command() -> list[str]:
+    bundled_glance = Path(__file__).resolve().parents[1] / "bin" / "glance"
+    if bundled_glance.is_file():
+        return [sys.executable, str(bundled_glance)]
     discovered = shutil.which("glance")
     if discovered:
         return command_for_path(Path(discovered))
-    repository_glance = Path(__file__).resolve().parents[3] / "bin" / "glance"
-    if repository_glance.is_file():
-        return command_for_path(repository_glance)
-    raise FileNotFoundError("glance is not on PATH; install the toolkit first")
+    raise FileNotFoundError("glance is not in this skill directory or on PATH")
 
 
 def ocr_prompt(mode: str, index: int, total: int, custom: str | None) -> str:
