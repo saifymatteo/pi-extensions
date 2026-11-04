@@ -1,6 +1,8 @@
 # pi-session-rename
 
-![pi-session-rename screenshot](screenshot.png)
+![Generated session title in the footer and terminal title](screenshot.png)
+
+*After the first prompt, the session gets a generated title. It appears in the footer and in the terminal tab title.*
 
 Automatically title main interactive sessions from the first submitted prompt and optionally mirror the name to a Herdr tab. Manual names take precedence; failed generation retries on later prompts.
 

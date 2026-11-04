@@ -1,6 +1,8 @@
 # Agent configuration root guard
 
-![pi-root-guard screenshot](screenshot.png)
+![A write into ~/.pi/agent blocked by the guardrail](screenshot.png)
+
+*Stock pi lets the agent rewrite its own config. With the guard, writes into the Pi and Claude config roots are blocked, and the agent is told why.*
 
 Blocks selected write/edit and simple bash writes into Pi and Claude configuration roots.
 

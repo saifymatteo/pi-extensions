@@ -1,6 +1,8 @@
 # @saifymatteo/pi-wait
 
-![pi-wait screenshot](screenshot.png)
+![wait joining a background shell job and returning its output](screenshot.png)
+
+*The agent starts a build in the background, then calls `wait` on `shell:1`. The job's output comes back in the same turn. Needs pi-bg-bash.*
 
 ## Purpose and registrations
 

@@ -1,6 +1,8 @@
 # pi-session-finder
 
-![pi-session-finder screenshot](screenshot.png)
+![/session-global listing sessions from every project, with forks nested](screenshot.png)
+
+*`/session-global` searches saved sessions across all projects. They are grouped by folder, with forks nested under their parent.*
 
 Search saved sessions across projects, display their fork families, and open or fork a conversation into the current project.
 

@@ -1,6 +1,8 @@
 # @saifymatteo/pi-decisions
 
-![pi-decisions screenshot](screenshot.png)
+![The classify tool returning a structured triage answer with probabilities](screenshot.png)
+
+*The agent calls `classify` against a configured Decisions endpoint and gets structured answers with per-label probabilities.*
 
 ## Purpose and registrations
 

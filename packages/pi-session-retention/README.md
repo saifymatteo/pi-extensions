@@ -1,6 +1,8 @@
 # pi-session-retention
 
-![pi-session-retention screenshot](screenshot.png)
+![/session-cleanup preview listing inactive session families](screenshot.png)
+
+*`/session-cleanup preview` shows which inactive session families would move to Trash. It changes nothing.*
 
 From the monorepo root:
 

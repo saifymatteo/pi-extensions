@@ -1,6 +1,8 @@
 # pi-session-nav
 
-![pi-session-nav screenshot](screenshot.png)
+![Alt+O message navigator over the current conversation](screenshot.png)
+
+*Alt+O lists the conversation's messages. Pick one and press Enter to jump to it.*
 
 Navigate visible user and assistant messages on the active conversation branch without adding transcript entries.
 

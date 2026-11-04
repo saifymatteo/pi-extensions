@@ -1,6 +1,8 @@
 # Clipboard image attachment
 
-![pi-clipboard-image screenshot](screenshot.png)
+![Alt+V pastes a clipboard image into the draft as [Image #1]](screenshot.png)
+
+*Alt+V adds the clipboard image to the draft as `[Image #1]`. Sending the message sends the image to the model with it.*
 
 Attaches clipboard images to the draft, including copied image files on Windows.
 

@@ -4,7 +4,7 @@ Reusable pieces of a personal Pi setup, packaged separately from the setup itsel
 
 **Work in progress.** Packages are licensed AGPL-3.0-only ([NOTICE.md](NOTICE.md)) and publish through GitHub Actions when tagged: each extension individually, plus the root as the all-in-one collection [`@saifymatteo/pi-extensions`](https://github.com/saifymatteo/pi-extensions). Git is local for now, with no GitHub repository yet.
 
-![All 24 packages — live captures](gallery.png)
+Each package README opens with a screenshot of what it adds. The screenshots are real captures, not mockups: stock Pi 1.4.0 driven by a scripted demo model, in an isolated agent home. The catalogue below shows them as thumbnails; click one for the package README.
 
 ## Start here
 
@@ -52,46 +52,46 @@ Each directory under `packages/` is an independently loadable, independently pub
 
 ### Session and model navigation
 
-| Package | Purpose |
-| --- | --- |
-| [pi-session-id](packages/pi-session-id) | Copy the current session ID |
-| [pi-session-finder](packages/pi-session-finder) | Search saved sessions across projects; open or fork them |
-| [pi-session-nav](packages/pi-session-nav) | Jump between messages in the active context (compaction-aware) |
-| [pi-session-rename](packages/pi-session-rename) | Generate session titles from the first prompt using configured models |
-| [pi-session-retention](packages/pi-session-retention) | Inspect and manage stored sessions; review deletion behavior before use |
-| [pi-model-go](packages/pi-model-go) | `/model-go`: cost-aware model picker with Go-plan pricing and intelligence scores |
+| Package | Purpose | Preview |
+| --- | --- | --- |
+| [pi-session-id](packages/pi-session-id) | Copy the current session ID | <a href="packages/pi-session-id"><img src="packages/pi-session-id/screenshot.png" width="280" alt="pi-session-id screenshot"></a> |
+| [pi-session-finder](packages/pi-session-finder) | Search saved sessions across projects; open or fork them | <a href="packages/pi-session-finder"><img src="packages/pi-session-finder/screenshot.png" width="280" alt="pi-session-finder screenshot"></a> |
+| [pi-session-nav](packages/pi-session-nav) | Jump between messages in the active context (compaction-aware) | <a href="packages/pi-session-nav"><img src="packages/pi-session-nav/screenshot.png" width="280" alt="pi-session-nav screenshot"></a> |
+| [pi-session-rename](packages/pi-session-rename) | Generate session titles from the first prompt using configured models | <a href="packages/pi-session-rename"><img src="packages/pi-session-rename/screenshot.png" width="280" alt="pi-session-rename screenshot"></a> |
+| [pi-session-retention](packages/pi-session-retention) | Inspect and manage stored sessions; review deletion behavior before use | <a href="packages/pi-session-retention"><img src="packages/pi-session-retention/screenshot.png" width="280" alt="pi-session-retention screenshot"></a> |
+| [pi-model-go](packages/pi-model-go) | `/model-go`: cost-aware model picker with Go-plan pricing and intelligence scores | <a href="packages/pi-model-go"><img src="packages/pi-model-go/screenshot.png" width="280" alt="pi-model-go screenshot"></a> |
 
 ### Transcript and terminal UI
 
-| Package | Purpose |
-| --- | --- |
-| [pi-compact-tools](packages/pi-compact-tools) | Group consecutive tool calls into one collapsible card |
-| [pi-clipboard-image](packages/pi-clipboard-image) | Attach clipboard images or copied image files (Alt+V) |
-| [pi-codeblock-borders](packages/pi-codeblock-borders) | Render code fences as rules with titles, line numbers, and highlights |
-| [pi-user-image-previews](packages/pi-user-image-previews) | Collapsible inline previews for newly submitted attachments |
-| [pi-claude-usage](packages/pi-claude-usage) | Show Claude 5h/7d subscription usage in the footer |
-| [pi-prestart-working](packages/pi-prestart-working) | Labelled "Working" spinner while `before_agent_start` hooks run |
+| Package | Purpose | Preview |
+| --- | --- | --- |
+| [pi-compact-tools](packages/pi-compact-tools) | Group consecutive tool calls into one collapsible card | <a href="packages/pi-compact-tools"><img src="packages/pi-compact-tools/screenshot.png" width="280" alt="pi-compact-tools screenshot"></a> |
+| [pi-clipboard-image](packages/pi-clipboard-image) | Attach clipboard images or copied image files (Alt+V) | <a href="packages/pi-clipboard-image"><img src="packages/pi-clipboard-image/screenshot.png" width="280" alt="pi-clipboard-image screenshot"></a> |
+| [pi-codeblock-borders](packages/pi-codeblock-borders) | Render code fences as rules with titles, line numbers, and highlights | <a href="packages/pi-codeblock-borders"><img src="packages/pi-codeblock-borders/screenshot.png" width="280" alt="pi-codeblock-borders screenshot"></a> |
+| [pi-user-image-previews](packages/pi-user-image-previews) | Collapsible inline previews for newly submitted attachments | <a href="packages/pi-user-image-previews"><img src="packages/pi-user-image-previews/screenshot.png" width="280" alt="pi-user-image-previews screenshot"></a> |
+| [pi-claude-usage](packages/pi-claude-usage) | Show Claude 5h/7d subscription usage in the footer | <a href="packages/pi-claude-usage"><img src="packages/pi-claude-usage/screenshot.png" width="280" alt="pi-claude-usage screenshot"></a> |
+| [pi-prestart-working](packages/pi-prestart-working) | Labelled "Working" spinner while `before_agent_start` hooks run | <a href="packages/pi-prestart-working"><img src="packages/pi-prestart-working/screenshot.png" width="280" alt="pi-prestart-working screenshot"></a> |
 
 ### Tools and service adapters
 
-| Package | Purpose |
-| --- | --- |
-| [pi-bg-bash](packages/pi-bg-bash) | Add background execution to the built-in bash/powershell tools |
-| [pi-wait](packages/pi-wait) | Join background jobs (shell:/agent:) with lease-based delivery |
-| [pi-codegraph](packages/pi-codegraph) | CodeGraph CLI adapter: explore tool plus index auto-init/sync |
-| [pi-zvec](packages/pi-zvec) | Workspace search via the zg CLI: exact, lexical, semantic, hybrid |
-| [pi-decisions](packages/pi-decisions) | Agent-facing classify tool backed by configured Decisions endpoints |
-| [pi-tts](packages/pi-tts) | Generate WAV files through an OpenAI-compatible speech endpoint |
-| [pi-vision](packages/pi-vision) | Describe images for text-only models via a configured vision chain |
+| Package | Purpose | Preview |
+| --- | --- | --- |
+| [pi-bg-bash](packages/pi-bg-bash) | Add background execution to the built-in bash/powershell tools | <a href="packages/pi-bg-bash"><img src="packages/pi-bg-bash/screenshot.png" width="280" alt="pi-bg-bash screenshot"></a> |
+| [pi-wait](packages/pi-wait) | Join background jobs (shell:/agent:) with lease-based delivery | <a href="packages/pi-wait"><img src="packages/pi-wait/screenshot.png" width="280" alt="pi-wait screenshot"></a> |
+| [pi-codegraph](packages/pi-codegraph) | CodeGraph CLI adapter: explore tool plus index auto-init/sync | <a href="packages/pi-codegraph"><img src="packages/pi-codegraph/screenshot.png" width="280" alt="pi-codegraph screenshot"></a> |
+| [pi-zvec](packages/pi-zvec) | Workspace search via the zg CLI: exact, lexical, semantic, hybrid | <a href="packages/pi-zvec"><img src="packages/pi-zvec/screenshot.png" width="280" alt="pi-zvec screenshot"></a> |
+| [pi-decisions](packages/pi-decisions) | Agent-facing classify tool backed by configured Decisions endpoints | <a href="packages/pi-decisions"><img src="packages/pi-decisions/screenshot.png" width="280" alt="pi-decisions screenshot"></a> |
+| [pi-tts](packages/pi-tts) | Generate WAV files through an OpenAI-compatible speech endpoint | <a href="packages/pi-tts"><img src="packages/pi-tts/screenshot.png" width="280" alt="pi-tts screenshot"></a> |
+| [pi-vision](packages/pi-vision) | Describe images for text-only models via a configured vision chain | <a href="packages/pi-vision"><img src="packages/pi-vision/screenshot.png" width="280" alt="pi-vision screenshot"></a> |
 
 ### Environment and local observability
 
-| Package | Purpose |
-| --- | --- |
-| [pi-load-pi-dotenv](packages/pi-load-pi-dotenv) | Load the agent-local .env into the environment for tool subprocesses |
-| [pi-root-guard](packages/pi-root-guard) | Block agent writes into the Pi and Claude config roots |
-| [pi-skill-usage-log](packages/pi-skill-usage-log) | Log which skills were actually used; `/skill-usage` summary |
-| [pi-tool-usage-log](packages/pi-tool-usage-log) | Passive log of tool executions (names and status, never contents) |
+| Package | Purpose | Preview |
+| --- | --- | --- |
+| [pi-load-pi-dotenv](packages/pi-load-pi-dotenv) | Load the agent-local .env into the environment for tool subprocesses | <a href="packages/pi-load-pi-dotenv"><img src="packages/pi-load-pi-dotenv/screenshot.png" width="280" alt="pi-load-pi-dotenv screenshot"></a> |
+| [pi-root-guard](packages/pi-root-guard) | Block agent writes into the Pi and Claude config roots | <a href="packages/pi-root-guard"><img src="packages/pi-root-guard/screenshot.png" width="280" alt="pi-root-guard screenshot"></a> |
+| [pi-skill-usage-log](packages/pi-skill-usage-log) | Log which skills were actually used; `/skill-usage` summary | <a href="packages/pi-skill-usage-log"><img src="packages/pi-skill-usage-log/screenshot.png" width="280" alt="pi-skill-usage-log screenshot"></a> |
+| [pi-tool-usage-log](packages/pi-tool-usage-log) | Passive log of tool executions (names and status, never contents) | <a href="packages/pi-tool-usage-log"><img src="packages/pi-tool-usage-log/screenshot.png" width="280" alt="pi-tool-usage-log screenshot"></a> |
 
 ## Individual and collection loading
 

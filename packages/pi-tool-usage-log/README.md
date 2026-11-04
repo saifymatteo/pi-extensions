@@ -1,6 +1,8 @@
 # pi-tool-usage-log
 
-![pi-tool-usage-log screenshot](screenshot.png)
+![/tool-usage report of calls, errors, nesting and duration per tool](screenshot.png)
+
+*`/tool-usage` totals every tool call: count, sessions, errors, nested calls, average duration and last use.*
 
 Passively record direct and nested tool executions and show aggregate usage, errors, duration, selected model and thinking level.
 

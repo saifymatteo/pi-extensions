@@ -1,6 +1,8 @@
 # @saifymatteo/pi-codegraph
 
-![pi-codegraph screenshot](screenshot.png)
+![codegraph_explore returning source and blast radius, with CodeGraph sync status in the footer](screenshot.png)
+
+*The agent calls `codegraph_explore` and gets back the relevant source with its blast radius (expanded here with Ctrl+O). The footer shows the index status, which is synced after every turn.*
 
 ## Purpose and registrations
 

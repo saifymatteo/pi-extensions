@@ -1,6 +1,8 @@
 # @saifymatteo/pi-tts
 
-![pi-tts screenshot](screenshot.png)
+![The text_to_speech tool saving a WAV file into the project](screenshot.png)
+
+*The agent calls `text_to_speech`, and the WAV file from the configured speech endpoint is saved into the project.*
 
 ## Purpose and registrations
 

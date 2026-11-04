@@ -1,6 +1,8 @@
 # @saifymatteo/pi-prestart-working
 
-![pi-prestart-working screenshot](screenshot.png)
+![Spinner labelled with the extension whose before_agent_start hook is running](screenshot.png)
+
+*A slow `before_agent_start` hook normally leaves the UI silent after you press Enter. With this extension, the spinner names the extension that is running.*
 
 ## Purpose and registrations
 

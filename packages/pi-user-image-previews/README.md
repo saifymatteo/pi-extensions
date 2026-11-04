@@ -1,6 +1,8 @@
 # Inline user image previews
 
-![pi-user-image-previews screenshot](screenshot.png)
+![Attached image shown as a collapsible preview row, expanded inline with Ctrl+O](screenshot.png)
+
+*An attached image gets a collapsible preview row in the transcript. Ctrl+O opens it inline. Stock pi shows nothing.*
 
 Adds collapsible UI-only previews for newly submitted image attachments.
 

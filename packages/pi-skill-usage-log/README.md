@@ -1,6 +1,8 @@
 # pi-skill-usage-log
 
-![pi-skill-usage-log screenshot](screenshot.png)
+![/skill-usage report of loaded and used skills across projects](screenshot.png)
+
+*`/skill-usage` shows which installed skills were loaded and which were actually used, across all projects.*
 
 Passively record skill loads and subsequent tool activity, then show cross-project usage without adding the report to conversation context.
 

@@ -1,6 +1,8 @@
 # pi-codeblock-borders
 
-![pi-codeblock-borders screenshot](screenshot.png)
+![The same reply rendered by stock pi and with codeblock borders](screenshot.png)
+
+*The same reply, rendered by stock pi and then with this extension. Code fences become full-width rules, and `title=`, `:line-numbers` and `{2}` line focus are rendered.*
 
 Render markdown code fences as full-width rules spanning the content area, and upgrade the fence info string with language decoration, titles, and line numbers that Pi's built-in renderer does not support.
 

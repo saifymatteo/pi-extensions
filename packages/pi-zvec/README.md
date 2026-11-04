@@ -1,6 +1,8 @@
 # @saifymatteo/pi-zvec
 
-![pi-zvec screenshot](screenshot.png)
+![zvec_search hybrid results with Zvec index status in the footer](screenshot.png)
+
+*The agent calls `zvec_search` in hybrid mode, which combines lexical and semantic search (expanded here with Ctrl+O). The footer shows the index status.*
 
 ## Purpose and registrations
 

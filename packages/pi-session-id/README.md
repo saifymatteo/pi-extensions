@@ -1,6 +1,8 @@
 # pi-session-id
 
-![pi-session-id screenshot](screenshot.png)
+![/session-id confirming the copied session ID](screenshot.png)
+
+*`/session-id` copies the current session ID to the clipboard.*
 
 Copy the current session ID to the system clipboard.
 

@@ -1,6 +1,8 @@
 # Pi dotenv loader
 
-![pi-load-pi-dotenv screenshot](screenshot.png)
+![Environment variables from ~/.pi/agent/.env reaching a bash tool call](screenshot.png)
+
+*With this extension, variables from `~/.pi/agent/.env`, including `${VAR}` expansion, reach the tools the agent runs. Stock pi passes nothing through.*
 
 Loads environment variables from the Pi agent directory without replacing existing environment values.
 

@@ -1,6 +1,8 @@
 # @saifymatteo/pi-bg-bash
 
-![pi-bg-bash screenshot](screenshot.png)
+![The agent runs npm test in the background, keeps working, and the result arrives as its own row](screenshot.png)
+
+*The agent starts `npm test` with `background: true` and keeps working. When the job exits, its result arrives as a separate row. Ctrl+O expands that row to the output tail.*
 
 ## Purpose and registrations
 

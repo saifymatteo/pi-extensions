@@ -1,6 +1,8 @@
 # @saifymatteo/pi-vision
 
-![pi-vision screenshot](screenshot.png)
+![A text-only model answering about an image via a vision model description](screenshot.png)
+
+*The main model here is text-only. Stock pi drops the image. With pi-vision, a configured vision model describes the image and the main model works from that description.*
 
 ## Purpose and registrations
 

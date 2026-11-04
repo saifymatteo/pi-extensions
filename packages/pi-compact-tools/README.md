@@ -1,6 +1,8 @@
 # Compact tool cards
 
-![pi-compact-tools screenshot](screenshot.png)
+![Four tool calls folded into one card, then expanded with Ctrl+O](screenshot.png)
+
+*Four tool calls in a row fold into one summary card. Ctrl+O expands it, and each call keeps its own status and output.*
 
 Groups consecutive tool calls into compact expandable transcript cards.
 

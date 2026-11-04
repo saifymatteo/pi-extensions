@@ -1,6 +1,8 @@
 # pi-model-go
 
-![pi-model-go screenshot](screenshot.png)
+![/model-go picker sorted by effective price with credit multipliers and intelligence scores](screenshot.png)
+
+*`/model-go` lists OpenCode Go models sorted by effective price (input ÷ plan credit), with context size, intelligence score and credit multiplier.*
 
 Cost-aware model picker showing registry prices/context, OpenCode Go credit multipliers and stencil.so intelligence scores. Source describes it as a port of rizal72/oc-models-pro.
 
