@@ -1,0 +1,10 @@
+{
+  "name": "pi-extensions-screenshots",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@xterm/headless": "^6.0.0",
+    "node-pty": "^1.1.0"
+  },
+  "description": "Screenshot harness for package READMEs (not published)"
+}

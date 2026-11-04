@@ -10,3 +10,5 @@ coverage/
 auth.json
 coding-agent.json
 .DS_Store
+scripts/screenshots/node_modules/
+scripts/screenshots/html/
