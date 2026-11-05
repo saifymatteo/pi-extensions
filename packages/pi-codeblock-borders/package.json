@@ -1,12 +1,13 @@
 {
   "name": "@saifymatteo/pi-codeblock-borders",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "license": "AGPL-3.0-only",
   "description": "Decorated code fences",
   "engines": {
     "node": ">=24"
   },
   "pi": {
+    "image": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-codeblock-borders/screenshot.png",
     "extensions": [
       "./src/index.ts"
     ]
@@ -22,7 +23,8 @@
     "@earendil-works/pi-tui": "*"
   },
   "keywords": [
-    "pi-package"
+    "pi-package",
+    "pi-extension"
   ],
   "publishConfig": {
     "access": "public"

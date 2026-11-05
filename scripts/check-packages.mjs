@@ -9,6 +9,18 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const json = path => JSON.parse(readFileSync(path, 'utf8'));
 const manifest = json(resolve(root, 'package.json'));
 const inventory = json(resolve(root, 'inventory.json'));
+for (const [path, preview] of [
+  ['package.json', 'demo.gif'],
+  ...inventory.extensions.map(({ directory }) => [`packages/${directory}/package.json`, `packages/${directory}/screenshot.png`]),
+]) {
+  const pkg = json(resolve(root, path));
+  for (const keyword of ['pi-package', 'pi-extension']) {
+    assert.ok(pkg.keywords?.includes(keyword), `${pkg.name}: missing gallery keyword ${keyword}`);
+  }
+  assert.equal(pkg.keywords.includes('pi-skill'), Boolean(pkg.pi.skills?.length), `${pkg.name}: skill classification must match bundled skills`);
+  assert.equal(pkg.pi.image, `https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/${preview}`, `${pkg.name}: gallery preview URL must match its asset`);
+  assert.ok(existsSync(resolve(root, preview)), `${pkg.name}: missing gallery preview asset`);
+}
 const hostPackages = new Set(['@earendil-works/pi-ai', '@earendil-works/pi-agent-core', '@earendil-works/pi-coding-agent', '@earendil-works/pi-tui', 'typebox']);
 const files = directory => readdirSync(directory, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? files(resolve(directory, entry.name)) : [resolve(directory, entry.name)]);
 const inside = (path, directory) => { const rel = relative(directory, path); return rel === '' || (!rel.startsWith('..' + sep) && rel !== '..' && !isAbsolute(rel)); };

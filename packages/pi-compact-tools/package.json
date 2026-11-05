@@ -1,11 +1,12 @@
 {
   "name": "@saifymatteo/pi-compact-tools",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Groups consecutive tool calls into compact expandable transcript cards.",
   "type": "module",
   "license": "AGPL-3.0-only",
   "keywords": [
-    "pi-package"
+    "pi-package",
+    "pi-extension"
   ],
   "files": [
     "src",
@@ -14,6 +15,7 @@
     "LICENSE"
   ],
   "pi": {
+    "image": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-compact-tools/screenshot.png",
     "extensions": [
       "./src/index.ts"
     ]
