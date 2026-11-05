@@ -36,13 +36,13 @@ const serviceModels = { 'agent/extensions/service-models.json': ({ port }) => ({
 ] } } }) };
 // files whose content depends on the provider port
 const portFiles = map => ({ agent, port }) => { for (const [rel, fn] of Object.entries(map)) { const p = join(agent, rel.slice(6)); mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, JSON.stringify(fn({ port }), null, 2)); } };
-const json = (res, body) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
+export const json = (res, body) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
 
-const BUG_PNG = join(HERE, 'assets', 'bug.png');
-const CLIP_ENV = { NODE_OPTIONS: `--require ${join(HERE, 'fake-clip.cjs')}`, FAKE_CLIP_PNG: BUG_PNG };
-const KITTY = { PI_IMAGE_PROTOCOL: 'kitty' };
+export const BUG_PNG = join(HERE, 'assets', 'bug.png');
+export const CLIP_ENV = { NODE_OPTIONS: `--require ${join(HERE, 'fake-clip.cjs')}`, FAKE_CLIP_PNG: BUG_PNG };
+export const KITTY = { PI_IMAGE_PROTOCOL: 'kitty' };
 const lastUserText = req => { const m = [...(req.messages ?? [])].reverse().find(x => x.role === 'user'); return typeof m?.content === 'string' ? m.content : (m?.content ?? []).map(p => p.text ?? '').join(' '); };
-const allText = req => JSON.stringify(req.messages ?? []);
+export const allText = req => JSON.stringify(req.messages ?? []);
 const footerFrom = snap => { const L = snap.lines; const i = L.findIndex(l => /~\/acme-api/.test(lineText(l))); return rows(snap, { from: i - 1 }); };
 
 // --- seeded session store ---------------------------------------------------
@@ -69,7 +69,7 @@ function writeSession(agent, { cwd, conv, name, ageDays = 0, parent }) {
   return file;
 }
 const PROJECTS = home => ({ api: join(home, 'acme-api'), web: join(home, 'acme-web'), infra: join(home, 'infra') });
-function seedStore({ home, agent }, { old = false } = {}) {
+export function seedStore({ home, agent }, { old = false } = {}) {
   const P = PROJECTS(home);
   for (const p of Object.values(P)) mkdirSync(p, { recursive: true });
   const s = (cwd, name, u, ageDays, parent) => writeSession(agent, { cwd, name, ageDays, parent, conv: [[u, 'Done — see the diff above.']] });
@@ -422,6 +422,8 @@ export const SHOTS = {
   },
 };
 
+// Importable (demo.mjs reuses the fixtures above); runs only as the entry point.
+if (import.meta.main) {
 const names = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(SHOTS);
 let failed = 0;
 for (const name of names) {
@@ -435,3 +437,4 @@ for (const name of names) {
 }
 closeBrowser();
 process.exit(failed ? 1 : 0);
+}

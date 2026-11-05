@@ -15,7 +15,8 @@
     "dev": "node scripts/dev.mjs",
     "smoke": "node scripts/smoke.mjs",
     "context": "node scripts/context-audit.mjs",
-    "screenshots": "node scripts/screenshots/shots.mjs"
+    "screenshots": "node scripts/screenshots/shots.mjs",
+    "demo": "node scripts/screenshots/demo.mjs"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "1.4.0",
@@ -28,6 +29,7 @@
     "node": ">=24"
   },
   "pi": {
+    "image": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/demo.gif",
     "extensions": [
       "./packages/pi-load-pi-dotenv/src/index.ts",
       "./packages/pi-bg-bash/src/index.ts",

@@ -4,7 +4,10 @@
   "type": "module",
   "dependencies": {
     "@xterm/headless": "^6.0.0",
-    "node-pty": "^1.1.0"
+    "gifenc": "1.0.3",
+    "node-pty": "^1.1.0",
+    "omggif": "1.0.10",
+    "pngjs": "7.0.0"
   },
   "description": "Screenshot harness for package READMEs (not published)"
 }

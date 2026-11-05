@@ -2,6 +2,8 @@
 
 Reusable pieces of a personal Pi setup, packaged separately from the setup itself.
 
+![Demo: every extension in this collection loaded into one Pi session](demo.gif)
+
 **Work in progress.** Packages are licensed AGPL-3.0-only ([NOTICE.md](NOTICE.md)) and publish through GitHub Actions when tagged: each extension individually, plus the root as the all-in-one collection [`@saifymatteo/pi-extensions`](https://github.com/saifymatteo/pi-extensions). Git is local for now, with no GitHub repository yet.
 
 Each package README opens with a screenshot of what it adds. The screenshots are real captures, not mockups: stock Pi 1.4.0 driven by a scripted demo model, in an isolated agent home. The catalogue below shows them as thumbnails; click one for the package README.
@@ -30,6 +32,7 @@ Host-provided Pi packages (`@earendil-works/*`) are declared only as package pee
 - `smoke`: loads each package through isolated host help/startup. Checks module/factory loading, not session events, interactive rendering, models, external CLIs, or backend compatibility. The host is located automatically (`PI_HOST`, `pi` on PATH, then `pi-bolt` for a Pi-Bolt build, then the local `~/.pi-bolt` install). Pi-Bolt is optional; set `PI_HOST` to another executable to compare hosts. A pass here does not prove compatibility with a different host build.
 - `context`: measures what each package adds to the first-turn context window. Current result: the whole collection costs about **1.7k tokens** on top of stock Pi, and 17 of 22 packages contribute nothing (they register hooks, commands, or UI patches only). Measured by capturing the actual request Pi sends to a local provider, against the pinned stock host, with machine state excluded. First-turn static cost only: runtime injections (tool results, hook-driven messages) are not measured. Not part of the `check` gate.
 - `screenshots`: regenerates each `packages/<name>/screenshot.png` (`npm run screenshots -- pi-bg-bash` for one). Drives the pinned stock host in a pseudo-terminal against a scripted local model and fake service endpoints, in a throwaway `/tmp/demo` home, with a stubbed clipboard. macOS only for now (font path, clipboard stub). Needs `agent-browser` on PATH. One-time setup: `npm ci --prefix scripts/screenshots`, then make node-pty's helper executable (`chmod +x scripts/screenshots/node_modules/node-pty/prebuilds/*/spawn-helper`) if npm skipped its install script. Not part of the `check` gate.
+- `demo`: re-records the root `demo.gif` (also the gallery preview via `pi.image`): one session with the whole root collection loaded, same harness and setup as `screenshots`. `DRY=1` prints each scene's screen without rendering. Not part of the `check` gate.
 
 ## Isolated sessions
 
