@@ -1,6 +1,6 @@
 {
   "name": "@saifymatteo/pi-load-pi-dotenv",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Loads environment variables from the Pi agent directory without replacing existing environment values.",
   "type": "module",
   "license": "AGPL-3.0-only",
