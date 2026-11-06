@@ -15,7 +15,7 @@
 //                        vector → semantic-only
 //                        hybrid/auto → positional hybrid query
 //   - /zvec-init /zvec-sync /zvec-status
-//   - session_start : CLI check (report once if missing), config setup,
+//   - session_start : non-blocking CLI check (report once if missing), config setup,
 //                     index discovery by walking up from cwd for .zvec-grep/,
 //                     startup sync when indexed, auto-index when not (bounded
 //                     by home dir / filesystem root)
@@ -55,7 +55,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { appendFileSync, existsSync, realpathSync } from "node:fs";
-import { execSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import * as path from "node:path";
@@ -248,19 +247,21 @@ function textResult(text: string) {
 // package's JS entry once and drive it with `node` directly: no shell involved,
 // every argument preserved verbatim.
 let zgJsEntry: string | null | undefined;
-function resolveZgJsEntry(): string | null {
+async function resolveZgJsEntry(pi: ExtensionAPI, signal?: AbortSignal): Promise<string | null> {
+	signal?.throwIfAborted();
 	if (zgJsEntry !== undefined) return zgJsEntry;
-	zgJsEntry = null;
 	try {
-		const root = execSync("npm root -g", {
-			encoding: "utf8",
+		const result = await pi.exec("cmd.exe", ["/d", "/s", "/c", "npm", "root", "-g"], {
 			timeout: CLI_CHECK_TIMEOUT_MS,
-			stdio: ["ignore", "pipe", "ignore"],
-		}).trim();
-		const entry = path.join(root, "@zvec", "zvec-grep", "dist", "cli", "index.js");
-		if (existsSync(entry)) zgJsEntry = entry;
+			signal,
+		});
+		signal?.throwIfAborted();
+		const entry = path.join(result.stdout.trim(), "@zvec", "zvec-grep", "dist", "cli", "index.js");
+		zgJsEntry = result.code === 0 && !result.killed && existsSync(entry) ? entry : null;
 	} catch {
-		/* no npm / no global install: fall back to the shell launcher */
+		// Cancellation is not a missing installation and must not poison the cache.
+		signal?.throwIfAborted();
+		zgJsEntry = null;
 	}
 	return zgJsEntry;
 }
@@ -271,11 +272,12 @@ async function execZg(
 	options: { signal?: AbortSignal; timeout?: number; cwd?: string } = {},
 ) {
 	if (process.platform === "win32") {
-		const entry = resolveZgJsEntry();
+		const entry = await resolveZgJsEntry(pi, options.signal);
 		if (entry) {
 			try {
 				return await pi.exec("node", [entry, ...args], options);
 			} catch {
+				options.signal?.throwIfAborted();
 				/* node missing from PATH: fall back to the shim below */
 			}
 		}
@@ -369,16 +371,26 @@ function sessionIdOf(ctx: ExtensionContext): string {
 }
 
 export default function zvec(pi: ExtensionAPI) {
-	// ── shared CLI availability check ─────────────────────────────────────
+	let initialization: Promise<void> | null = null;
+	let cliCheck: Promise<boolean> | null = null;
+
+	// Share a cancellable probe across startup and concurrent first calls.
 	async function ensureCli(pi2: ExtensionAPI): Promise<boolean> {
 		if (cliAvailable !== null) return cliAvailable;
-		try {
-			const r = await execZg(pi2, ["version"], { timeout: CLI_CHECK_TIMEOUT_MS });
-			cliAvailable = r.code === 0;
-		} catch {
-			cliAvailable = false;
-		}
-		return cliAvailable;
+		const gen = sessionGen;
+		const signal = runtimeAbort.signal;
+		cliCheck ??= (async () => {
+			try {
+				const r = await execZg(pi2, ["version"], { timeout: CLI_CHECK_TIMEOUT_MS, signal });
+				if (gen !== sessionGen || signal.aborted) return false;
+				cliAvailable = r.code === 0 && !r.killed;
+			} catch {
+				if (gen !== sessionGen || signal.aborted) return false;
+				cliAvailable = false;
+			}
+			return cliAvailable === true;
+		})();
+		return cliCheck;
 	}
 
 	// ── UI helpers: drop writes from a replaced session, never crash pi ───
@@ -517,7 +529,14 @@ export default function zvec(pi: ExtensionAPI) {
 			limit: Type.Optional(Type.Integer({ description: "Maximum results per group" })),
 		}),
 		execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
-			if (!(await ensureCli(pi))) return textResult(INSTALL_HINT);
+			const lifecycle = runtimeAbort.signal;
+			await initialization;
+			lifecycle.throwIfAborted();
+			signal?.throwIfAborted();
+			const available = await ensureCli(pi);
+			lifecycle.throwIfAborted();
+			signal?.throwIfAborted();
+			if (!available) return textResult(INSTALL_HINT);
 			const root = params.path ? path.resolve(params.path) : (findIndexRoot(ctx.cwd) ?? ctx.cwd);
 			const mode: SearchMode = params.mode ?? "auto";
 			const args = buildSearchArgs({
@@ -582,6 +601,8 @@ export default function zvec(pi: ExtensionAPI) {
 				const token = indexes ? ++opSeq : 0;
 				if (token) currentOpToken = token;
 				try {
+					await initialization;
+					if (gen !== sessionGen || runtimeAbort.signal.aborted) return;
 					await command.handler(args, ctx);
 				} catch (err) {
 					reportError(ctx, gen, `Zvec command /${name} failed`, err instanceof Error ? (err.stack ?? err.message) : String(err));
@@ -686,29 +707,23 @@ export default function zvec(pi: ExtensionAPI) {
 
 	// ── session_start: CLI check → config → auto-index / startup sync ─────
 	// ── session_shutdown: kill in-flight zg children, invalidate UI writes ──
-	pi.on("session_shutdown", () => {
+	pi.on("session_shutdown", async () => {
 		cancelRetry();
 		runtimeAbort.abort();
 		sessionGen++;
 		currentOpToken = 0;
 		pendingSync = false;
 		latestCtx = null;
+		const pending = initialization;
+		initialization = null;
+		cliCheck = null;
+		await pending?.catch(() => {});
 	});
 
-	pi.on("session_start", async (_event, ctx) => {
-		runtimeAbort.abort();
-		runtimeAbort = new AbortController();
-		const gen = ++sessionGen;
-		cancelRetry();
-		retriesExhausted = false;
-		state = null;
-		latestCtx = ctx;
-		currentOpToken = 0; // invalidate any op from a replaced session
-		pendingSync = false;
-		status(ctx, gen, undefined);
-
+	async function initialize(ctx: ExtensionContext, gen: number, signal: AbortSignal) {
+		if (gen !== sessionGen || signal.aborted) return;
 		if (!(await ensureCli(pi))) {
-			if (gen !== sessionGen) return;
+			if (gen !== sessionGen || signal.aborted) return;
 			if (ctx.hasUI && !notifiedMissing) {
 				notifiedMissing = true;
 				reportError(ctx, gen, INSTALL_HINT);
@@ -716,26 +731,53 @@ export default function zvec(pi: ExtensionAPI) {
 			return;
 		}
 
+		if (gen !== sessionGen || signal.aborted) return;
 		await ensureGlobalConfig();
+		if (gen !== sessionGen || signal.aborted) return;
 		const indexedRoot = findIndexRoot(ctx.cwd);
 		const projectRoot = indexedRoot ?? ctx.cwd;
-		const globalCfg = await readConfigFile(globalConfigPath());
-		const projectCfg = await readConfigFile(path.join(projectRoot, ".pi", "zvec.json"));
+		const [globalCfg, projectCfg] = await Promise.all([
+			readConfigFile(globalConfigPath()),
+			readConfigFile(path.join(projectRoot, ".pi", "zvec.json")),
+		]);
 		const config: ZvecConfig = {
 			autoInit: boolOr(projectCfg, globalCfg, "autoInit"),
 			syncOnSettle: boolOr(projectCfg, globalCfg, "syncOnSettle"),
 			embedding: embeddingOr(projectCfg, globalCfg),
 		};
-		if (gen !== sessionGen) return;
+		if (gen !== sessionGen || signal.aborted) return;
 		state = { config, projectRoot, indexed: indexedRoot !== null };
 
+		// A manual init/sync requested during setup already owns the writer slot.
+		if (currentOpToken !== 0) return;
 		if (indexedRoot !== null) {
 			await ensureIndexGitignore(indexedRoot);
 			// Startup sync on the index owner (not cwd — cwd may be a subdir).
-			if (gen === sessionGen && ctx.hasUI) spawnOp("sync", ctx, gen, projectRoot);
+			if (gen === sessionGen && !signal.aborted && currentOpToken === 0 && ctx.hasUI) spawnOp("sync", ctx, gen, projectRoot);
 		} else if (config.autoInit && ctx.hasUI && !isHomeOrRoot(ctx.cwd)) {
 			spawnOp("init", ctx, gen, ctx.cwd);
 		}
+	}
+
+	pi.on("session_start", (_event, ctx) => {
+		runtimeAbort.abort();
+		runtimeAbort = new AbortController();
+		const signal = runtimeAbort.signal;
+		const gen = ++sessionGen;
+		cancelRetry();
+		retriesExhausted = false;
+		state = null;
+		latestCtx = ctx;
+		currentOpToken = 0;
+		pendingSync = false;
+		cliCheck = null;
+		status(ctx, gen, undefined);
+
+		// Startup never waits; early tool/command calls share this setup promise.
+		initialization = Promise.resolve().then(() => initialize(ctx, gen, signal));
+		void initialization.catch((error) => {
+			if (!signal.aborted) reportError(ctx, gen, "Zvec startup failed", error instanceof Error ? error.message : String(error));
+		});
 	});
 
 	// ── agent_settled: single-flight incremental index after each turn ────

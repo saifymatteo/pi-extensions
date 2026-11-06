@@ -12,7 +12,7 @@
 // Provides:
 //   - codegraph_explore tool : symbol source + call paths from the .codegraph/ index
 //   - /codegraph-init /codegraph-sync /codegraph-status /codegraph-unlock
-//   - session_start : CLI check (report once if missing), config setup, auto-init
+//   - session_start : non-blocking CLI check (report once if missing), config setup, auto-init
 //                     when no index is found walking up from cwd (bounded by home
 //                     dir / filesystem root), and startup sync when indexed
 //   - agent_settled : single-flight sync after each completed turn (at most one
@@ -199,16 +199,26 @@ async function execCg(
 }
 
 export default function codegraph(pi: ExtensionAPI) {
-	// ── shared CLI availability check ─────────────────────────────────────
+	let initialization: Promise<void> | null = null;
+	let cliCheck: Promise<boolean> | null = null;
+
+	// Share a cancellable probe across startup and concurrent first calls.
 	async function ensureCli(pi2: ExtensionAPI): Promise<boolean> {
 		if (cliAvailable !== null) return cliAvailable;
-		try {
-			const r = await execCg(pi2, ["version"], { timeout: CLI_CHECK_TIMEOUT_MS });
-			cliAvailable = r.code === 0;
-		} catch {
-			cliAvailable = false;
-		}
-		return cliAvailable;
+		const gen = sessionGen;
+		const signal = runtimeAbort.signal;
+		cliCheck ??= (async () => {
+			try {
+				const r = await execCg(pi2, ["version"], { timeout: CLI_CHECK_TIMEOUT_MS, signal });
+				if (gen !== sessionGen || signal.aborted) return false;
+				cliAvailable = r.code === 0 && !r.killed;
+			} catch {
+				if (gen !== sessionGen || signal.aborted) return false;
+				cliAvailable = false;
+			}
+			return cliAvailable === true;
+		})();
+		return cliCheck;
 	}
 
 	// ── UI helpers: drop writes from a replaced session, never crash pi ───
@@ -335,7 +345,14 @@ export default function codegraph(pi: ExtensionAPI) {
 			),
 		}),
 		execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
-			if (!(await ensureCli(pi))) return textResult(INSTALL_HINT);
+			const lifecycle = runtimeAbort.signal;
+			await initialization;
+			lifecycle.throwIfAborted();
+			signal?.throwIfAborted();
+			const available = await ensureCli(pi);
+			lifecycle.throwIfAborted();
+			signal?.throwIfAborted();
+			if (!available) return textResult(INSTALL_HINT);
 			const cwd = params.path ?? ctx.cwd;
 			const args = ["explore", params.query, "-p", cwd];
 			if (typeof params.maxFiles === "number" && params.maxFiles > 0) {
@@ -366,6 +383,8 @@ export default function codegraph(pi: ExtensionAPI) {
 				const token = indexes ? ++opSeq : 0;
 				if (token) currentOpToken = token;
 				try {
+					await initialization;
+					if (gen !== sessionGen || runtimeAbort.signal.aborted) return;
 					await command.handler(args, ctx);
 				} catch (err) {
 					reportError(ctx, gen, `CodeGraph command /${name} failed`, err instanceof Error ? (err.stack ?? err.message) : String(err));
@@ -505,30 +524,24 @@ export default function codegraph(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.on("session_shutdown", () => {
+	pi.on("session_shutdown", async () => {
 		cancelRetry();
 		runtimeAbort.abort();
 		sessionGen++;
 		currentOpToken = 0;
 		pendingSync = false;
 		latestCtx = null;
+		const pending = initialization;
+		initialization = null;
+		cliCheck = null;
+		await pending?.catch(() => {});
 	});
 
 	// ── session_start: CLI check → config → auto-init / startup sync ──────
-	pi.on("session_start", async (_event, ctx) => {
-		runtimeAbort.abort();
-		runtimeAbort = new AbortController();
-		const gen = ++sessionGen;
-		cancelRetry();
-		retriesExhausted = false;
-		state = null;
-		latestCtx = ctx;
-		currentOpToken = 0; // invalidate any op from a replaced session
-		pendingSync = false;
-		status(ctx, gen, undefined);
-
+	async function initialize(ctx: ExtensionContext, gen: number, signal: AbortSignal) {
+		if (gen !== sessionGen || signal.aborted) return;
 		if (!(await ensureCli(pi))) {
-			if (gen !== sessionGen) return;
+			if (gen !== sessionGen || signal.aborted) return;
 			if (ctx.hasUI && !notifiedMissing) {
 				notifiedMissing = true;
 				reportError(ctx, gen, INSTALL_HINT);
@@ -537,24 +550,51 @@ export default function codegraph(pi: ExtensionAPI) {
 		}
 
 		// Config setup happens in every mode; background spawning is TUI/RPC only.
+		if (gen !== sessionGen || signal.aborted) return;
 		await ensureGlobalConfig();
+		if (gen !== sessionGen || signal.aborted) return;
 		const indexedRoot = findIndexRoot(ctx.cwd);
 		const projectRoot = indexedRoot ?? ctx.cwd;
-		const globalCfg = await readConfigFile(globalConfigPath());
-		const projectCfg = await readConfigFile(path.join(projectRoot, ".pi", "codegraph.json"));
+		const [globalCfg, projectCfg] = await Promise.all([
+			readConfigFile(globalConfigPath()),
+			readConfigFile(path.join(projectRoot, ".pi", "codegraph.json")),
+		]);
 		const config: CgConfig = {
 			autoInit: boolOr(projectCfg, globalCfg, "autoInit"),
 			syncOnSettle: boolOr(projectCfg, globalCfg, "syncOnSettle"),
 		};
-		if (gen !== sessionGen) return;
+		if (gen !== sessionGen || signal.aborted) return;
 		state = { config, projectRoot, indexed: indexedRoot !== null };
 
+		// A manual init/sync requested during setup already owns the writer slot.
+		if (currentOpToken !== 0) return;
 		if (indexedRoot !== null) {
 			// Startup sync on the index owner (not cwd — cwd may be a subdir).
 			if (ctx.hasUI) spawnOp("sync", ctx, gen, projectRoot);
 		} else if (config.autoInit && ctx.hasUI && !isHomeOrRoot(ctx.cwd)) {
 			spawnOp("init", ctx, gen, ctx.cwd);
 		}
+	}
+
+	pi.on("session_start", (_event, ctx) => {
+		runtimeAbort.abort();
+		runtimeAbort = new AbortController();
+		const signal = runtimeAbort.signal;
+		const gen = ++sessionGen;
+		cancelRetry();
+		retriesExhausted = false;
+		state = null;
+		latestCtx = ctx;
+		currentOpToken = 0;
+		pendingSync = false;
+		cliCheck = null;
+		status(ctx, gen, undefined);
+
+		// Startup never waits; early tool/command calls share this setup promise.
+		initialization = Promise.resolve().then(() => initialize(ctx, gen, signal));
+		void initialization.catch((error) => {
+			if (!signal.aborted) reportError(ctx, gen, "CodeGraph startup failed", error instanceof Error ? error.message : String(error));
+		});
 	});
 
 	// ── agent_settled: single-flight sync after each completed turn ────────

@@ -121,6 +121,9 @@ async function trashSearchText(trash: string, batch: TrashBatch): Promise<{ sear
 export default function sessionRetention(pi: ExtensionAPI, options: { guard?: () => Promise<void>; now?: () => number } = {}) {
 	const now = options.now ?? Date.now;
 	let started = false;
+	let pendingAutomatic = false;
+	let automaticTimer: ReturnType<typeof setTimeout> | undefined;
+	let automatic: Promise<void> | undefined;
 	let maintaining = false;
 	let lifecycle = new AbortController();
 	let operation: Promise<unknown> | undefined;
@@ -159,10 +162,18 @@ export default function sessionRetention(pi: ExtensionAPI, options: { guard?: ()
 	};
 	pi.on("session_before_switch", preventSwitch);
 	pi.on("session_before_fork", preventSwitch);
+	function cancelAutomatic() {
+		pendingAutomatic = false;
+		if (automaticTimer !== undefined) clearTimeout(automaticTimer);
+		automaticTimer = undefined;
+	}
 	pi.on("session_shutdown", async (_event, ctx) => {
+		cancelAutomatic();
 		status(ctx, undefined);
 		lifecycle.abort();
 		closeDialog?.();
+		// Drain the background handler as well as file work before replacing its context.
+		await automatic?.catch(() => {});
 		// Never release a lock while a file operation can still be using it.
 		await operation?.catch(() => {});
 		started = false;
@@ -199,7 +210,13 @@ export default function sessionRetention(pi: ExtensionAPI, options: { guard?: ()
 			].join("\n");
 			if (previewOnly) { status(ctx, "Session cleanup: preview — no changes"); await ctx.ui.confirm("Preview only — nothing will be changed", summary, { signal }); return; }
 			if (!state.approved || state.paused) {
-				if (!manual && !count && !expired.length) { state.lastRun = time; await saveState(paths.trash, state); return; }
+				if (!manual) {
+					// Background discovery must not replace the editor with an approval dialog.
+					if (count || expired.length) ctx.ui.notify("Session cleanup is available. Run /session-cleanup to review and enable daily automatic cleanup.", "info");
+					state.lastRun = time;
+					await saveState(paths.trash, state);
+					return;
+				}
 				status(ctx, "Session cleanup: awaiting approval…");
 				const approved = await ctx.ui.confirm("Enable daily session cleanup?", `${summary}\n\nApprove this cleanup and future automatic cleanup at startup (at most daily)?`, { signal });
 				signal.throwIfAborted();
@@ -228,13 +245,33 @@ export default function sessionRetention(pi: ExtensionAPI, options: { guard?: ()
 		});
 	}
 
-	pi.on("session_start", async (_event, ctx) => {
+	function scheduleAutomatic(ctx: ExtensionContext) {
+		if (!pendingAutomatic || automaticTimer !== undefined || automatic || maintaining) return;
+		const signal = lifecycle.signal;
+		if (signal.aborted) return;
+		// Yield before starting maintenance; startup never awaits this task.
+		automaticTimer = setTimeout(() => {
+			automaticTimer = undefined;
+			if (signal.aborted || !pendingAutomatic || !ctx.isIdle() || maintaining) return;
+			pendingAutomatic = false;
+			automatic = cleanup(ctx, false)
+				.catch((error) => {
+					if (!signal.aborted) {
+						try { ctx.ui.notify(message(error), "warning"); } catch { /* UI failures must not reject a detached task. */ }
+					}
+				})
+				.finally(() => { automatic = undefined; });
+		}, 0);
+		automaticTimer.unref();
+	}
+	pi.on("session_start", (_event, ctx) => {
 		if (lifecycle.signal.aborted) lifecycle = new AbortController();
 		if (started || ctx.mode !== "tui" || !ctx.sessionManager.getSessionFile()) return;
 		started = true;
-		const signal = lifecycle.signal;
-		try { await cleanup(ctx, false); } catch (error) { if (!signal.aborted) ctx.ui.notify(message(error), "warning"); }
+		pendingAutomatic = true;
+		scheduleAutomatic(ctx);
 	});
+	pi.on("agent_settled", (_event, ctx) => { scheduleAutomatic(ctx); });
 
 	pi.registerCommand("session-cleanup", {
 		description: "Clean inactive session families [preview|pause]",
@@ -250,6 +287,7 @@ export default function sessionRetention(pi: ExtensionAPI, options: { guard?: ()
 			const signal = lifecycle.signal;
 			const action = args.trim();
 			if (!["", "preview", "pause"].includes(action)) return ctx.ui.notify("Usage: /session-cleanup [preview|pause]", "info");
+			cancelAutomatic();
 			try {
 				if (action === "pause") {
 					const paths = storePaths(ctx);
@@ -265,6 +303,7 @@ export default function sessionRetention(pi: ExtensionAPI, options: { guard?: ()
 		description: "Search Trash by names, first prompts, IDs or paths; restore a whole family",
 		handler: async (args, ctx) => {
 			if (ctx.mode !== "tui") return ctx.ui.notify("Session Trash requires interactive mode.", "warning");
+			cancelAutomatic();
 			const signal = lifecycle.signal;
 			try {
 				await ctx.waitForIdle();
