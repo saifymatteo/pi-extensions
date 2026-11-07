@@ -13,7 +13,8 @@
  *                         Offered drafts/queues are not receipts: only matching branch messages
  *                         confirm delivery, and unconfirmed outcomes remain queryable.
  *   job: "<id>"        -> OPTIONAL manual check: job "7" = status + output tail,
- *                         "7:out" = more output, "7:kill" = kill the job.
+ *                         "7:out" = more output, "7:stop" = graceful Ctrl+C,
+ *                         "7:kill" = immediate force kill of the tracked tree.
  *                         The latest 20 completions stay queryable until shutdown;
  *                         killing a completed job is a no-op.
  *
@@ -47,10 +48,9 @@
  * job's subshell can die before writing it (process-tree kill by a parent
  * harness, crash, manual taskkill). When the tracked pid is no longer alive
  * and no status file exists, the job is delivered as "finished, exit unknown"
- * instead of being polled forever. The aliveness check runs against the real
- * Windows pid (resolved via MSYS ps at launch); on Windows, bash's $! is a
- * synthetic MSYS pid that Node's process.kill cannot see, so a job without a
- * resolved winpid is only ever finished by its status file appearing.
+ * instead of being polled forever. Windows Bash and PowerShell jobs use a
+ * native launcher PID in a separate hidden console. Unix Bash jobs use a
+ * separate job-control group; neither launch path signals Pi's own console.
  *
  * Calls that set background:true are drawn with an inverted "Background" chip
  * prefixed to the shell call line in the transcript, and the delivered result
@@ -69,6 +69,10 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "typebox";
 import { Box, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { captureProcess, hasTrackedDescendants, stopProcessTree, type ProcessIdentity, type StopMode } from "./lib/process-control";
+import { readTail } from "./lib/output";
+import { windowsBashLaunchScript, windowsConsoleInputPrelude } from "./lib/windows-console";
+import { showJobPanel, type JobView } from "./lib/panel";
 
 // ---------------------------------------------------------------------------
 // Job registry (module state; jobs survive turns, not app restarts)
@@ -81,9 +85,15 @@ interface BgJob {
 	outPath: string;
 	errPath?: string; // powershell only (Start-Process cannot merge streams)
 	statusPath: string;
-	scriptPath?: string; // powershell only
+	scriptPath?: string; // Windows shell script
 	pid: number | null;
-	winPid?: number | null; // bash on Windows: real Windows pid (MSYS $! is synthetic)
+	winPid?: number | null; // native OS PID (Windows Start-Process; Unix launch marker)
+	identity?: ProcessIdentity;
+	identityReady?: Promise<void>;
+	stopUnavailable?: string;
+	stopping?: Promise<string>;
+	stopMode?: StopMode;
+	stopFailed?: boolean;
 	startedAt: number;
 	timer?: ReturnType<typeof setInterval>;
 	result?: { exit: string; secs: number };
@@ -118,13 +128,23 @@ function currentJob(job: BgJob): boolean {
 		job.sessionFile === currentCtx.sessionManager.getSessionFile();
 }
 
+function updateJobStatus(): void {
+	try {
+		if (!currentCtx?.hasUI) return;
+		const running = [...jobs.values()].filter(job => currentJob(job) && !job.result).length;
+		currentCtx.ui.setStatus("bg-bash", running ? `BG: ${running} running · /bg` : undefined);
+	} catch { /* A stale UI must not affect process execution or delivery. */ }
+}
+
 function invalidateSession(ctx?: ExtensionContext, replace = false): void {
+	try { if (currentCtx?.hasUI) currentCtx.ui.setStatus("bg-bash", undefined); } catch { /* Stale UI. */ }
 	if (idleFlush !== undefined) clearTimeout(idleFlush);
 	idleFlush = undefined;
 	sessionEpoch.abort(new Error("Shell wait invalidated by session change"));
 	sessionEpoch = new AbortController();
 	if (replace) sessionScope++;
 	currentCtx = ctx;
+	updateJobStatus();
 }
 
 // ---------------------------------------------------------------------------
@@ -143,7 +163,7 @@ const bgSchema = Type.Object({
 	job: Type.Optional(
 		Type.String({
 			description:
-				`Background job id returned by a previous background:true call. "7" = status + last 40 output lines, "7:out" = last 80 output lines, "7:kill" = kill a running job (no-op if completed). The latest ${MAX_COMPLETED_JOBS} completed jobs remain queryable until shutdown. When set, command is ignored.`,
+				`Background job id returned by a previous background:true call. "7" = status + last 40 output lines, "7:out" = last 80 output lines, "7:stop" = graceful Ctrl+C (no automatic escalation), "7:kill" = force kill the tracked process tree without grace (no-op if completed). The latest ${MAX_COMPLETED_JOBS} completed jobs remain queryable until shutdown. When set, command is ignored.`,
 		}),
 	),
 });
@@ -156,7 +176,7 @@ const GUIDELINE =
 	"background:true — you get a job id immediately while the command runs detached, and its exit code and " +
 	"output tail are delivered automatically when safe. Do independent work after dispatch; when blocked, " +
 	"use wait with explicit shell:<id>/agent:<id> jobs, or end your turn for push delivery. Do not answer redundant known result messages individually. On-demand checks without waiting: " +
-	"job:\"<id>\" (status), \"<id>:out\" (more output), \"<id>:kill\". Use wait instead of sleep or polling — " +
+	"job:\"<id>\" (status), \"<id>:out\" (more output), \"<id>:stop\" (graceful), \"<id>:kill\" (force). Use wait instead of sleep or polling — " +
 	"sleep-waits and poll loops are blocked. Foreground calls without an explicit timeout are killed after " +
 	`${DEFAULT_SHELL_TIMEOUT_S}s (runTimeout.maxSeconds) - set timeout for a different cap, or use background:true ` +
 	"for anything that may run longer.";
@@ -243,43 +263,36 @@ function injectCodemodeTimeout(input: { code?: unknown }): void {
 // ---------------------------------------------------------------------------
 
 function bashLaunchWrap(command: string, outPath: string, statusPath: string): string {
-	// Subshell: run the command, capture its exit code into the status file,
-	// all output into the out file, background the subshell, print its pid.
-	// On MSYS bash (Git Bash) $! is a synthetic MSYS pid Node's process.kill
-	// cannot check (a Windows pid lookup on it fails or hits an unrelated
-	// process by reuse), so the wrapper resolves the WINPID via ps. On
-	// macOS/Linux bash $! is already a real pid: report it as-is so the
-	// watcher's aliveness check keeps working there (BSD ps has different
-	// columns, so the MSYS ps lookup must not run there).
-	const resolvePid =
-		process.platform === "win32"
-			? `BG_WINPID=$(ps -p $BG_PID 2>/dev/null | awk -v p=$BG_PID '$1==p{print $4}'); `
-			: `BG_WINPID=$BG_PID; `;
-	return (
-		`( ${command}\necho $? > "${statusPath}" ) > "${outPath}" 2>&1 & ` +
-		`BG_PID=$!; ` +
-		resolvePid +
-		`echo "__PI_BG_PID:$BG_PID __PI_BG_WINPID:\${BG_WINPID:-0}"`
-	);
+	// Job control gives the detached job its own group and avoids Bash's usual
+	// ignored SIGINT disposition for asynchronous commands. Signal verified PIDs,
+	// not an unchecked process group. Windows uses a separate native console.
+	return `set -m; ( ${command}\necho $? > "${statusPath}" ) > "${outPath}" 2>&1 & ` +
+		`BG_PID=$!; echo "__PI_BG_PID:$BG_PID __PI_BG_WINPID:$BG_PID"`;
 }
 
 function psScriptFor(command: string, statusPath: string): string {
 	return [
+		windowsConsoleInputPrelude,
 		"$ErrorActionPreference = 'Continue'",
 		command,
-		`"exit=$LASTEXITCODE ok=$?" | Set-Content -LiteralPath '${statusPath}'`,
+		`"exit=$LASTEXITCODE ok=$?" | Set-Content -LiteralPath '${statusPath.replace(/'/g, "''")}'`,
 		"",
 	].join("\n");
 }
 
-function psLaunchWrap(scriptPath: string, outPath: string, errPath: string): string {
-	return (
-		"$exe = Get-Command pwsh -ErrorAction SilentlyContinue; " +
-		"if (-not $exe) { $exe = Get-Command powershell -ErrorAction Stop }; " +
-		"$p = Start-Process -FilePath $exe.Source -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File', " +
-		`'${scriptPath}' -RedirectStandardOutput '${outPath}' -RedirectStandardError '${errPath}' ` +
-		"-WindowStyle Hidden -PassThru; \"__PI_BG_PID:$($p.Id)\""
-	);
+function windowsLaunchWrap(scriptPath: string, outPath: string, errPath: string): string {
+	const literal = (value: string) => `'${value.replace(/'/g, "''")}'`;
+	// Start-Process joins ArgumentList: quote the script argument itself for spaces.
+	const scriptArg = literal(`"${scriptPath.replace(/\\/g, "/")}"`);
+	const executable = "$command = Get-Command pwsh -ErrorAction SilentlyContinue; " +
+		"if (-not $command) { $command = Get-Command powershell -ErrorAction Stop }; $exe = $command.Source; ";
+	const args = `@('-NoProfile','-ExecutionPolicy','Bypass','-File',${scriptArg})`;
+	// No -NoNewWindow: a new hidden console prevents Ctrl+C reaching Pi. The
+	// interrupt helper still authenticates console membership before signaling.
+	return "$ErrorActionPreference = 'Stop'; " + executable +
+		`$p = Start-Process -FilePath $exe -ArgumentList ${args} -WorkingDirectory (Get-Location).ProviderPath ` +
+		`-RedirectStandardOutput ${literal(outPath)} -RedirectStandardError ${literal(errPath)} ` +
+		"-WindowStyle Hidden -PassThru; \"__PI_BG_PID:$($p.Id) __PI_BG_WINPID:$($p.Id)\"";
 }
 
 // ---------------------------------------------------------------------------
@@ -296,12 +309,6 @@ function bashStatusCmd(job: BgJob): string {
 
 function bashOutCmd(job: BgJob): string {
 	return `tail -n 80 "${job.outPath}" 2>/dev/null || echo "(no output yet)"`;
-}
-
-function bashKillCmd(job: BgJob): string {
-	// Kill children first (pkill -P), then the subshell itself, so the command
-	// inside the subshell does not survive as an orphan.
-	return `pkill -P ${job.pid ?? 0} 2>/dev/null; kill ${job.pid ?? 0} 2>/dev/null && echo "kill signal sent to pid ${job.pid}" || echo "process ${job.pid} already gone"`;
 }
 
 function psStatusCmd(job: BgJob): string {
@@ -321,13 +328,6 @@ function psOutCmd(job: BgJob): string {
 	);
 }
 
-function psKillCmd(job: BgJob): string {
-	return (
-		`Stop-Process -Id ${job.pid ?? 0} -Force -ErrorAction SilentlyContinue; ` +
-		`if (Get-Process -Id ${job.pid ?? 0} -ErrorAction SilentlyContinue) { "still running" } else { "killed or already gone" }`
-	);
-}
-
 // ---------------------------------------------------------------------------
 // Completion watcher: poll the status file, hold outcomes while busy, and
 // deliver only at an actionable settle boundary or an idle fallback. A wait
@@ -336,13 +336,7 @@ function psKillCmd(job: BgJob): string {
 // ---------------------------------------------------------------------------
 
 function tailFile(path: string, lines: number): string {
-	try {
-		const content = readFileSync(path, "utf8");
-		const all = content.split("\n");
-		return all.slice(Math.max(0, all.length - lines)).join("\n").trimEnd();
-	} catch {
-		return "(no output)";
-	}
+	return readTail(path, lines);
 }
 
 function stopWatcher(job: BgJob) {
@@ -405,13 +399,14 @@ function trimHistory() {
 	} catch {
 		// Receipt lookup is best-effort during navigation; retain unconfirmed offers.
 	}
-	const completed = [...jobs.values()].filter((job) => job.result && !job.owner && (job.consumed || job.confirmed));
+	const completed = [...jobs.values()].filter((job) => job.result && !job.owner && (job.consumed || job.confirmed) &&
+		!job.identityReady && !(job.identity && hasTrackedDescendants(job.identity)));
 	for (const oldest of completed.slice(0, -MAX_COMPLETED_JOBS)) jobs.delete(oldest.id);
 }
 
 // One transition for watcher, claim and query: never read/deliver the same completion twice.
 function refreshCompletion(job: BgJob): void {
-	if (job.result) return;
+	if (job.result || job.stopping || job.stopFailed) return;
 	const statusExists = existsSync(job.statusPath);
 	const unknownExit = !statusExists && job.winPid != null && job.winPid > 0 && !processAlive(job.winPid);
 	if (!statusExists && !unknownExit) return;
@@ -421,11 +416,15 @@ function refreshCompletion(job: BgJob): void {
 		// A status file can be visible before its writer writes the exit code.
 		if (!exit) return;
 	}
+	finishJob(job, unknownExit ? "unknown - the process died before writing its status file" : exit);
+}
+
+function finishJob(job: BgJob, exitLabel: string): void {
+	if (job.result) return;
 	stopWatcher(job);
 	const secs = Math.max(1, Math.floor(Date.now() / 1000) - job.startedAt);
 	const tail = tailFile(job.outPath, 40);
 	const errTail = job.errPath ? tailFile(job.errPath, 20) : "";
-	const exitLabel = unknownExit ? "unknown - the process died before writing its status file" : exit;
 	job.result = { exit: exitLabel, secs };
 	job.outcome = {
 		source: "shell", id: job.id,
@@ -438,12 +437,83 @@ ${tail || "(no output)"}` +
 			(errTail ? `
 --- stderr ---
 ${errTail}` : ""),
-		details: { jobId: job.id, exit, secs, command: job.command, outPath: job.outPath, tail, errTail },
+		details: { jobId: job.id, exit: exitLabel, secs, command: job.command, outPath: job.outPath, tail, errTail },
 	};
 	jobs.delete(job.id);
 	jobs.set(job.id, job);
 	job.resolve(job.outcome);
 	trimHistory();
+	updateJobStatus();
+}
+
+/** Both the model and /bg use this transition; a wait lease retains delivery ownership. */
+function stopJob(pi: ExtensionAPI, job: BgJob, by: "user" | "agent", mode: StopMode = "graceful"): Promise<string> {
+	if (!currentJob(job)) return Promise.reject(new Error("Job belongs to another session"));
+	if (job.stopping) {
+		// Never report an in-flight graceful request as a completed force kill.
+		return mode === "force" && job.stopMode !== "force" ?
+			job.stopping.catch(() => {}).then(() => stopJob(pi, job, by, mode)) : job.stopping;
+	}
+	refreshCompletion(job);
+	if (job.result && !job.identityReady && !(job.identity && hasTrackedDescendants(job.identity))) {
+		return Promise.resolve(`Background job #${job.id} already finished; no signal sent.`);
+	}
+	job.stopMode = mode;
+	job.stopping = Promise.resolve().then(async () => {
+		await job.identityReady;
+		if (job.result && !(job.identity && hasTrackedDescendants(job.identity))) {
+			return `Background job #${job.id} already finished; no signal sent.`;
+		}
+		if (!job.identity) throw new Error(job.stopUnavailable ?? "No verified process identity; refusing to stop an unverified PID");
+		const hadResult = !!job.result;
+		const outcome = await stopProcessTree(job.identity, mode);
+		if (outcome === "stuck") throw new Error(mode === "graceful" ?
+			"Some tracked processes are still running; use Force kill to terminate survivors. No automatic escalation was performed." :
+			"Some tracked processes are still running; cleanup is incomplete and can be retried");
+		job.stopping = undefined;
+		job.stopFailed = false;
+		if (hadResult) {
+			// Command completion and child cleanup are distinct. Preserve its original
+			// result/lease and never send a second completion for leftover cleanup.
+			trimHistory();
+			return outcome === "gone" ? `Background job #${job.id}'s tracked processes were already gone; no signal sent.` :
+				`Background job #${job.id}'s tracked process tree is gone; its command result is unchanged.`;
+		}
+		if (outcome === "gone") refreshCompletion(job);
+		if (!job.result) finishJob(job, outcome === "gone" ? "unknown - process already gone" :
+			`${mode === "force" ? "force killed" : "stopped gracefully"} by ${by}`);
+		if (!job.owner && !job.submitted && !job.consumed) {
+			if (by === "agent") job.consumed = true;
+			else if (currentJob(job)) {
+				// Record the stop for the next normal turn, without waking an idle model.
+				job.submitted = true;
+				const { type: _type, ...message } = resultDraft(job);
+				try { pi.sendMessage(message, { triggerTurn: false, deliverAs: "followUp" }); }
+				catch { /* Acceptance is uncertain; retain the queryable result without retrying. */ }
+			}
+		}
+		return outcome === "gone" ? `Background job #${job.id} was already gone; no signal sent.` :
+			`Background job #${job.id} stopped; its tracked process tree is gone.`;
+	}).catch(error => { if (job.identity) job.stopFailed = true; throw error; })
+		.finally(() => { job.stopping = undefined; job.stopMode = undefined; updateJobStatus(); });
+	updateJobStatus();
+	return job.stopping;
+}
+
+function visibleJobs(): JobView[] {
+	const visible = [...jobs.values()].filter(currentJob);
+	return visible.sort((a, b) => Number(!b.result) - Number(!a.result) || b.id - a.id).map(job => {
+		const children = !!job.identity && hasTrackedDescendants(job.identity);
+		return {
+			id: job.id, command: job.command, tool: job.tool, running: !job.result,
+			stoppable: !job.result || !!job.identityReady || children,
+			state: job.stopping ? (job.stopMode === "force" ? "force killing" : "stopping gracefully") : job.result ?
+				`done, ${job.result.exit}${job.stopFailed ? " · cleanup incomplete" : children ? " · child cleanup available" : ""}` :
+				job.stopFailed ? "cleanup incomplete" : job.identity ? "running" :
+				job.identityReady ? "running (verifying PID)" : "running (stop unavailable)",
+			secs: job.result?.secs ?? Math.max(0, Math.floor(Date.now() / 1000) - job.startedAt),
+		};
+	});
 }
 
 function resultDraft(job: BgJob) {
@@ -538,7 +608,7 @@ function registerBgTool(pi: ExtensionAPI, toolName: "bash" | "powershell", built
 		`For long-running or blocking commands (builds, servers, installs, tests, waits), set background:true: ` +
 		`the call returns a job id immediately, the command runs detached, and its exit code and output tail are ` +
 		`delivered to you automatically as a new message when it finishes. A background call can be followed up ` +
-		`with job:"<id>" (status + output tail), "<id>:out" (more output), or "<id>:kill". ` +
+		`with job:"<id>" (status + output tail), "<id>:out" (more output), "<id>:stop" (graceful, no automatic escalation), or "<id>:kill" (immediate force kill of the tracked tree). ` +
 		`The latest ${MAX_COMPLETED_JOBS} completed jobs remain queryable until shutdown; killing one is a no-op. ` +
 		`Do independent work first; when blocked use wait({jobs:["shell:<id>"]}) or end your turn. Sleep-waits and poll loops are blocked. ` +
 		`Foreground calls without an explicit timeout are killed after ${shellTimeoutSeconds()}s - set timeout for ` +
@@ -564,7 +634,7 @@ function registerBgTool(pi: ExtensionAPI, toolName: "bash" | "powershell", built
 
 			// Job management: build the check command and run it through the real tool.
 			if (params.job) {
-				const m = params.job.match(/^(\d+)(?::(out|kill))?$/);
+				const m = params.job.match(/^(\d+)(?::(out|stop|kill))?$/);
 				const job = m ? jobs.get(Number(m[1])) : undefined;
 				if (!job || !currentSession(ctx) || !currentJob(job)) {
 					const known = [...jobs.values()].filter(currentJob).map((job) => String(job.id)).join(", ") || "none";
@@ -573,35 +643,27 @@ function registerBgTool(pi: ExtensionAPI, toolName: "bash" | "powershell", built
 				const action = m![2] ?? "status";
 				// The watcher and queries use one transition; queries can consume before any enqueue.
 				refreshCompletion(job);
-				if (job.result) {
+				const cleanupRequest = (action === "kill" || action === "stop") &&
+					(!!job.identityReady || !!job.identity && hasTrackedDescendants(job.identity));
+				if (job.result && !cleanupRequest) {
 					if (!job.owner && !job.submitted) job.consumed = true;
 					trimHistory();
 					const errTail = action === "status" && job.errPath ? tailFile(job.errPath, 20) : "";
-					const text = action === "kill"
-						? `Background job #${job.id} already finished; no kill signal sent.`
+					const text = action === "kill" || action === "stop"
+						? `Background job #${job.id} already finished; no signal sent.`
 						: action === "out"
 							? tailFile(job.outPath, 80)
 							: `DONE (exit ${job.result.exit}) after ${job.result.secs}s.\n--- last output ---\n${tailFile(job.outPath, 40)}` +
 								(errTail ? `\n--- stderr ---\n${errTail}` : "");
 					return { content: [{ type: "text", text }], details: { bgJob: job.id, bgOutputPath: job.outPath, ...job.result } } as never;
 				}
-				const cmd =
-					job.tool === "bash"
-						? action === "out"
-							? bashOutCmd(job)
-							: action === "kill"
-								? bashKillCmd(job)
-								: bashStatusCmd(job)
-						: action === "out"
-							? psOutCmd(job)
-							: action === "kill"
-								? psKillCmd(job)
-								: psStatusCmd(job);
-				if (action === "kill") {
-					if (job.owner) throw new Error(`shell:${job.id} is claimed; release the wait before killing it`);
-					stopWatcher(job);
-					jobs.delete(job.id);
+				if (action === "kill" || action === "stop") {
+					const text = await stopJob(pi, job, "agent", action === "kill" ? "force" : "graceful");
+					return { content: [{ type: "text", text }], details: { bgJob: job.id, ...job.result } } as never;
 				}
+				const cmd = job.tool === "bash"
+					? action === "out" ? bashOutCmd(job) : bashStatusCmd(job)
+					: action === "out" ? psOutCmd(job) : psStatusCmd(job);
 				return exec(cmd, 15) as never;
 			}
 
@@ -623,7 +685,19 @@ function registerBgTool(pi: ExtensionAPI, toolName: "bash" | "powershell", built
 					startedAt: Math.floor(Date.now() / 1000),
 				};
 				if (toolName === "bash") {
-					const launch = bashLaunchWrap(params.command, job.outPath, job.statusPath);
+					let launch: string;
+					if (process.platform === "win32") {
+						job.scriptPath = join(tmpdir(), `pi-bg-${stamp}.ps1`);
+						job.errPath = join(tmpdir(), `pi-bg-${stamp}.err`);
+						const commandPath = join(tmpdir(), `pi-bg-${stamp}.sh`);
+						const status = job.statusPath.replace(/\\/g, "/").replace(/'/g, "'\\''");
+						writeFileSync(commandPath, `exec 2>&1\n${params.command}\necho $? > '${status}'\n`, "utf8");
+						// The console bootstrap clears inherited Ctrl+C suppression before
+						// Bash (and its native child processes) inherit the job console.
+						writeFileSync(job.scriptPath, windowsBashLaunchScript(commandPath), "utf8");
+						const launcher = windowsLaunchWrap(job.scriptPath, job.outPath, job.errPath);
+						launch = `PI_BG_BASH_EXECUTABLE="$(cygpath -w "$BASH")" powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(launcher, "utf16le").toString("base64")}`;
+					} else launch = bashLaunchWrap(params.command, job.outPath, job.statusPath);
 					const result = await exec(launch, 15) as { content?: Array<{ text?: string }> };
 					const text = result?.content?.map((c) => c.text ?? "").join("") ?? "";
 					const pid = text.match(/__PI_BG_PID:(\d+)/)?.[1];
@@ -634,18 +708,30 @@ function registerBgTool(pi: ExtensionAPI, toolName: "bash" | "powershell", built
 					job.scriptPath = join(tmpdir(), `pi-bg-${stamp}.ps1`);
 					job.errPath = join(tmpdir(), `pi-bg-${stamp}.err`);
 					writeFileSync(job.scriptPath, psScriptFor(params.command, job.statusPath), "utf8");
-					const result = await exec(psLaunchWrap(job.scriptPath, job.outPath, job.errPath), 30) as {
+					const result = await exec(windowsLaunchWrap(job.scriptPath, job.outPath, job.errPath), 30) as {
 						content?: Array<{ text?: string }>;
 					};
 					const text = result?.content?.map((c) => c.text ?? "").join("") ?? "";
 					const pid = text.match(/__PI_BG_PID:(\d+)/)?.[1];
 					job.pid = pid ? Number(pid) : null;
-					// Start-Process returns a real Windows pid: aliveness is directly
-					// checkable, unlike the MSYS bash case.
+					// Both Windows launch paths return native PIDs, not MSYS identifiers.
 					job.winPid = job.pid;
 				}
+				if (!job.pid || (process.platform === "win32" && !job.winPid)) {
+					throw new Error(`Background launch did not return a native PID; inspect ${job.outPath}${job.errPath ? ` and ${job.errPath}` : ""}`);
+				}
+				const osPid = process.platform === "win32" ? job.winPid : job.pid;
+				// Identity discovery must not turn a detached launch back into blocking work.
+				job.identityReady = (osPid == null ? Promise.reject(new Error("The shell did not return a real OS PID")) :
+					captureProcess(osPid, epoch)).then(identity => { job.identity = identity; })
+					.catch(error => { job.stopUnavailable = `Cannot verify this job's process identity: ${String(error)}`; })
+					.finally(() => {
+						job.identityReady = undefined;
+						if (currentJob(job)) { trimHistory(); updateJobStatus(); }
+					});
 				jobs.set(id, job);
 				if (!epoch.aborted && currentJob(job)) startWatcher(pi, job);
+				updateJobStatus();
 				return {
 					content: [
 						{
@@ -654,7 +740,7 @@ function registerBgTool(pi: ExtensionAPI, toolName: "bash" | "powershell", built
 								`Background job #${id} started${job.pid ? ` (pid ${job.pid})` : ""}.\n` +
 								`Output file: ${job.outPath}\n\n` +
 								`Its exit code and output tail will be delivered to you automatically as a new message.\n` +
-								`End your turn now or keep working on something else; on-demand checks: job:"${id}" (status), "${id}:out" (output), "${id}:kill".`,
+								`End your turn now or keep working on something else; on-demand checks: job:"${id}" (status), "${id}:out" (output), "${id}:stop" (graceful), "${id}:kill" (force).`,
 						},
 					],
 					details: { bgJob: id, bgOutputPath: job.outPath },
@@ -922,6 +1008,8 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_shutdown", async () => {
 		invalidateSession(undefined, true);
 		for (const job of jobs.values()) stopWatcher(job);
+		// Drain only stops already requested by a user/agent; never stop other jobs on exit.
+		await Promise.allSettled([...jobs.values()].flatMap(job => job.stopping ? [job.stopping] : []));
 		jobs.clear();
 		sweepOldJobFiles();
 	});
@@ -949,21 +1037,23 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	// Human-facing job list.
 	pi.registerCommand("bg", {
-		description: "List background jobs started via bash/powershell background:true",
+		description: "Manage background jobs: Enter views output; s stops gracefully; x force kills (confirmed)",
 		handler: async (_args, ctx) => {
-			const visible = currentSession(ctx) ? [...jobs.values()].filter(currentJob) : [];
-			if (visible.length === 0) {
-				ctx.ui.notify("No background jobs.", "info");
-				return;
-			}
-			const lines = visible.map((job) => {
-				const secs = job.result?.secs ?? Math.floor(Date.now() / 1000) - job.startedAt;
-				const done = job.result ? `done, exit ${job.result.exit}` : existsSync(job.statusPath) ? "done" : "running";
-				return `#${job.id} [${job.tool}] ${done} ${secs}s pid=${job.pid ?? "?"} :: ${job.command.slice(0, 80)}`;
-			});
-			ctx.ui.notify(`Background jobs:\n${lines.join("\n")}`, "info");
+			const epoch = sessionEpoch.signal;
+			await showJobPanel(ctx, {
+				list: () => currentSession(ctx) ? visibleJobs() : [],
+				output: id => {
+					const job = jobs.get(id);
+					if (!job || !currentJob(job)) return "Job is no longer available.";
+					return readTail(job.outPath) + (job.errPath ? `\n--- stderr ---\n${readTail(job.errPath, 500, 16 * 1024)}` : "");
+				},
+				stop: (id, mode) => {
+					const job = jobs.get(id);
+					if (!job) return Promise.reject(new Error("Job is no longer available"));
+					return stopJob(pi, job, "user", mode);
+				},
+			}, epoch);
 		},
 	});
 }
