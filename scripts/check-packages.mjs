@@ -14,6 +14,8 @@ for (const [path, preview] of [
   ...inventory.extensions.map(({ directory }) => [`packages/${directory}/package.json`, `packages/${directory}/screenshot.png`]),
 ]) {
   const pkg = json(resolve(root, path));
+  assert.ok(pkg.files.includes('CHANGELOG.md'), `${pkg.name}: CHANGELOG.md must ship in the tarball`);
+  assert.ok(existsSync(resolve(root, dirname(path), 'CHANGELOG.md')), `${pkg.name}: missing CHANGELOG.md`);
   for (const keyword of ['pi-package', 'pi-extension']) {
     assert.ok(pkg.keywords?.includes(keyword), `${pkg.name}: missing gallery keyword ${keyword}`);
   }
@@ -87,5 +89,5 @@ for (const { directory } of inventory.extensions) {
     if (extname(path) === '.json' && name !== 'package.json') assert.ok(name.endsWith('.example.json') || name.endsWith('.example'), `${directory}: config must be an explicit example: ${name}`);
   }
 }
-console.log(`Checked ${actual.length} standalone packages and ${count} TypeScript files: inventory, entrypoints, syntax, contained imports, dependencies, publication fields, and example-only configs.`);
+console.log(`Checked ${actual.length} standalone packages and ${count} TypeScript files: inventory, entrypoints, syntax, contained imports, dependencies, publication fields, changelogs, and example-only configs.`);
 console.log('This is NOT semantic typechecking or a live-host/UI compatibility test.');

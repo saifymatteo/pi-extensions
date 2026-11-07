@@ -1,6 +1,6 @@
 {
   "name": "@saifymatteo/pi-session-nav",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "license": "AGPL-3.0-only",
   "type": "module",
   "keywords": [
@@ -10,6 +10,7 @@
   "files": [
     "src",
     "README.md",
+    "CHANGELOG.md",
     "NOTICE.md",
     "LICENSE"
   ],

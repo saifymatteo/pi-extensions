@@ -24,9 +24,9 @@ const rootParsed = JSON.parse(rootPack.stdout);
 const rootPackage = Array.isArray(rootParsed) ? rootParsed[0] : Object.values(rootParsed)[0];
 assert.equal(rootPackage.name, '@saifymatteo/pi-extensions');
 const rootPaths = rootPackage.files.map(file => file.path);
-for (const required of ['package.json', 'README.md', 'NOTICE.md', 'LICENSE', 'inventory.json']) assert.ok(rootPaths.includes(required), `root: missing ${required}`);
+for (const required of ['package.json', 'README.md', 'CHANGELOG.md', 'NOTICE.md', 'LICENSE', 'inventory.json']) assert.ok(rootPaths.includes(required), `root: missing ${required}`);
 for (const entry of inventory.extensions) {
-  for (const required of [`packages/${entry.directory}/src/index.ts`, `packages/${entry.directory}/package.json`]) {
+  for (const required of [`packages/${entry.directory}/src/index.ts`, `packages/${entry.directory}/package.json`, `packages/${entry.directory}/CHANGELOG.md`]) {
     assert.ok(rootPaths.includes(required), `root: collection tarball missing ${required}`);
   }
 }
@@ -34,11 +34,11 @@ assert.ok(rootPaths.includes('packages/pi-vision/skills/vision-tools/SKILL.md'),
 console.log(`PASS ${rootPackage.name}: ${rootPaths.length} prospective files (collection)`);
 for (const pkg of packages) {
   const paths = pkg.files.map(file => file.path);
-  for (const required of ['package.json', 'src/index.ts', 'README.md', 'NOTICE.md', 'LICENSE']) assert.ok(paths.includes(required), `${pkg.name}: missing ${required}`);
+  for (const required of ['package.json', 'src/index.ts', 'README.md', 'CHANGELOG.md', 'NOTICE.md', 'LICENSE']) assert.ok(paths.includes(required), `${pkg.name}: missing ${required}`);
   if (JSON.parse(readFileSync(resolve(root, 'packages', pkg.name.replace('@saifymatteo/', ''), 'package.json'), 'utf8')).pi?.skills) {
     assert.ok(paths.some(path => path.startsWith('skills/')), `${pkg.name}: bundled skill missing from tarball`);
   }
-  for (const path of paths) assert.ok(['package.json', 'README.md', 'NOTICE.md', 'LICENSE'].includes(path) || path.startsWith('src/') || path.startsWith('examples/') || path.startsWith('skills/'), `${pkg.name}: unexpected packed file ${path}`);
+  for (const path of paths) assert.ok(['package.json', 'README.md', 'CHANGELOG.md', 'NOTICE.md', 'LICENSE'].includes(path) || path.startsWith('src/') || path.startsWith('examples/') || path.startsWith('skills/'), `${pkg.name}: unexpected packed file ${path}`);
   console.log(`PASS ${pkg.name}: ${paths.length} prospective files`);
 }
 console.log(`Verified ${packages.length} standalone package file lists. No archives created or packages published.`);
