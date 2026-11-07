@@ -455,7 +455,7 @@ function nestedSkills(result: SkillResult, toolName: string | undefined): string
 // Anything visible between two calls (user/custom message, assistant text)
 // starts a new group; tool results and thinking do not. A call seen twice
 // (the in-flight copy of an already persisted message) keeps its first group.
-function buildGroups(messages: Msg[]): { groupOf: Map<string, Group>; last?: Group } {
+function buildGroups(messages: Msg[]): { groupOf: Map<string, Group>; last?: Group; active?: Group } {
 	const groupOf = new Map<string, Group>();
 	let current: Group | undefined;
 	let last: Group | undefined;
@@ -488,7 +488,9 @@ function buildGroups(messages: Msg[]): { groupOf: Map<string, Group>; last?: Gro
 			last = current;
 		}
 	}
-	return { groupOf, last };
+	// Historical cards remain addressable, but only an unbroken trailing run
+	// can own live activity. A user message or assistant text ends that run.
+	return { groupOf, last, active: current };
 }
 
 // [verb, singular, plural]; tools sharing verb+noun are counted together.
@@ -680,9 +682,9 @@ function markToolContexts(): void {
 export default function (pi: ExtensionAPI) {
 	let retired = false;
 	let sessionManager: ExtensionContext["sessionManager"] | undefined;
-	let live: Msg | undefined; // in-flight assistant message, maybe not persisted yet
+	let live: Msg | undefined; // latest user boundary or in-flight assistant, maybe not persisted yet
 	let running = false;
-	let cache: { key: string; groupOf: Map<string, Group>; last?: Group } | undefined;
+	let cache: (ReturnType<typeof buildGroups> & { key: string }) | undefined;
 	const invalidators = new Map<string, () => void>(); // toolCallId -> row redraw
 	// Native expanded belongs to Ctrl+O; pointer disclosure is local to the card.
 	const openHeads = new Set<string>();
@@ -705,7 +707,7 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function syncActivity() {
-		const head = running && !latestThought(live) ? groups().last?.head : undefined;
+		const head = running && !latestThought(live) ? groups().active?.head : undefined;
 		if (!head || !invalidators.has(head)) { stopActivity(); return; }
 		if (activityTimer !== undefined) return;
 		// One timer for the current parent, never one per row or historical card.
@@ -713,7 +715,7 @@ export default function (pi: ExtensionAPI) {
 			syncActivity();
 			if (activityTimer === undefined) return;
 			activityFrame = (activityFrame + 1) % activityFrames.length;
-			invalidators.get(groups().last!.head)?.();
+			invalidators.get(groups().active!.head)?.();
 		}, 160);
 	}
 
@@ -829,7 +831,15 @@ export default function (pi: ExtensionAPI) {
 		if (event.message.role === "assistant") {
 			live = event.message as Msg;
 			syncActivity();
-		} else refresh();
+		} else {
+			if (event.message.role === "user") {
+				// message_start precedes persistence: do not wait for getBranch()
+				// to contain this boundary, especially for steering mid-run.
+				live = event.message as Msg;
+				cache = undefined;
+			}
+			refresh();
+		}
 	});
 	pi.on("message_update", (event) => {
 		if (event.message.role !== "assistant") return;
@@ -848,7 +858,7 @@ export default function (pi: ExtensionAPI) {
 		}
 		// nf-fa-caret_down and nf-fa-caret_right
 		let text = theme.fg("warning", theme.bold(`${openHeads.has(group.head) ? "\uf0d7" : "\uf0da"} ${summarize(names, images) || "Skill instructions"}`));
-		if (running && group === groups().last) {
+		if (running && group === groups().active) {
 			const thought = latestThought(live);
 			// nf-md-thought_bubble_outline
 			text += theme.fg("dim", thought ? ` \udb81\udff7 ${thought}` : ` ${activityFrames[activityFrame]}`);

@@ -4,6 +4,12 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.6]
+
+### Fixed
+
+- Keep Compact Tools activity within the current message boundary instead of updating a previous request's card.
+
 ## [0.1.5]
 
 ### Added

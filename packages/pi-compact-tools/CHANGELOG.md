@@ -4,6 +4,12 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.5]
+
+### Fixed
+
+- Keep new-request thinking and activity out of earlier tool cards, including steering messages received before session history is updated.
+
 ## [0.1.4]
 
 ### Added
