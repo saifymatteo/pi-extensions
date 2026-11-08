@@ -1,83 +1,83 @@
 {
-  "name": "@saifymatteo/pi-extensions",
-  "version": "0.1.6",
-  "type": "module",
-  "license": "AGPL-3.0-only",
-  "description": "Independently installable Pi extensions",
-  "workspaces": [
-    "packages/*"
-  ],
-  "scripts": {
-    "check": "node scripts/check-packages.mjs",
-    "typecheck": "tsc -p tsconfig.json",
-    "test": "node --test test/*.test.mjs packages/*/test/*.test.mjs",
-    "pack:check": "node scripts/check-pack.mjs",
-    "dev": "node scripts/dev.mjs",
-    "smoke": "node scripts/smoke.mjs",
-    "context": "node scripts/context-audit.mjs",
-    "screenshots": "node scripts/screenshots/shots.mjs",
-    "demo": "node scripts/screenshots/demo.mjs"
-  },
-  "devDependencies": {
-    "@earendil-works/pi-coding-agent": "1.4.0",
-    "@earendil-works/pi-tui": "1.4.0",
-    "@types/node": "24.19.2",
-    "typebox": "^1.0.0",
-    "typescript": "~5.9.3"
-  },
-  "engines": {
-    "node": ">=24"
-  },
-  "pi": {
-    "image": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/demo.gif",
-    "extensions": [
-      "./packages/pi-load-pi-dotenv/src/index.ts",
-      "./packages/pi-bg-bash/src/index.ts",
-      "./packages/pi-claude-usage/src/index.ts",
-      "./packages/pi-clipboard-image/src/index.ts",
-      "./packages/pi-codeblock-borders/src/index.ts",
-      "./packages/pi-codegraph/src/index.ts",
-      "./packages/pi-compact-tools/src/index.ts",
-      "./packages/pi-decisions/src/index.ts",
-      "./packages/pi-model-go/src/index.ts",
-      "./packages/pi-prestart-working/src/index.ts",
-      "./packages/pi-root-guard/src/index.ts",
-      "./packages/pi-session-finder/src/index.ts",
-      "./packages/pi-session-id/src/index.ts",
-      "./packages/pi-session-nav/src/index.ts",
-      "./packages/pi-session-rename/src/index.ts",
-      "./packages/pi-session-retention/src/index.ts",
-      "./packages/pi-skill-usage-log/src/index.ts",
-      "./packages/pi-tool-usage-log/src/index.ts",
-      "./packages/pi-tts/src/index.ts",
-      "./packages/pi-user-image-previews/src/index.ts",
-      "./packages/pi-vision/src/index.ts",
-      "./packages/pi-wait/src/index.ts",
-      "./packages/pi-zvec/src/index.ts"
-    ],
-    "skills": [
-      "./packages/pi-vision/skills"
-    ]
-  },
-  "publishConfig": {
-    "access": "public"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/saifymatteo/pi-extensions.git"
-  },
-  "keywords": [
-    "pi-package",
-    "pi-extension",
-    "pi-skill"
-  ],
-  "files": [
-    "packages",
-    "!packages/*/screenshot.png",
-    "inventory.json",
-    "README.md",
-    "CHANGELOG.md",
-    "NOTICE.md",
-    "LICENSE"
-  ]
+	"name": "@saifymatteo/pi-extensions",
+	"version": "0.1.7",
+	"type": "module",
+	"license": "AGPL-3.0-only",
+	"description": "Independently installable Pi extensions",
+	"workspaces": [
+		"packages/*"
+	],
+	"scripts": {
+		"check": "node scripts/check-packages.mjs",
+		"typecheck": "tsc -p tsconfig.json",
+		"test": "node --test test/*.test.mjs packages/*/test/*.test.mjs",
+		"pack:check": "node scripts/check-pack.mjs",
+		"dev": "node scripts/dev.mjs",
+		"smoke": "node scripts/smoke.mjs",
+		"context": "node scripts/context-audit.mjs",
+		"screenshots": "node scripts/screenshots/shots.mjs",
+		"demo": "node scripts/screenshots/demo.mjs"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-coding-agent": "1.4.0",
+		"@earendil-works/pi-tui": "1.4.0",
+		"@types/node": "24.19.2",
+		"typebox": "^1.0.0",
+		"typescript": "~5.9.3"
+	},
+	"engines": {
+		"node": ">=24"
+	},
+	"pi": {
+		"image": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/demo.gif",
+		"extensions": [
+			"./packages/pi-load-pi-dotenv/src/index.ts",
+			"./packages/pi-bg-bash/src/index.ts",
+			"./packages/pi-claude-usage/src/index.ts",
+			"./packages/pi-clipboard-image/src/index.ts",
+			"./packages/pi-codeblock-borders/src/index.ts",
+			"./packages/pi-codegraph/src/index.ts",
+			"./packages/pi-compact-tools/src/index.ts",
+			"./packages/pi-decisions/src/index.ts",
+			"./packages/pi-model-go/src/index.ts",
+			"./packages/pi-prestart-working/src/index.ts",
+			"./packages/pi-root-guard/src/index.ts",
+			"./packages/pi-session-finder/src/index.ts",
+			"./packages/pi-session-id/src/index.ts",
+			"./packages/pi-session-nav/src/index.ts",
+			"./packages/pi-session-rename/src/index.ts",
+			"./packages/pi-session-retention/src/index.ts",
+			"./packages/pi-skill-usage-log/src/index.ts",
+			"./packages/pi-tool-usage-log/src/index.ts",
+			"./packages/pi-tts/src/index.ts",
+			"./packages/pi-user-image-previews/src/index.ts",
+			"./packages/pi-vision/src/index.ts",
+			"./packages/pi-wait/src/index.ts",
+			"./packages/pi-zvec/src/index.ts"
+		],
+		"skills": [
+			"./packages/pi-vision/skills"
+		]
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/saifymatteo/pi-extensions.git"
+	},
+	"keywords": [
+		"pi-package",
+		"pi-extension",
+		"pi-skill"
+	],
+	"files": [
+		"packages",
+		"!packages/*/screenshot.png",
+		"inventory.json",
+		"README.md",
+		"CHANGELOG.md",
+		"NOTICE.md",
+		"LICENSE"
+	]
 }

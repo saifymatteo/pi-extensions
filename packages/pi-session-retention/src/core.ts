@@ -23,7 +23,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 // Check every component, not just the leaf. Missing suffixes are allowed only
 // for creation; existing symlinks and non-directory ancestors are always errors.
-async function safePath(path: string, missing = false) {
+export async function safePath(path: string, missing = false) {
   const absolute = resolve(path)
   const root = parse(absolute).root
   let cursor = root
@@ -37,7 +37,7 @@ async function safePath(path: string, missing = false) {
   }
 }
 async function exists(path: string) { try { await lstat(path); return true } catch (error) { if (absent(error)) return false; throw error } }
-async function regular(path: string) {
+export async function regular(path: string) {
   await safePath(path)
   const s = await lstat(path)
   if (!s.isFile()) throw new Error(`Not a regular file: ${path}`)
@@ -144,7 +144,7 @@ export class RetentionStore {
     if (!inside(this.root, absolute)) throw new Error('Original path escapes root')
     return absolute
   }
-  private async load(id: string): Promise<TrashBatch> {
+  async getTrashBatch(id: string): Promise<TrashBatch> {
     await this.roots()
     const dir = this.batchPath(id)
     const path = join(dir, 'manifest.json')
@@ -181,10 +181,10 @@ export class RetentionStore {
     if (!await exists(this.trashRoot)) return { batches, issues }
     for (const item of await readdir(this.trashRoot, { withFileTypes: true })) {
       // Shared store metadata belongs to the adapter, not to a session family.
-      if (['settings.json', '.maintenance.lock'].includes(item.name) || /^settings-[0-9a-f-]+\.tmp$/.test(item.name)) continue
+      if (['settings.json', '.maintenance.lock', '.search-cache'].includes(item.name) || /^(?:settings-|\.lock-)[0-9a-f-]+\.tmp$/.test(item.name)) continue
       try {
         if (!item.isDirectory() || item.isSymbolicLink()) throw new Error('Not a batch directory')
-        batches.push(await this.load(item.name))
+        batches.push(await this.getTrashBatch(item.name))
       } catch (error) { issues.push(`${item.name}: ${message(error)}`) }
     }
     return { batches, issues }
@@ -266,7 +266,7 @@ export class RetentionStore {
   }
   async restoreFamily(id: string, options: MutationOptions): Promise<{ restored: string[] }> {
     const now = time(options?.now)
-    const { manifest } = await this.load(id)
+    const { manifest } = await this.getTrashBatch(id)
     const paths = manifest.files.flatMap(file => [this.original(file.original), join(this.batchPath(id), file.stored)])
     await this.allow(options, 'restore', paths)
     // Preflight the whole batch before moving anything, including incomplete ones.
@@ -312,7 +312,7 @@ export class RetentionStore {
       if (!batch.manifest.ready || batch.missing.length || now - batch.manifest.trashedAt <= RETENTION_MS) continue
       const id = batch.manifest.id
       try {
-        const { manifest, missing } = await this.load(id)
+        const { manifest, missing } = await this.getTrashBatch(id)
         if (!manifest.ready || missing.length || now - manifest.trashedAt <= RETENTION_MS) continue
         const paths = manifest.files.flatMap(file => [this.original(file.original), join(this.batchPath(id), file.stored)])
         await this.allow(options, 'purge', paths)

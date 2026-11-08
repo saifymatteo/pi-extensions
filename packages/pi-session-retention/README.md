@@ -31,7 +31,7 @@ Moves inactive session families out of Pi's searchable session store. No search 
 - `/session-cleanup preview` — show counts, scope and example candidate families without moving or deleting sessions.
 - `/session-cleanup` — review the first cleanup and approve daily automatic maintenance. Later calls run maintenance immediately.
 - `/session-cleanup pause` — pause automatic maintenance; run `/session-cleanup` to review and enable it again.
-- `/session-trash [query]` — open a dialog styled like `session-finder.ts`, with a heavy border, padded rows, a `Search:` line and yellow selection, listing trashed families immediately. Type to filter by names, first user prompts, IDs or original paths; use ↑↓ and Enter to select, then confirm a whole-family restore. Esc cancels. An optional query prefills the filter; clearing it shows all families again.
+- `/session-trash [query]` — search trashed families by name, first user prompt, ID or original path. ↑↓ selects; Enter previews; Ctrl+R requests a confirmed whole-family restore from either view. In preview, `[ ]` switches members and ↑↓ / PgUp/PgDn scrolls. Esc returns to search or closes it. An optional query prefills the filter.
 
 `/session-cleanup` advertises `[preview|pause]` and offers both arguments through command completion.
 
@@ -51,13 +51,13 @@ Startup reads bounded session headers and file metadata, not every transcript. A
 
 ## Safety and recovery
 
-- Maintenance is serialized by an exclusive per-store lock. Process discovery must succeed, and maintenance defers when its inventory finds another recognized Pi CLI process, including idle windows. Successful inventories are reused for at most one second within a maintenance transaction to avoid starting PowerShell for every file. Session switches and forks in the current window are blocked until maintenance ends. It does not assume that excluding this window protects other windows. Close other Pi windows and run `/session-cleanup` to retry. Unrecognized custom SDK hosts and programs with renamed executables are outside this process detector's guarantee; do not run maintenance alongside them.
+- Maintenance protects every verified open session's whole family, including idle windows, while cleaning unrelated inactive families. All open instances must load the updated extension and share an agent home; reload/update or close any instance reported as unregistered. Shared registration and per-store locks serialize maintenance and block session switches/forks until it ends. Unrecognized SDK hosts and renamed executables remain outside process detection; do not run maintenance alongside them.
 - On `/reload`, session replacement or graceful shutdown, maintenance cancels pending approval/Trash dialogs, stops at the next safety boundary and waits for in-flight file work to finish before releasing its lock. The lock is never removed while its operation can still mutate files. Forced termination or a crash can still leave a stale lock; these are not automatically removed.
 - Each family has a recovery manifest written before any file moves. Incomplete operations remain recoverable in `/session-trash` and are never automatically purged. Keep the manifest with its files. If the process crashes leaving `.maintenance.lock`, close all Pi processes before removing that stale lock and retrying. A corrupt lock fails closed rather than being guessed away.
 - Symlink paths, invalid headers, unresolved parents, family cycles, changed files and corrupt/path-escaping manifests are rejected or protected. An unreadable session can defer cleanup because the complete family graph cannot be established safely. Restore collisions do not overwrite either copy.
 - Moving session files does not retroactively ingest them into external memory integrations. Such integrations retain their live in-memory state and flush outstanding writes at shutdown; they do not depend on reopening historical JSONL files for those writes. Earlier failed ingestion is not repaired by this extension.
 
-Keep other Pi windows closed during maintenance. Sampled OS process discovery and an extension-owned lock are conservative safeguards, not a native session lock honored by every external program. A new external process can race a cleanup; do not launch another Pi process while maintenance is running. Back up irreplaceable conversations before approving retention.
+Updated, registered Pi windows may stay open during maintenance. Sampled OS process discovery and extension-owned locks are not native session locks honored by every program: do not launch another Pi process while maintenance runs. Back up irreplaceable conversations before approving retention.
 
 ## Development checks
 

@@ -32,6 +32,19 @@ test('retention round trip protects current families, requires guard and restore
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('process discovery recognizes supported CLI launch forms without blocking unrelated Node hosts', () => {
+  const own = { pid: 1, name: 'pi-bolt', command: '' };
+  const peers = [
+    { pid: 2, name: 'pi.exe', command: '' },
+    { pid: 3, name: 'pi-bolt.exe', command: '' },
+    { pid: 4, name: 'node', command: 'node /tools/pi-bolt.js' },
+    { pid: 5, name: 'node.exe', command: 'node C:\\tools\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\cli.js' },
+    { pid: 6, name: 'bun', command: 'bun /repo/packages/coding-agent/src/cli.ts' },
+    { pid: 7, name: 'node', command: 'node /unrelated/server.js' },
+  ];
+  assert.deepEqual(otherPiProcesses([own, ...peers], own.pid).map(item => item.pid), [2, 3, 4, 5, 6]);
+});
+
 test('maintenance inventory fails closed and caches probes only within a second', async () => {
   assert.throws(() => otherPiProcesses([], 1), /Cannot verify/);
   assert.equal(otherPiProcesses([{ pid: 1, name: 'pi-bolt', command: '' }, { pid: 2, name: 'pi', command: '' }], 1).length, 1);
