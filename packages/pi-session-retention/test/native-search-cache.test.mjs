@@ -171,6 +171,6 @@ test('native Pi host validates cache identities, extracts previews and renders t
     assert.equal(data.drainedBeforeRelease, false, 'drain waits for the aborted in-flight preview');
     assert.equal(data.drained, true);
     assert.ok(data.afterDrain.some(line => line.includes('Loading preview…')), 'late completion cannot replace disposed preview');
-    assert.equal(JSON.parse(readFileSync(join(root, '.search-cache', `${id}.json`), 'utf8')).version, 1);
+    assert.equal(JSON.parse(readFileSync(join(root, '.search-cache', `${id}.json`), 'utf8')).version, 2);
   } finally { rmSync(home, { recursive: true, force: true }); }
 });

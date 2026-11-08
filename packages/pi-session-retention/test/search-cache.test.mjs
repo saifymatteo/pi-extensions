@@ -63,7 +63,7 @@ test('native TS scan preserves last name, first user text, malformed lines and c
   assert.deepEqual(plain(await tracked.cache.read(f.batch, signal())), result);
   assert.equal(tracked.reads(), 0);
   const saved = JSON.parse(await fs.readFile(f.cachePath, 'utf8'));
-  assert.equal(saved.version, 1);
+  assert.equal(saved.version, 2); // v2: records carry the cwd used for Trash folder labels.
   assert.equal(saved.fingerprint.length, 64);
   if (process.platform !== 'win32') assert.equal((await fs.stat(f.cachePath)).mode & 0o777, 0o600);
   await f.cache.remove(['../0', id]);
@@ -82,6 +82,16 @@ test('group cwd is captured, persisted and survives warm hits; legacy entries wi
   assert.equal(warm.cwd, undefined);
   assert.equal(warm.title, 'last');
   assert.equal(tracked.reads(), 1);
+});
+
+test('pre-grouping v1 cache records miss once and re-extract with cwd', async t => {
+  const f = await fixture(t), tracked = instrument(f);
+  await tracked.cache.read(f.batch, signal()); // Writes a v2 record.
+  const saved = JSON.parse(await fs.readFile(f.cachePath, 'utf8'));
+  await fs.writeFile(f.cachePath, JSON.stringify({ ...saved, version: 1 }));
+  const result = await tracked.cache.read(f.batch, signal());
+  assert.equal(result.cwd, '/work/project');
+  assert.equal(tracked.reads(), 2);
 });
 
 test('cache erasure removes only selected records and their abandoned write files', async t => {

@@ -204,7 +204,7 @@ class SessionFinder implements Component {
 			const styled = isSelected || isActive ? this.theme.fg("warning", padded) : this.theme.fg("text", padded);
 			lines.push(border("┃") + styled + border("┃"));
 		}
-		lines.push(plainRow(this.theme.fg("dim", "↑↓ navigate · type to search · Enter open · Esc close")));
+		lines.push(plainRow(this.theme.fg("dim", "↑↓/PgUp/PgDn navigate · Home/End jump · type to search · Enter open · Esc close")));
 		lines.push(border(`┗${"━".repeat(inner)}┛`));
 		return lines;
 	}
@@ -217,11 +217,12 @@ class SessionFinder implements Component {
 			this.query = this.query.slice(0, -1);
 			this.rows = buildSessionRows(this.sessions, this.query);
 			this.selectFirstSession();
-		} else if (matchesKey(data, "up") || matchesKey(data, "down")) {
+		} else if (matchesKey(data, "up") || matchesKey(data, "down") || matchesKey(data, "pageUp") || matchesKey(data, "pageDown") || matchesKey(data, "home") || matchesKey(data, "end")) {
 			const choices = this.selectableRows();
 			const position = choices.indexOf(this.selected);
-			const next = matchesKey(data, "up") ? Math.max(0, position - 1) : Math.min(choices.length - 1, position + 1);
-			this.selected = choices[next] ?? 0;
+			const step = matchesKey(data, "pageUp") ? -this.pageSize : matchesKey(data, "pageDown") ? this.pageSize : matchesKey(data, "up") ? -1 : matchesKey(data, "down") ? 1 : 0;
+			const next = matchesKey(data, "home") ? 0 : matchesKey(data, "end") ? choices.length - 1 : position + step;
+			this.selected = choices[Math.max(0, Math.min(next, choices.length - 1))] ?? 0;
 		} else if (matchesKey(data, "enter")) {
 			const row = this.rows[this.selected];
 			if (row?.kind === "session") return this.done(row.session.path);

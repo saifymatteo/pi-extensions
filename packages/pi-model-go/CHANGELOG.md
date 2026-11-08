@@ -4,6 +4,12 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.5]
+
+### Added
+
+- Jump to the first or last model with Home/End alongside the existing Page Up/Page Down.
+
 ## [0.1.4]
 
 ### Added

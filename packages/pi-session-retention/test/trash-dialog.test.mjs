@@ -56,23 +56,58 @@ test('Home and End jump to the first and last family and scroll the preview boun
   await f.dialog.drain();
 });
 
-test('families group under their project folder headers', () => {
+test('families group under their project folder headers in session-search style', () => {
   const f = fixture([
     { ...choice('newest', 'alpha'), group: '--D--Git-IQZ-Monorepo--', cwd: 'D:\\Git\\IQZ-Monorepo' },
     { ...choice('second', 'beta'), group: '--D--Git-IQZ-Monorepo--' },
     { ...choice('other', 'gamma'), group: '--C--Users-Matteo--', cwd: 'C:\\Users\\Matteo' },
   ]);
-  f.text();
   const lines = f.text().split('\n');
   assert.ok(lines.some(line => line.includes('▸ D:\\Git\\IQZ-Monorepo')), 'folder label uses the cached cwd');
   assert.ok(lines.some(line => line.includes('▸ C:\\Users\\Matteo')));
   assert.ok(lines.some(line => line.includes('▶ newest')), 'newest family selected first');
+  assert.ok(lines.some(line => /\s{5,}second/.test(line)), 'other families render with finder root indent');
   f.dialog.handleInput('\x1b[B');
   assert.equal(f.dialog.getSelectedItem().value, 'second');
+  f.dialog.handleInput('\x1b[B'); // Down crosses the folder header into the next group.
+  assert.equal(f.dialog.getSelectedItem().value, 'other');
   const scrolled = f.text();
   assert.ok(scrolled.includes('▸ C:\\Users\\Matteo'), 'reaching another group shows its header');
-  f.dialog.handleInput('\x1b[B');
+  f.dialog.handleInput('\x1b[F'); // End lands on the last family across groups.
   assert.equal(f.dialog.getSelectedItem().value, 'other');
+  f.dialog.handleInput('\x1b[H'); // Home returns to the newest family.
+  assert.equal(f.dialog.getSelectedItem().value, 'newest');
+});
+
+test('families sharing a project never split even when only some have a cached cwd', () => {
+  const f = fixture([
+    { ...choice('warm1'), group: '--D--Git-IQZ-Monorepo--', cwd: 'D:\\Git\\IQZ-Monorepo' },
+    { ...choice('cold1'), group: '--D--Git-IQZ-Monorepo--' },
+    { ...choice('warm2'), group: '--D--Git-IQZ-Monorepo--', cwd: 'D:\\Git\\IQZ-Monorepo' },
+    { ...choice('cold2'), group: '--D--Git-IQZ-Monorepo--' },
+    { ...choice('other'), group: '--C--Users-Matteo--', cwd: 'C:\\Users\\Matteo' },
+  ]);
+  const lines = f.text().split('\n');
+  assert.equal(lines.filter(line => line.includes('IQZ-Monorepo')).length, 1, 'one header for the whole project');
+  assert.ok(lines.some(line => line.includes('▸ D:\\Git\\IQZ-Monorepo')), 'label prefers the cached cwd');
+  assert.doesNotMatch(f.text(), /--D--Git-IQZ-Monorepo--/, 'raw encoded segment never leaks as a label');
+});
+
+test('the fixed folder header follows the top of the scrolling window like session search', () => {
+  const choices = Array.from({ length: 20 }, (_, index) => ({ ...choice(`a${index}`), group: '--D--Git-ProjectX--', cwd: index === 0 ? 'D:\\Git\\ProjectX' : undefined }));
+  choices.push(...[
+    { ...choice('b0'), group: '--D--Git-ProjectY--' },
+    { ...choice('c0'), group: '--C--Users-Matteo--', cwd: 'C:\\Users\\Matteo' },
+  ]);
+  const f = fixture(choices);
+  f.dialog.handleInput('\x1b[F'); // End selects c0, scrolling deep into group X.
+  const lines = f.text().split('\n');
+  assert.equal(f.dialog.getSelectedItem().value, 'c0');
+  assert.ok(lines.some(line => line.includes('▸ D:\\Git\\ProjectX')), 'fixed header names the group at the window top');
+  assert.ok(lines.some(line => line.includes('▸ C:\\Users\\Matteo')), "the selected family's own header shows inline");
+  const fixedIndex = lines.findIndex(line => line.includes('▸ D:\\Git\\ProjectX'));
+  const inlineCIndex = lines.findIndex(line => line.includes('▸ C:\\Users\\Matteo'));
+  assert.ok(fixedIndex < inlineCIndex, 'fixed header precedes the selected group header');
 });
 
 test('query filtering keeps only matching folders and preserves selection', () => {

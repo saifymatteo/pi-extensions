@@ -9,7 +9,9 @@ import { regular, safePath, type TrashBatch } from "./core.ts";
 import { safeDirectory } from "./safety.ts";
 
 export type TrashSearchText = { search: string; title: string; cwd?: string };
-const VERSION = 1;
+// v2 adds the per-session cwd used for Trash folder labels; v1 records (written
+// before grouping) re-extract once on the next open.
+const VERSION = 2;
 const CACHE_BYTES = 8 * 1024 * 1024;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const cleanText = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim();

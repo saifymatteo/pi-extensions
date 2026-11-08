@@ -4,13 +4,19 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.7]
+
+### Fixed
+
+- Group Trash folders by the stable project segment so partially cached directories never split one project across several headers; the cached working directory provides the header label and legacy pre-grouping cache records re-extract once to supply it.
+
 ## [0.1.6]
 
 ### Added
 
 - Preview trashed sessions in place with Enter, scroll read-only conversation excerpts, and switch between family members. Messages use Pi's themed Markdown rendering with highlighted code blocks and isolated formatting per excerpt. Ctrl+R requests a confirmed whole-family restore from either search or preview; Esc returns from preview without losing the search.
 - Support Page Up/Page Down and Home/End in Session Trash: page through search results and previews, and jump straight to the first or last family or to the preview's top and bottom.
-- Group Session Trash families under their originating project directories, matching session search: folder headers use the cached working directory when known, the selected family's folder stays fixed above the scrolling list, and filtering keeps only folders with matches.
+- Group Session Trash families under their originating project directories using session search's grouping: stable per-project groups (never split by partially cached working directories), folder labels prefer the cached working directory, and a fixed header above the scrolling rows tracks the group at the top of the viewport like session search.
 - Open Session Trash before transcript indexing finishes, enrich search in the background, and reuse guarded metadata caches for unchanged files. Closing the picker cancels indexing; stale or unsafe metadata falls back to filenames without weakening restore or purge validation.
 - Clean unrelated inactive session families while other Pi instances stay open, protecting registered open sessions and coordinating session changes across windows. Unregistered or unverifiable instances still defer maintenance.
 

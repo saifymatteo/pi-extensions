@@ -147,7 +147,7 @@ class Navigator implements Component {
 			lines.push(messageRow(row, item.role as "user" | "assistant", isSelected));
 		}
 		lines.push(plainRow(""));
-		lines.push(plainRow(this.theme.fg("dim", `↑↓ navigate · ${this.selected + 1}/${this.items.length} · Enter jump · Esc close`)));
+		lines.push(plainRow(this.theme.fg("dim", `↑↓/PgUp/PgDn · Home/End · ${this.selected + 1}/${this.items.length} · Enter jump · Esc close`)));
 		lines.push(border(`┗${"━".repeat(inner)}┛`));
 		return lines;
 	}
@@ -158,6 +158,10 @@ class Navigator implements Component {
 		if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) return this.done(null);
 		if (matchesKey(data, "up")) this.selected = Math.max(0, this.selected - 1);
 		else if (matchesKey(data, "down")) this.selected = Math.min(this.items.length - 1, this.selected + 1);
+		else if (matchesKey(data, "pageUp")) this.selected = Math.max(0, this.selected - this.pageSize);
+		else if (matchesKey(data, "pageDown")) this.selected = Math.min(this.items.length - 1, this.selected + this.pageSize);
+		else if (matchesKey(data, "home")) this.selected = 0;
+		else if (matchesKey(data, "end")) this.selected = Math.max(0, this.items.length - 1);
 		else if (matchesKey(data, "enter")) {
 			const item = this.items[this.selected];
 			if (item) {

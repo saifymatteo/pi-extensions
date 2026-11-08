@@ -4,6 +4,12 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.5]
+
+### Added
+
+- Page through navigation items with Page Up/Page Down and jump to the first or last with Home/End.
+
 ## [0.1.4]
 
 ### Added

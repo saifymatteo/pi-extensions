@@ -9,6 +9,30 @@ export type TrashPreviewLoader = (id: string, memberIndex: number, signal: Abort
 export type TrashIndexProgress = { completed: number; total: number; failed: number };
 type TrashRow = { kind: "folder"; label: string } | { kind: "family"; choice: TrashChoice };
 
+// Ported from session search's buildSessionRows, simplified for flat families:
+// group by the stable encoded project segment (never the progressive cached cwd,
+// which arrives per family and would split one project into several groups), keep
+// the caller's newest-first order within groups, and order groups by their newest
+// family (first appearance among the pre-sorted choices). The cached cwd is
+// display-only: each folder label shows the first cached cwd in its group, falling
+// back to the segment until indexing fills it in.
+function buildFamilyRows(choices: TrashChoice[]): TrashRow[] {
+	const groups = new Map<string, { first: number; label: string; families: TrashChoice[] }>();
+	for (const [index, choice] of choices.entries()) {
+		const key = choice.group || "";
+		const group = groups.get(key) ?? { first: index, label: key || "(no project)", families: [] };
+		group.families.push(choice);
+		if (choice.cwd && group.label === (key || "(no project)")) group.label = choice.cwd;
+		groups.set(key, group);
+	}
+	const rows: TrashRow[] = [];
+	for (const [, { label, families }] of [...groups.entries()].sort(([, a], [, b]) => a.first - b.first)) {
+		rows.push({ kind: "folder", label });
+		for (const choice of families) rows.push({ kind: "family", choice });
+	}
+	return rows;
+}
+
 export class SessionTrashDialog implements Component, Focusable {
 	private input = new Input({ prompt: "" });
 	private rows: TrashRow[] = [];
@@ -65,34 +89,33 @@ export class SessionTrashDialog implements Component, Focusable {
 	}
 
 	private buildList(selected?: string): void {
-		// Families grouped by their originating project directory, newest trash first
-		// (the caller pre-sorts). Folder labels prefer a cached real cwd over the
-		// encoded session-directory segment.
+		// Group like session search: families under their project directory, newest
+		// trash first (the caller pre-sorts), groups ordered by their newest family
+		// with a localeCompare tiebreak. Folder labels prefer a cached real cwd over
+		// the encoded session-directory segment.
 		if (selected !== undefined) this.selectedValue = selected;
-		if (this.selectedValue && !this.filtered.some(choice => choice.value === this.selectedValue)) this.selectedValue = undefined;
-		this.selectedValue ??= this.filtered[0]?.value;
-		const labels = new Map<string, string>();
-		for (const choice of this.filtered) {
-			const key = choice.group || "";
-			if (!labels.has(key)) labels.set(key, choice.cwd || "");
-			else if (choice.cwd && !labels.get(key)) labels.set(key, choice.cwd);
-		}
-		const rows: TrashRow[] = [];
-		const seen = new Set<string>();
-		for (const choice of this.filtered) {
-			const key = choice.group || "";
-			if (!seen.has(key)) { seen.add(key); rows.push({ kind: "folder", label: labels.get(key) || key || "(no project)" }); }
-			rows.push({ kind: "family", choice });
-		}
-		this.rows = rows;
-		this.selectedRow = Math.max(0, rows.findIndex(row => row.kind === "family" && row.choice.value === this.selectedValue));
+		this.rows = buildFamilyRows(this.filtered);
+		const families = this.selectableRows();
+		const kept = families.find(index => this.rows[index].kind === "family" && this.rows[index].choice.value === this.selectedValue);
+		this.selectedRow = kept ?? families[0] ?? 0;
+		const selectedRow = this.rows[this.selectedRow];
+		this.selectedValue = selectedRow?.kind === "family" ? selectedRow.choice.value : undefined;
 		this.clampOffset();
 	}
 
-	getSelectedItem(): TrashChoice | undefined { return this.filtered.find(choice => choice.value === this.selectedValue); }
+	private selectableRows(): number[] {
+		return this.rows.flatMap((row, index) => row.kind === "family" ? [index] : []);
+	}
+
+	getSelectedItem(): TrashChoice | undefined {
+		const row = this.rows[this.selectedRow];
+		return row?.kind === "family" ? row.choice : undefined;
+	}
 
 	private activeFolderIndex(): number {
-		for (let i = Math.min(this.selectedRow, this.rows.length - 1); i >= 0; i--) {
+		// Session search pins the fixed header to the window top, not the selection:
+		// the header names the group whose families fill the top of the viewport.
+		for (let i = Math.min(this.offset, this.rows.length - 1); i >= 0; i--) {
 			if (this.rows[i]?.kind === "folder") return i;
 		}
 		return -1;
@@ -223,15 +246,17 @@ export class SessionTrashDialog implements Component, Focusable {
 		const home = matchesKey(data, Key.home);
 		const end = matchesKey(data, Key.end);
 		if (up || down || pageUp || pageDown || home || end) {
-			const index = this.filtered.findIndex((choice) => choice.value === this.selectedValue);
-			const count = this.filtered.length;
-			if (count) {
-				const next = home ? 0 : end ? count - 1
+			const families = this.selectableRows();
+			const position = families.indexOf(this.selectedRow);
+			if (families.length) {
+				const next = home ? 0 : end ? families.length - 1
 					: pageUp || pageDown
-						? Math.max(0, Math.min(count - 1, index + (pageUp ? -this.viewport : this.viewport)))
-						: (index + (up ? -1 : 1) + count) % count;
-				this.selectedValue = this.filtered[next]?.value;
-				this.buildList(this.selectedValue);
+						? Math.max(0, Math.min(families.length - 1, position + (pageUp ? -this.viewport : this.viewport)))
+						: (position + (up ? -1 : 1) + families.length) % families.length;
+				this.selectedRow = families[Math.max(0, Math.min(next, families.length - 1))];
+				const row = this.rows[this.selectedRow];
+				this.selectedValue = row?.kind === "family" ? row.choice.value : undefined;
+				this.clampOffset();
 			}
 		} else {
 			const previous = this.input.getValue();
@@ -278,8 +303,8 @@ export class SessionTrashDialog implements Component, Focusable {
 	render(width: number): string[] {
 		const height = Math.max(1, this.tui.terminal.rows);
 		if (this.preview) return this.renderPreview(width, height);
-		// Fixed lines: 2 borders, search, active-folder header, footer, list scroll info.
-		const viewport = dialogRows(this.tui, 6);
+		// Fixed lines: 2 borders, search, active-folder header, footer — session search's chrome.
+		const viewport = dialogRows(this.tui, 5);
 		if (viewport !== this.viewport) {
 			this.viewport = viewport;
 			this.buildList(this.selectedValue);
@@ -288,7 +313,7 @@ export class SessionTrashDialog implements Component, Focusable {
 		if (width < 16 || height < 8) return [
 			...this.input.render(Math.max(1, width)),
 			...(this.indexStatus() ? [this.indexStatus()] : []),
-			...this.windowLines(this.viewport).map((line) => this.theme.fg(line.startsWith("▶ ") ? "warning" : "text", line)),
+			...this.windowLines(this.viewport).map((line) => this.theme.fg(line.trimStart().startsWith("▶ ") ? "warning" : "text", line)),
 		].slice(0, height).map((line) => truncateToWidth(line, Math.max(0, width), ""));
 
 		// Match session-finder.ts: heavy border, two-cell padding and warning selection.
@@ -304,9 +329,9 @@ export class SessionTrashDialog implements Component, Focusable {
 		};
 		const lines = [border(`┏${title}${"━".repeat(Math.max(0, inner - visibleWidth(title)))}┓`)];
 		for (const line of this.input.render(bodyWidth - 8)) lines.push(row(`Search: ${line}`, "warning"));
-		// Match session-finder.ts: the selected family's folder stays fixed above the
-		// scrolling list, and inline folder headers skip the fixed copy. With no rows,
-		// render the empty-state text instead of folder chrome.
+		// Match session search: the selected family's folder stays fixed above the
+		// scrolling rows, and inline folder headers skip the fixed copy. With no
+		// rows, render the empty-state text instead of folder chrome.
 		const folderIndex = this.activeFolderIndex();
 		if (!this.rows.length) {
 			const empty = this.indexStatus() ? `No matches yet — ${this.indexStatus()}` : this.choices.length ? "No matching families" : "Trash empty";
@@ -315,23 +340,24 @@ export class SessionTrashDialog implements Component, Focusable {
 		} else {
 			const folder = folderIndex >= 0 && this.rows[folderIndex]?.kind === "folder" ? this.rows[folderIndex].label : "(no project)";
 			lines.push(row(this.theme.fg("dim", `▸ ${folder}`), "dim"));
-			for (const line of this.windowLines(this.viewport, folderIndex)) lines.push(row(line, line.startsWith("▶ ") ? "warning" : line.startsWith("▸ ") ? "dim" : "text"));
+			for (const line of this.windowLines(this.viewport, folderIndex)) {
+				lines.push(row(line, line.trimStart().startsWith("▶ ") ? "warning" : line.startsWith("▸ ") ? "dim" : "text"));
+			}
 		}
-		const info = this.rows.length > this.viewport ? `  (${Math.max(0, this.filtered.findIndex(choice => choice.value === this.selectedValue) + 1) || 1}/${this.filtered.length})` : "";
-		lines.push(row(this.theme.fg("dim", info), "dim"));
 		lines.push(row("↑↓ navigate · Home/End jump · type to search · Enter preview · Ctrl+R restore · Esc close", "dim"));
 		lines.push(border(`┗${"━".repeat(inner)}┛`));
 		return lines;
 	}
 
-	/** Windowed list rows: folder headers plus the selected family marker. */
+	/** Windowed list rows in session search's style: `▸ folder` headers and family rows. */
 	private windowLines(count: number, skipFolderIndex = -1): string[] {
-		// Like session-finder: slice rows, drop the fixed folder copy, cap at `count`.
 		const window: string[] = [];
 		for (let i = this.offset; i < this.rows.length && window.length < count; i++) {
 			if (i === skipFolderIndex) continue;
 			const entry = this.rows[i];
-			window.push(entry.kind === "folder" ? `▸ ${entry.label}` : `${entry.choice.value === this.selectedValue ? "▶ " : "  "}${entry.choice.label}${entry.choice.description ? ` · ${entry.choice.description}` : ""}`);
+			window.push(entry.kind === "folder"
+				? `▸ ${entry.label}`
+				: `  ${entry.choice.value === this.selectedValue ? "▶ " : "  "}${entry.choice.label}${entry.choice.description ? ` · ${entry.choice.description}` : ""}`);
 		}
 		while (window.length < count) window.push("");
 		return window;

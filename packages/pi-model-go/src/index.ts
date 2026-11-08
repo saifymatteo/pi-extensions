@@ -112,7 +112,7 @@ class Picker implements Component {
 			: sel ? `${sel.name}${sel.hasAuth ? "" : " · no API key configured"}` : "no match";
 		out.push(line(t.fg("muted", detail)));
 		if (this.notes.length) out.push(line(t.fg("warning", "⚠ " + this.notes.join(" · "))));
-		out.push(line(t.fg("dim", "↑↓ move · Enter switch · ^O sort · ^S scope · ^U clear · Esc close · $/M tokens, effective = input ÷ credit")));
+		out.push(line(t.fg("dim", "↑↓/PgUp/PgDn move · Home/End jump · Enter switch · ^O sort · ^S scope · ^U clear · Esc close · $/M tokens, effective = input ÷ credit")));
 		out.push(line(""));
 		out.push(border(`┗${"━".repeat(inner)}┛`));
 		return out.map((l) => truncateToWidth(l, width));
@@ -131,6 +131,8 @@ class Picker implements Component {
 		else if (matchesKey(data, "down")) this.selected = Math.min(rows.length - 1, this.selected + 1);
 		else if (matchesKey(data, "pageUp")) this.selected = Math.max(0, this.selected - this.pageSize);
 		else if (matchesKey(data, "pageDown")) this.selected = Math.min(rows.length - 1, this.selected + this.pageSize);
+		else if (matchesKey(data, "home")) this.selected = 0;
+		else if (matchesKey(data, "end")) this.selected = Math.max(0, rows.length - 1);
 		else if (matchesKey(data, "ctrl+o")) this.sort = SORTS[(SORTS.indexOf(this.sort) + 1) % SORTS.length];
 		else if (matchesKey(data, "ctrl+s")) { this.scope = SCOPES[(SCOPES.indexOf(this.scope) + 1) % SCOPES.length]; this.selected = 0; }
 		else if (matchesKey(data, "ctrl+u")) { this.query = ""; this.selected = 0; }

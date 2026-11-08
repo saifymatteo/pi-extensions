@@ -36,6 +36,7 @@ const DIALOG_PROBE = `
           const lines = render(width);
           publish({ mode: tui.mode, lastInput, top: dialog.previewScroll.scrollTop,
             viewport: dialog.previewScroll.viewportHeight,
+            loaded: !!dialog.previewValue && typeof dialog.previewValue === 'object',
             overlayFocused: typeof tui.isOverlayFocused === 'function' ? tui.isOverlayFocused() : null,
             pageKeys: kb.getKeys('tui.select.pageDown') });
           return lines;
@@ -84,10 +85,16 @@ test('native fullscreen overlay routes physical paging input to Trash', { skip: 
       await new Promise(resolve => setTimeout(resolve, 3000));
     }
     child.write('\r');
-    const opened = await poll(frame => frame.viewport > 0, 'preview never opened');
+    const opened = await poll(frame => frame.viewport > 0 && frame.loaded, 'preview never opened or loaded');
     assert.equal(opened.mode, 'fullscreen');
-    child.write('\x1b[6~');
-    const down = await poll(frame => frame.lastInput === '\x1b[6~' && frame.top > 0, 'Page Down never reached the dialog');
+    // A keystroke can land between frames; retry until the scroll moves.
+    const downDeadline = Date.now() + 20_000;
+    let down = null;
+    while (Date.now() < downDeadline) {
+      child.write('\x1b[6~');
+      try { down = await poll(frame => frame.lastInput === '\x1b[6~' && frame.top > 0, 'Page Down never reached the dialog'); break; }
+      catch { if (Date.now() >= downDeadline) throw new Error('Page Down never reached the dialog (retries exhausted)'); }
+    }
     assert.equal(down.top, down.viewport);
     child.write('\x1b[5~');
     await poll(frame => frame.lastInput === '\x1b[5~' && frame.top === 0, 'Page Up never reached the dialog');
