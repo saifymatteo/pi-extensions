@@ -14,6 +14,7 @@ test('image rewrite transmits pixels to injected service and deduplicates matchi
     count++;
     assert.equal(url, 'https://example.invalid/v1/chat/completions');
     assert.equal(JSON.parse(options.body).messages[0].content[1].image_url.url, 'data:image/png;base64,dGVzdA==');
+    assert.equal(JSON.parse(options.body).stream, false);
     return { ok: true, json: async () => ({ choices: [{ message: { content: 'Visible text' } }] }) };
   };
   assert.equal(await rewriteMessages(messages, [{ model: 'fixture-vision', apiKey: 'fixture-key', baseUrl: 'https://example.invalid/v1' }], fetchStub), true);

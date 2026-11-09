@@ -4,6 +4,14 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.9]
+
+### Fixed
+
+- Deliver image descriptions through chat endpoints that stream by default instead of failing every image with a JSON parse error (pi-vision).
+- Survive Windows machines where the process inventory takes 20s+: startup registration and session/background-job process scans no longer fail, so freshly started instances register and "no verifiable session registration" deferrals stop (pi-session-retention, pi-bg-bash).
+- Stop mistaking non-Pi tooling whose command line merely mentions a `pi`/`pi-bolt` path (e.g. Hindsight deepen jobs) for unregistered Pi instances that blocked /session-cleanup (pi-session-retention).
+
 ## [0.1.8]
 
 ### Added

@@ -109,7 +109,20 @@ test('an unsaved fork protects its on-disk parent family before the child file e
   await assert.rejects(access(unrelated), { code: 'ENOENT' });
 });
 
-test('a separate process publishes protection and cannot change sessions while maintenance holds the gate', { timeout: 15_000 }, async t => {
+test('process recognition: node-hosted pi scripts match, unrelated tooling with pi-like paths does not', () => {
+	const own = { pid: 1, name: 'pi.exe', command: 'pi' };
+	const snap = [
+		own,
+		{ pid: 2, name: 'node.exe', command: 'node C:\\hindsight\\coding-agents\\dist\\deepen.js --repo D:\\Git\\Pi-Bolt --gitlog-limit 300' },
+		{ pid: 3, name: 'node.exe', command: 'node D:\\tools\\pi.mjs serve' },
+		{ pid: 4, name: 'node.exe', command: 'node C:\\dev\\pi-mono\\packages\\coding-agent\\dist\\cli.js' },
+		{ pid: 5, name: 'bun', command: 'bun /opt/pi-bolt/pi.js' },
+	];
+	const peers = safety.otherPiProcesses(snap, own.pid);
+	assert.deepEqual(peers.map(p => p.pid), [3, 4, 5]);
+});
+
+ test('a separate process publishes protection and cannot change sessions while maintenance holds the gate', { timeout: 15_000 }, async t => {
   const f = await fixture(t);
   const childFile = join(f.dir, 'child.mjs');
   await writeFile(childFile, `

@@ -4,6 +4,13 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.8]
+
+### Fixed
+
+- Raise the Windows process-inventory timeout from 15s to 60s: machines where the `Win32_Process` WMI enumeration takes 20s+ failed every scan, so startup registration silently failed and maintenance deferred with "no verifiable session registration" for freshly started instances.
+- Require a pi script file (`pi.js`/`.cjs`/`.mjs`) when recognizing node/bun-hosted Pi processes: a bare `pi`/`pi-bolt` path token in a command line (e.g. Hindsight's `deepen.js --repo D:\Git\Pi-Bolt`) false-matched unrelated long-running tooling and blocked maintenance with "no verifiable session registration" for as long as that process lived.
+
 ## [0.1.7]
 
 ### Fixed

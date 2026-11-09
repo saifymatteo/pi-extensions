@@ -4,6 +4,12 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.5]
+
+### Fixed
+
+- Send `stream: false` on describe requests: gateways that stream by default returned `text/event-stream`, which broke `response.json()` with `JSON Parse error: Unexpected identifier "data"` and blocked every image.
+
 ## [0.1.4]
 
 ### Added

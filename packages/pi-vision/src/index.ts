@@ -377,6 +377,9 @@ async function describeOnce(
   const payload = {
     model: config.model,
     max_tokens: 4096,
+    // Some OpenAI-compatible gateways stream (text/event-stream) by default;
+    // an SSE body breaks response.json() below.
+    stream: false,
     messages: [
       {
         role: "user",

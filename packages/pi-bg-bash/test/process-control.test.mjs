@@ -106,7 +106,7 @@ for (const windows of [false, true]) {
     assert.equal(f.rows.has(500), true);
     for (const call of f.calls) {
       assert.ok(Array.isArray(call.args));
-      assert.equal(call.options.timeout, 15000);
+      assert.equal(call.options.timeout, 60000);
       assert.equal(call.options.env.LC_ALL, 'C');
       assert.equal(call.options.shell, undefined);
     }

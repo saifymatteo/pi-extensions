@@ -4,6 +4,12 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.5]
+
+### Fixed
+
+- Raise the Windows process-command timeout from 15s to 60s: machines where the `Win32_Process` WMI enumeration takes 20s+ failed background-job identity scans and stop/kill bookkeeping.
+
 ## [0.1.4]
 
 ### Added

@@ -37,7 +37,7 @@ function validateIdentity(identity: ProcessIdentity): void {
 function run(file: string, args: string[], signal?: AbortSignal): Promise<string> {
 	return new Promise((resolve, reject) => {
 		execFile(file, args, {
-			encoding: "utf8", windowsHide: true, timeout: 15_000, maxBuffer: 16 * 1024 * 1024, signal,
+			encoding: "utf8", windowsHide: true, timeout: 60_000, maxBuffer: 16 * 1024 * 1024, signal, // Win32_Process scans can take 20s+ under load
 			env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
 		}, (error, stdout, stderr) => {
 			if (error) reject(error);

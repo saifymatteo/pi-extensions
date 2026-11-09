@@ -8,11 +8,13 @@ export type ProcessInfo = { pid: number; name: string; command: string; started?
 const exec = promisify(execFile);
 
 // Processes without a verified session registration still require a fail-closed fallback.
+// Node-hosted recognition requires a pi script FILE (pi.js/.cjs/.mjs): a bare "pi"/"pi-bolt"
+// path token also matches unrelated tooling, e.g. hindsight's `deepen.js --repo D:\Git\Pi-Bolt`.
 export function otherPiProcesses(processes: ProcessInfo[], ownPid: number): ProcessInfo[] {
 	if (!processes.some((item) => item.pid === ownPid)) throw new Error("Cannot verify the current Pi process; cleanup deferred.");
 	return processes.filter(({ pid, name, command }) => pid !== ownPid && (
 		/^pi(?:-bolt)?(?:\.exe)?$/i.test(name) ||
-		(/^(?:node|bun)(?:\.exe)?$/i.test(name) && /(?:[/\\]pi(?:-bolt)?(?:\.[cm]?js)?(?:[\s"']|$)|pi-coding-agent[/\\]|packages[/\\]coding-agent[/\\])/i.test(command))
+		(/^(?:node|bun)(?:\.exe)?$/i.test(name) && /(?:[/\\]pi(?:-bolt)?\.[cm]?js(?:[\s"']|$)|pi-coding-agent[/\\]|packages[/\\]coding-agent[/\\])/i.test(command))
 	));
 }
 
@@ -20,7 +22,7 @@ export async function processSnapshot(): Promise<ProcessInfo[]> {
 	if (process.platform === "win32") {
 		const { stdout } = await exec("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
 			"[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); @(Get-CimInstance Win32_Process -ErrorAction Stop | Select-Object ProcessId,Name,CommandLine,@{Name='Started';Expression={if ($_.CreationDate) {$_.CreationDate.ToUniversalTime().Ticks.ToString()}}}) | ConvertTo-Json -Compress"],
-			{ timeout: 15_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true });
+			{ timeout: 60_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true }); // Win32_Process enumeration can take 20s+ under load; 15s killed every scan on such machines
 		const items = JSON.parse(stdout.replace(/^\uFEFF/, ""));
 		if (!Array.isArray(items)) throw new Error("Cannot read process inventory; cleanup deferred.");
 		return items.map((item) => ({ pid: item.ProcessId, name: item.Name ?? "", command: item.CommandLine ?? "", started: item.Started }));
