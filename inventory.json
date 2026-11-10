@@ -1,6 +1,9 @@
 {
   "extensions": [
     {
+      "directory": "pi-9router"
+    },
+    {
       "directory": "pi-bg-bash"
     },
     {

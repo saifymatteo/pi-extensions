@@ -99,7 +99,7 @@ def load_env_file(path: str | os.PathLike[str] | None) -> None:
 # connection: the id is validated at request time by the API itself.
 
 PACKAGE_PROVIDER_CONFIGS = {
-    "9router": "haoyiyin/9router.json",
+    "9router": "saifymatteo/9router.json",
 }
 
 # models.json provider "api" types -> describe_image protocols

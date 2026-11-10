@@ -141,7 +141,7 @@ interface ChainResult {
 }
 
 const PACKAGE_PROVIDER_CONFIGS: Record<string, string> = {
-  "9router": "haoyiyin/9router.json",
+  "9router": "saifymatteo/9router.json",
 };
 
 const API_TYPE_TO_PROTOCOL: Record<string, string> = {

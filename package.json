@@ -20,6 +20,7 @@
 	},
 	"devDependencies": {
 		"@earendil-works/pi-coding-agent": "1.4.0",
+		"@earendil-works/pi-ai": "^1.4.0",
 		"@earendil-works/pi-tui": "1.4.0",
 		"@types/node": "24.19.2",
 		"typebox": "^1.0.0",
@@ -32,6 +33,7 @@
 		"image": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/demo.gif",
 		"extensions": [
 			"./packages/pi-load-pi-dotenv/src/index.ts",
+			"./packages/pi-9router/src/index.ts",
 			"./packages/pi-bg-bash/src/index.ts",
 			"./packages/pi-claude-usage/src/index.ts",
 			"./packages/pi-clipboard-image/src/index.ts",

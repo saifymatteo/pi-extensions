@@ -1,0 +1,45 @@
+{
+  "name": "@saifymatteo/pi-9router",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension"
+  ],
+  "files": [
+    "src",
+    "README.md",
+    "CHANGELOG.md",
+    "NOTICE.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "image": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-9router/screenshot.png",
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "dependencies": {
+    "@xynogen/pix-pretty": "^1.11.2",
+    "@xynogen/pix-runtime": "^0.8.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "description": "9Router provider driven by the router's own /v1/models endpoint, plus fetch/search/transcribe tools.",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saifymatteo/pi-extensions.git",
+    "directory": "packages/pi-9router"
+  }
+}

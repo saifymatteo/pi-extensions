@@ -107,7 +107,9 @@ html,body{margin:0;background:transparent}
 </style><div class="shot">${body}${caption ? `<div class="cap">${esc(caption)}</div>` : ''}</div>`;
 }
 
-const AB = (...a) => execFileSync('agent-browser', ['--session', 'pi-shots', ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+// On Windows the npm global install exposes agent-browser only as .cmd/.ps1 shims,
+// which spawnSync cannot exec without a shell.
+const AB = (...a) => execFileSync('agent-browser', ['--session', 'pi-shots', ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], shell: process.platform === 'win32' });
 let ready = false;
 export function capture(name, html, out) {
   const dir = join(HERE, 'html'); mkdirSync(dir, { recursive: true });

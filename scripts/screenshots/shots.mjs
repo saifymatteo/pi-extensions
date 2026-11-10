@@ -156,6 +156,31 @@ export const SHOTS = {
     });
     return { panels: [solo(rows(snap, { from: /Tool usage/, to: /Esc close/, box: true }))] };
   },
+  'pi-9router': async () => {
+    const models = [
+      { id: 'kr/claude-sonnet-4.5', owned_by: 'kr', capabilities: { vision: true, reasoning: true, thinkingFormat: 'claude-budget', thinkingCanDisable: true, contextWindow: 200000, maxOutput: 64000 } },
+      { id: 'kr/claude-haiku-4.5', owned_by: 'kr', capabilities: { vision: true, reasoning: true, thinkingFormat: 'claude-budget', thinkingCanDisable: true, contextWindow: 200000, maxOutput: 32000 } },
+      { id: 'cx/gpt-6-luna', owned_by: 'cx', capabilities: { vision: true, reasoning: true, thinkingFormat: 'openai', thinkingCanDisable: true, contextWindow: 400000, maxOutput: 128000 } },
+      { id: 'cx/gpt-6-luna[1m]', owned_by: 'cx', capabilities: { vision: true, reasoning: true, thinkingFormat: 'openai', thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 128000 } },
+      { id: 'ag/gemini-4-argon-high', owned_by: 'ag', capabilities: { vision: true, reasoning: true, thinkingFormat: 'gemini-level', thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 64000 } },
+      { id: 'omlx/Ling-3.0-tiny-oQ6e', owned_by: 'omlx', capabilities: { vision: false, reasoning: true, thinkingFormat: 'qwen', thinkingCanDisable: true, contextWindow: 262144, maxOutput: 32000 } },
+      { id: 'ollama/gemma4:cloud', owned_by: 'ollama', capabilities: { vision: true, reasoning: false, contextWindow: 128000, maxOutput: 8192 } },
+      { id: 'nous/meituan/longcat-2.5-preview:free', owned_by: 'nous', capabilities: { vision: false, reasoning: true, thinkingFormat: 'nous', thinkingCanDisable: false, contextWindow: 262144, maxOutput: 32000 } },
+      { id: 'oc/jev-1.13-free', owned_by: 'oc', capabilities: { vision: false, reasoning: false, contextWindow: 200000, maxOutput: 32000 } },
+    ];
+    const snap = await run({ cols: 110, rows: 36, setup: ({ agent, port }) => {
+      mkdirSync(join(agent, 'saifymatteo'), { recursive: true });
+      writeFileSync(join(agent, 'saifymatteo', '9router.json'), JSON.stringify({ baseUrl: `http://127.0.0.1:${port}/v1`, apiKey: 'demo-key' }, null, 2));
+      // pi's picker only lists models from configured providers; seed the login
+      // credential the extension's /login flow would have persisted.
+      writeFileSync(join(agent, 'auth.json'), JSON.stringify({ '9router': { type: 'oauth', access: 'demo-key', refresh: 'demo-key', expires: Number.MAX_SAFE_INTEGER } }, null, 2));
+    }, routes: { '/models': (req, res) => json(res, { data: models }) }, extensions: ['pi-9router'] }, async s => {
+      await s.type('/model'); s.key(KEY.enter); await s.waitFor(/model/i); await s.settle(1000);
+      s.type('claude'); await s.settle(500);
+      s.key(KEY.down); await s.settle(300);
+    });
+    return { panels: [solo(rows(snap, { from: /model/i, to: /Esc/, box: true }))] };
+  },
   'pi-model-go': async () => {
     const fetched = Date.now();
     const files = {

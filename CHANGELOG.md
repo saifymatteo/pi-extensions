@@ -4,6 +4,14 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Added
+
+- `pi-9router`: 9Router provider driven entirely by the router's own `/v1/models` endpoint (with `fetch`/`search`/`transcribe` tools), replacing the third-party `@haoyiyin/9router` package and dropping its external model-catalog dependencies (modelgrep.com, models.dev, opencode zen).
+
+### Changed
+
+- pi-vision resolves 9router credentials from `saifymatteo/9router.json` (the new package migrates the old `haoyiyin/9router.json` automatically).
+
 ## [0.1.9]
 
 ### Fixed

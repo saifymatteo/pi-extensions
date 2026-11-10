@@ -59,10 +59,13 @@ export const DEMO_FILES = {
 // HOME is a short fixed path (/tmp/demo) so absolute paths in tool output stay
 // readable; sessions run one at a time. `realHome` resolves symlinks (/private/tmp)
 // for extensions that reject symlinked path components.
+// POSIX keeps /tmp/demo; Windows has no /tmp, so fall back to the OS temp dir.
+const DEMO_HOME = process.platform === 'win32' ? join(tmpdir(), 'pi-shots-demo') : '/tmp/demo';
+const DEMO_TMP = process.platform === 'win32' ? tmpdir() : '/tmp';
 export function makeHome(port, { settings = {}, files = {}, models, setup, realHome = false } = {}) {
-  rmSync('/tmp/demo', { recursive: true, force: true });
-  mkdirSync('/tmp/demo');
-  const home = realpathSync('/tmp/demo'); // pi realpaths cwd, so HOME must match
+  rmSync(DEMO_HOME, { recursive: true, force: true });
+  mkdirSync(DEMO_HOME);
+  const home = realpathSync(DEMO_HOME); // pi realpaths cwd, so HOME must match
   const agent = join(home, '.pi', 'agent');
   for (const d of ['tmp', join('.pi', 'agent', 'sessions'), join('.pi', 'agent', 'bin'), 'acme-api']) mkdirSync(join(home, d), { recursive: true });
   for (const [rel, content] of Object.entries({ ...DEMO_FILES, ...files })) {
@@ -87,7 +90,7 @@ export function makeHome(port, { settings = {}, files = {}, models, setup, realH
 }
 
 export function hostEnv({ home, agent }, env = {}) {
-  return { ...process.env, PI_CODING_AGENT_DIR: agent, PI_CODING_AGENT_SESSION_DIR: join(agent, 'sessions'), TMPDIR: '/tmp', COLORTERM: 'truecolor', TERM: 'xterm-256color', TERM_PROGRAM: 'shots', HOME: home, PI_SKIP_VERSION_CHECK: '1', PI_OFFLINE: '1', PI_TELEMETRY: '0', ...env };
+  return { ...process.env, PI_CODING_AGENT_DIR: agent, PI_CODING_AGENT_SESSION_DIR: join(agent, 'sessions'), TMPDIR: DEMO_TMP, COLORTERM: 'truecolor', TERM: 'xterm-256color', TERM_PROGRAM: 'shots', HOME: home, PI_SKIP_VERSION_CHECK: '1', PI_OFFLINE: '1', PI_TELEMETRY: '0', ...env };
 }
 export const hostArgs = (extensions, { session = false, skills = false } = {}) => [STOCK,
   '--no-extensions', ...(skills ? [] : ['--no-skills']), '--no-prompt-templates', '--no-themes', '--no-mcp', '--no-context-files', ...(session ? [] : ['--no-session']), '--no-approve',

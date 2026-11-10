@@ -12,7 +12,7 @@ Registers a `context` hook, not a tool or slash command. Preserves native images
 
 Reads `<agent-dir>/extensions/vision-toolkit.json`: `model`, optional `fallbacks`, `imagePolicy` (native/describe/describe-old), `lang` (en/zh), and `providers` overrides. Example points at example.invalid and must be reviewed manually; it is never loaded automatically. Provider override keys support `$ENV_NAME` references (not brace syntax).
 
-Resolution also consults agent `models.json`, `models-store.json`, `auth.json`, and optional `haoyiyin/9router.json`. None of those real files are bundled. An explicit provider/model ID and override can resolve without a static catalog entry. Requires an image-capable OpenAI Chat Completions service; no CLI. Self-description requires current-model credentials in auth.json.
+Resolution also consults agent `models.json`, `models-store.json`, `auth.json`, and optional `saifymatteo/9router.json`. None of those real files are bundled. An explicit provider/model ID and override can resolve without a static catalog entry. Requires an image-capable OpenAI Chat Completions service; no CLI. Self-description requires current-model credentials in auth.json.
 
 ## Bundled skill
 

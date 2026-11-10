@@ -4,6 +4,10 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Changed
+
+- Resolve the 9router provider's credentials from `saifymatteo/9router.json` instead of `haoyiyin/9router.json`, matching the new `@saifymatteo/pi-9router` package that replaces `@haoyiyin/9router` (the login flow migrates the file automatically on its first launch).
+
 ## [0.1.5]
 
 ### Fixed
