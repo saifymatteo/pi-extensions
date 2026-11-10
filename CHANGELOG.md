@@ -10,7 +10,7 @@ Release notes are recorded from 0.1.3 onward.
 
 ### Changed
 
-- pi-vision resolves 9router credentials from `saifymatteo/9router.json` (the new package migrates the old `haoyiyin/9router.json` automatically).
+- `pi-9router` config is split by secret: `extensions/9router.json` holds the base URL and options (dotfile-versionable, no key), while the API key lives in `auth.json` as pi's standard 9router login credential; the login flow, migration from `haoyiyin/9router.json`, and the bundled tools all follow. pi-vision still reads its own hardcoded legacy path and needs a follow-up to resolve runtime providers via its `vision-toolkit.json` `providers.<name>.baseUrl` override.
 
 ## [0.1.9]
 

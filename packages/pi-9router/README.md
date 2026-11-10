@@ -14,9 +14,16 @@ pi install npm:@saifymatteo/pi-9router
 
 ## Configure
 
-There is no built-in default endpoint. Run `/login`, select **9Router**, and enter the base URL and API key. They are saved to `<agent-dir>/saifymatteo/9router.json` (mode `0600`) — `<agent-dir>` is `PI_CODING_AGENT_DIR` or `~/.pi/agent`. `/logout` semantics follow the login flow; the credential is also read from `ROUTER_API_BASE` / `ROUTER_API_KEY` environment variables as a fallback (the config file takes precedence).
+There is no built-in default endpoint. Run `/login`, select **9Router**, and enter the base URL and API key.
 
-Migrating from `@haoyiyin/9router`: on first launch the extension copies an existing `haoyiyin/9router.json` to the new location; the old file is left in place.
+The two halves live in different files, both under `<agent-dir>` (`PI_CODING_AGENT_DIR` or `~/.pi/agent`):
+
+- `extensions/9router.json` — the base URL and options (mode `0600`); **no API key is stored here**. This is the same directory other packages use for their settings (typically a symlink into your dotfiles), so it can be versioned safely.
+- `auth.json` — the API key, stored by pi as the standard `9router` login credential; chat authentication reads it from there, and so do the bundled tools.
+
+`ROUTER_API_BASE` / `ROUTER_API_KEY` environment variables override the config file and the credential respectively.
+
+Migrating from `@haoyiyin/9router`: on first launch the extension reads the old `haoyiyin/9router.json` (or the intermediate `saifymatteo/9router.json` from 0.1.0 dev builds), writes the new secret-free config, and moves the key into the `auth.json` credential. The old file is left in place because published pi-vision releases still read it; delete it once your pi-vision version resolves the new location.
 
 ## Model discovery
 
@@ -50,7 +57,7 @@ To override that default range, pass a custom `thinkingLevelMap` (keys: `off`, `
 
 ## Tools
 
-`fetch` / `search` / `transcribe` behave the same as in `pix-9router`; collapse config still lives in `~/.pi/agent/pix.json`. Disable any of them individually via the `tools` section of the config file — every tool is on by default:
+`fetch` / `search` / `transcribe` behave the same as in `pix-9router`; collapse config still lives in `~/.pi/agent/pix.json`. They register only when a base URL and a credential are both available at load time (logging in mid-session enables them on the next launch). Disable any of them individually via the `tools` section of the config file — every tool is on by default:
 
 ```json
 {

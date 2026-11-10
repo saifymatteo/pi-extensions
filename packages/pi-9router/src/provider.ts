@@ -17,7 +17,7 @@ import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-codin
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import type { RouterModel } from "./data.ts";
 import { getRouterModels } from "./data.ts";
-import { loadConfig, saveConfig, type RouterConfig } from "./config.ts";
+import { loadConfig, saveConfig, seedAuthCredential, type RouterConfig } from "./config.ts";
 
 /** The chat member of pi's ProviderModelConfig union — the only kind we register. */
 type ProviderChatModelConfig = Extract<ProviderModelConfig, { type?: "chat" }>;
@@ -202,12 +202,16 @@ function makeOAuth(pi: ExtensionAPI) {
 
 			saveConfig({
 				baseUrl: normalizedBase,
-				apiKey: trimmedKey,
+				apiKey: "",
 				comboReasoning: current.comboReasoning,
 				tools: current.tools,
 			});
 
-			// Re-register with the freshly saved config so models + base URL apply.
+			// The key lives in auth.json as the login credential; pi persists the
+			// returned value after login resolves. Seed it up front (force: an
+			// existing entry may hold a revoked key) so the immediate re-register
+			// can already fetch models.
+			seedAuthCredential(trimmedKey, { force: true });
 			await registerProvider(pi);
 
 			return { refresh: trimmedKey, access: trimmedKey, expires: Number.MAX_SAFE_INTEGER };

@@ -169,8 +169,8 @@ export const SHOTS = {
       { id: 'oc/jev-1.13-free', owned_by: 'oc', capabilities: { vision: false, reasoning: false, contextWindow: 200000, maxOutput: 32000 } },
     ];
     const snap = await run({ cols: 110, rows: 36, setup: ({ agent, port }) => {
-      mkdirSync(join(agent, 'saifymatteo'), { recursive: true });
-      writeFileSync(join(agent, 'saifymatteo', '9router.json'), JSON.stringify({ baseUrl: `http://127.0.0.1:${port}/v1`, apiKey: 'demo-key' }, null, 2));
+      mkdirSync(join(agent, 'extensions'), { recursive: true });
+      writeFileSync(join(agent, 'extensions', '9router.json'), JSON.stringify({ baseUrl: `http://127.0.0.1:${port}/v1` }, null, 2));
       // pi's picker only lists models from configured providers; seed the login
       // credential the extension's /login flow would have persisted.
       writeFileSync(join(agent, 'auth.json'), JSON.stringify({ '9router': { type: 'oauth', access: 'demo-key', refresh: 'demo-key', expires: Number.MAX_SAFE_INTEGER } }, null, 2));

@@ -7,11 +7,16 @@ import { registerProvider, isStaleCtxError } from "./provider.ts";
 
 export default async function (pi: ExtensionAPI): Promise<void> {
 	migrateLegacyConfig();
-	const { tools } = loadConfig();
-	// Per-tool switches from 9router.json (`"tools": {"fetch": false}`); on by default.
-	if (tools?.fetch !== false) registerFetch(pi);
-	if (tools?.search !== false) registerSearch(pi);
-	if (tools?.transcribe !== false) registerTranscribe(pi);
+	const cfg = loadConfig();
+	// The bundled fetch/search/transcribe tools call the router API, so they
+	// only register when a base URL and a credential are both available (the
+	// credential comes from auth.json / ROUTER_API_KEY at load time; logging in
+	// mid-session enables them on the next launch). Per-tool switches from
+	// 9router.json (`"tools": {"fetch": false}`) disable individually.
+	const toolsReady = Boolean(cfg.baseUrl && cfg.apiKey);
+	if (toolsReady && cfg.tools?.fetch !== false) registerFetch(pi);
+	if (toolsReady && cfg.tools?.search !== false) registerSearch(pi);
+	if (toolsReady && cfg.tools?.transcribe !== false) registerTranscribe(pi);
 
 	await registerProvider(pi);
 

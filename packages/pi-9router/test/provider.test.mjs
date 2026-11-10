@@ -78,25 +78,31 @@ test('combo opt-in honours the config switch and custom level map', () => {
   assert.deepEqual(host(p.resolveComboOptIn({ thinkingLevelMap: { max: null } })), { reasoning: true, thinkingLevelMap: { max: null } });
 });
 
-test('config resolves from PI_CODING_AGENT_DIR with env fallback and tool toggles', () => {
+test('config resolves from PI_CODING_AGENT_DIR with env/auth fallback and tool toggles', () => {
   const dir = tempAgentDir();
   const prev = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = dir;
   try {
     const c = loadExtension(configPathSource);
-    mkdirSync(join(dir, 'saifymatteo'), { recursive: true });
-    writeFileSync(join(dir, 'saifymatteo', '9router.json'), JSON.stringify({
-      baseUrl: 'https://router.example/v1/', apiKey: 'k1', tools: { transcribe: false },
+    mkdirSync(join(dir, 'extensions'), { recursive: true });
+    mkdirSync(join(dir, '.pi')); // noise: unrelated files must not confuse resolution
+    writeFileSync(join(dir, 'extensions', '9router.json'), JSON.stringify({
+      baseUrl: 'https://router.example/v1/', tools: { transcribe: false },
     }));
+    // A stray apiKey in the config file is ignored — the key lives in auth.json.
     let cfg = host(c.loadConfig());
     assert.equal(cfg.baseUrl, 'https://router.example/v1');
-    assert.equal(cfg.apiKey, 'k1');
+    assert.equal(cfg.apiKey, '');
     assert.equal(cfg.comboReasoning, true);
     assert.deepEqual(cfg.tools, { transcribe: false });
 
+    writeFileSync(join(dir, 'auth.json'), JSON.stringify({ '9router': { type: 'oauth', access: 'auth-key', refresh: 'auth-key', expires: 1 } }));
+    cfg = host(c.loadConfig());
+    assert.equal(cfg.apiKey, 'auth-key');
+
     delete process.env.ROUTER_API_BASE;
     process.env.ROUTER_API_KEY = 'env-key';
-    writeFileSync(join(dir, 'saifymatteo', '9router.json'), JSON.stringify({ baseUrl: 'https://router.example/v1' }));
+    writeFileSync(join(dir, 'extensions', '9router.json'), JSON.stringify({ baseUrl: 'https://router.example/v1' }));
     cfg = host(c.loadConfig());
     assert.equal(cfg.apiKey, 'env-key');
     assert.equal(cfg.tools, undefined);
@@ -106,25 +112,70 @@ test('config resolves from PI_CODING_AGENT_DIR with env fallback and tool toggle
   }
 });
 
-test('legacy haoyiyin config is copied once to the new location', () => {
-  const dir = tempAgentDir();
-  const prev = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = dir;
-  try {
-    const c = loadExtension(configPathSource);
-    mkdirSync(join(dir, 'haoyiyin'), { recursive: true });
-    writeFileSync(join(dir, 'haoyiyin', '9router.json'), JSON.stringify({ baseUrl: 'https://legacy.example/v1', apiKey: 'legacy' }));
-    assert.equal(c.migrateLegacyConfig(), true);
-    const migrated = JSON.parse(readFileSync(join(dir, 'saifymatteo', '9router.json'), 'utf8'));
-    assert.equal(migrated.baseUrl, 'https://legacy.example/v1');
-    assert.equal(migrated.apiKey, 'legacy');
-    assert.equal(existsSync(join(dir, 'haoyiyin', '9router.json')), true);
-    // Second run is a no-op, and the new file is never overwritten.
-    writeFileSync(join(dir, 'saifymatteo', '9router.json'), JSON.stringify({ baseUrl: 'https://new.example/v1', apiKey: 'new' }));
-    assert.equal(c.migrateLegacyConfig(), false);
-    assert.equal(JSON.parse(readFileSync(join(dir, 'saifymatteo', '9router.json'), 'utf8')).apiKey, 'new');
-  } finally {
-    if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
+test('legacy configs migrate to a secret-free file plus an auth.json credential', () => {
+  // The never-shipped saifymatteo/ intermediate is consumed and deleted.
+  {
+    const dir = tempAgentDir();
+    const prev = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = dir;
+    try {
+      const c = loadExtension(configPathSource);
+      mkdirSync(join(dir, 'saifymatteo'), { recursive: true });
+      writeFileSync(join(dir, 'saifymatteo', '9router.json'), JSON.stringify({ baseUrl: 'https://mid.example/v1', apiKey: 'mid-key', comboReasoning: false }));
+      assert.equal(c.migrateLegacyConfig(), true);
+      const migrated = JSON.parse(readFileSync(join(dir, 'extensions', '9router.json'), 'utf8'));
+      assert.equal(migrated.baseUrl, 'https://mid.example/v1');
+      assert.equal(migrated.comboReasoning, false);
+      assert.equal('apiKey' in migrated, false, 'no API key in the config file');
+      const auth = JSON.parse(readFileSync(join(dir, 'auth.json'), 'utf8'));
+      assert.equal(auth['9router'].access, 'mid-key');
+      assert.equal(auth['9router'].type, 'oauth');
+      assert.equal(existsSync(join(dir, 'saifymatteo', '9router.json')), false, 'intermediate removed');
+    } finally {
+      if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
+    }
+  }
+
+  // The @haoyiyin legacy file migrates the same way but is retained —
+  // published pi-vision releases still read it until they update.
+  {
+    const dir = tempAgentDir();
+    const prev = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = dir;
+    try {
+      const c = loadExtension(configPathSource);
+      mkdirSync(join(dir, 'haoyiyin'), { recursive: true });
+      writeFileSync(join(dir, 'haoyiyin', '9router.json'), JSON.stringify({ baseUrl: 'https://legacy.example/v1', apiKey: 'legacy' }));
+      assert.equal(c.migrateLegacyConfig(), true);
+      const migrated = JSON.parse(readFileSync(join(dir, 'extensions', '9router.json'), 'utf8'));
+      assert.equal(migrated.baseUrl, 'https://legacy.example/v1');
+      assert.equal('apiKey' in migrated, false, 'no API key in the config file');
+      assert.equal(JSON.parse(readFileSync(join(dir, 'auth.json'), 'utf8'))['9router'].access, 'legacy');
+      assert.equal(existsSync(join(dir, 'haoyiyin', '9router.json')), true);
+      // Second run is a no-op, and the new file is never overwritten.
+      writeFileSync(join(dir, 'extensions', '9router.json'), JSON.stringify({ baseUrl: 'https://new.example/v1' }));
+      assert.equal(c.migrateLegacyConfig(), false);
+      assert.equal(JSON.parse(readFileSync(join(dir, 'extensions', '9router.json'), 'utf8')).baseUrl, 'https://new.example/v1');
+    } finally {
+      if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
+    }
+  }
+
+  // An existing auth.json credential is never clobbered by migration.
+  {
+    const dir = tempAgentDir();
+    const prev = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = dir;
+    try {
+      const c = loadExtension(configPathSource);
+      mkdirSync(join(dir, 'haoyiyin'), { recursive: true });
+      writeFileSync(join(dir, 'haoyiyin', '9router.json'), JSON.stringify({ baseUrl: 'https://legacy.example/v1', apiKey: 'legacy-key' }));
+      writeFileSync(join(dir, 'auth.json'), JSON.stringify({ '9router': { type: 'oauth', access: 'live-key', refresh: 'live-key', expires: 1 } }));
+      assert.equal(c.migrateLegacyConfig(), true);
+      assert.equal(JSON.parse(readFileSync(join(dir, 'auth.json'), 'utf8'))['9router'].access, 'live-key');
+    } finally {
+      if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
+    }
   }
 });
 
@@ -136,10 +187,11 @@ test('model cache serves fresh entries, falls back to stale cache, and survives 
   process.env.XDG_CACHE_HOME = cacheHome;
   process.env.PI_CODING_AGENT_DIR = dir;
   try {
-    // Credentials must resolve so the fetch path runs; without them the
-    // provider registers empty and the cache file is left untouched.
-    mkdirSync(join(dir, 'saifymatteo'), { recursive: true });
-    writeFileSync(join(dir, 'saifymatteo', '9router.json'), JSON.stringify({ baseUrl: 'https://router.example/v1', apiKey: 'k' }));
+    // Credentials must resolve (from auth.json) so the fetch path runs; without
+    // them the provider registers empty and the cache file is left untouched.
+    mkdirSync(join(dir, 'extensions'), { recursive: true });
+    writeFileSync(join(dir, 'extensions', '9router.json'), JSON.stringify({ baseUrl: 'https://router.example/v1' }));
+    writeFileSync(join(dir, 'auth.json'), JSON.stringify({ '9router': { type: 'oauth', access: 'k', refresh: 'k', expires: 1 } }));
 
     // Fresh cache: no fetch happens.
     mkdirSync(join(cacheHome, 'pi'), { recursive: true });
@@ -186,8 +238,9 @@ test('registration maps router models into pi ProviderModelConfig entries', asyn
   process.env.PI_CODING_AGENT_DIR = dir;
   process.env.XDG_CACHE_HOME = mkdtempSync(join(tmpdir(), 'pi-9router-reg-'));
   try {
-    mkdirSync(join(dir, 'saifymatteo'), { recursive: true });
-    writeFileSync(join(dir, 'saifymatteo', '9router.json'), JSON.stringify({ baseUrl: 'https://router.example/v1', apiKey: 'k' }));
+    mkdirSync(join(dir, 'extensions'), { recursive: true });
+    writeFileSync(join(dir, 'extensions', '9router.json'), JSON.stringify({ baseUrl: 'https://router.example/v1' }));
+    writeFileSync(join(dir, 'auth.json'), JSON.stringify({ '9router': { type: 'oauth', access: 'k', refresh: 'k', expires: 1 } }));
     const p = loadExtension(providerPath, {}, {
       fetch: async () => ({ ok: true, json: async () => ({ data: [CLAUDE, { id: 'oc/jev-1.13-free', capabilities: { vision: false, reasoning: false, contextWindow: 200000, maxOutput: 32000, thinkingFormat: null } }] }) }),
       console: { warn: () => {}, log: () => {} },
