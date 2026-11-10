@@ -4,6 +4,15 @@ All notable changes to this package are documented here. Formats follow [Keep a 
 
 ## [Unreleased]
 
+## [0.1.1]
+
+### Changed
+
+- Config moved to `<agent-dir>/extensions/9router.json` — the same dotfile-symlinked directory other package configs use — and is now secret-free: base URL, `comboReasoning`, and tool toggles only.
+- The API key is no longer stored in the config file: it is read from `auth.json`'s standard 9router login credential (chat already authenticated through it; the bundled tools now too), with `ROUTER_API_KEY` as an override. `/login` seeds the credential before its immediate re-register so models apply without a restart.
+- Migration consumes both the `haoyiyin/9router.json` legacy file (retained — published pi-vision releases still read it) and the pre-release `saifymatteo/9router.json` intermediate (removed after), writing the secret-free config and seeding `auth.json`.
+- The bundled tools register only when a base URL and a credential are both available at load time.
+
 ## [0.1.0]
 
 ### Added
