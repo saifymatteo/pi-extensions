@@ -3,7 +3,8 @@ import registerFetch from "./fetch.ts";
 import registerSearch from "./search.ts";
 import registerTranscribe from "./transcribe.ts";
 import { loadConfig, migrateLegacyConfig } from "./config.ts";
-import { registerProvider, isStaleCtxError } from "./provider.ts";
+import { readCache } from "./data.ts";
+import { registerProvider, registerModels, isStaleCtxError } from "./provider.ts";
 
 export default async function (pi: ExtensionAPI): Promise<void> {
 	migrateLegacyConfig();
@@ -18,36 +19,39 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 	if (toolsReady && cfg.tools?.search !== false) registerSearch(pi);
 	if (toolsReady && cfg.tools?.transcribe !== false) registerTranscribe(pi);
 
-	await registerProvider(pi);
+	// Never block Pi's startup on the router: register from the cache (any
+	// age, or empty on the very first run) now, then refresh in the background.
+	registerModels(pi, readCache(true) ?? []);
 
 	let refreshing = false;
 	let closed = false;
-	const timer = setInterval(
-		async () => {
-			// Models refresh by unregister+register; the /v1/models cache TTL is
-			// 30m so refetch happens naturally. Overlap guard avoids re-entrancy.
-			if (closed || refreshing) return;
-			refreshing = true;
-			try {
-				await registerProvider(pi);
-			} catch (err) {
-				// The captured `pi` goes stale after session replacement or
-				// extension reload, and pi's assertActive() throw must never
-				// escape this callback — it would crash the whole process as an
-				// uncaughtException. The new session's extension instance
-				// re-registers the provider itself, so stop this timer for good.
-				if (isStaleCtxError(err)) {
-					closed = true;
-					clearInterval(timer);
-				}
-				// Any other error (network hiccup, bad upstream payload) is
-				// swallowed: the next tick retries.
-			} finally {
-				refreshing = false;
+	const refresh = async () => {
+		// Models refresh by unregister+register; the /v1/models cache TTL is
+		// 30m so refetch happens naturally. Overlap guard avoids re-entrancy.
+		if (closed || refreshing) return;
+		refreshing = true;
+		try {
+			await registerProvider(pi);
+		} catch (err) {
+			// The captured `pi` goes stale after session replacement or
+			// extension reload, and pi's assertActive() throw must never
+			// escape this callback — it would crash the whole process as an
+			// uncaughtException. The new session's extension instance
+			// re-registers the provider itself, so stop refreshing for good.
+			if (isStaleCtxError(err)) {
+				closed = true;
+				clearInterval(timer);
 			}
-		},
-		30 * 60 * 1000,
-	);
+			// Any other error (network hiccup, bad upstream payload) is
+			// swallowed: the next tick retries.
+		} finally {
+			refreshing = false;
+		}
+	};
+	const timer = setInterval(refresh, 30 * 60 * 1000);
+	// A fresh cache already registered the current models; otherwise fetch now,
+	// without awaiting.
+	if (cfg.apiKey && !readCache()) void refresh();
 	if (typeof (timer as { unref?: () => void }).unref === "function") {
 		(timer as { unref: () => void }).unref();
 	}

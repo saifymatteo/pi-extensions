@@ -6,7 +6,9 @@
  * opencode zen) are consulted; the router advertises capabilities
  * (vision/reasoning/thinking/context/maxOutput) for every model it lists.
  *
- * Models are cached for 30 minutes at ~/.cache/pi/9router.json. A failed
+ * Models are cached for 30 minutes at ~/.cache/pi/9router.json. Startup
+ * registers from the cache of any age and refreshes in the background, so it
+ * never waits on the router. A failed
  * refresh falls back to the stale cache; with no cache at all the provider
  * registers an empty list until the next successful fetch.
  *
@@ -76,7 +78,8 @@ function parseModels(raw: unknown): RouterModel[] {
 	return Array.isArray(data) ? data.filter((m) => Boolean(m.id)) : [];
 }
 
-function readCache(ignoreTtl = false): RouterModel[] | undefined {
+/** Cached router models without any network: fresh only by default, any age with ignoreTtl. */
+export function readCache(ignoreTtl = false): RouterModel[] | undefined {
 	try {
 		if (!existsSync(cachePath())) return undefined;
 		const parsed = JSON.parse(readFileSync(cachePath(), "utf8")) as {

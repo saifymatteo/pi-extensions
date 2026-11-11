@@ -286,3 +286,40 @@ test('without credentials only the shell provider registers', async () => {
     if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
   }
 });
+
+test('startup registers cached models at once and never waits on the router', async () => {
+  const dir = tempAgentDir();
+  const cacheHome = mkdtempSync(join(tmpdir(), 'pi-9router-start-'));
+  const prevAgent = process.env.PI_CODING_AGENT_DIR;
+  const prevCache = process.env.XDG_CACHE_HOME;
+  process.env.PI_CODING_AGENT_DIR = dir;
+  process.env.XDG_CACHE_HOME = cacheHome;
+  try {
+    mkdirSync(join(dir, 'extensions'), { recursive: true });
+    writeFileSync(join(dir, 'extensions', '9router.json'), JSON.stringify({ baseUrl: 'https://router.example/v1', tools: { fetch: false, search: false, transcribe: false } }));
+    writeFileSync(join(dir, 'auth.json'), JSON.stringify({ '9router': { type: 'oauth', access: 'k', refresh: 'k', expires: 1 } }));
+    mkdirSync(join(cacheHome, 'pi'), { recursive: true });
+    writeFileSync(join(cacheHome, 'pi', '9router.json'), JSON.stringify({ ts: 1, data: { data: [{ id: 'kr/stale' }] } }));
+    let release;
+    let fetched = 0;
+    // A router that hangs until released: startup must not wait for it.
+    const fetch = () => { fetched++; return new Promise(r => { release = () => r({ ok: true, json: async () => ({ data: [{ id: 'kr/live' }] }) }); }); };
+    const any = new Proxy({}, { get: () => () => ({}) });
+    const ext = loadExtension(fileURLToPath(new URL('../src/index.ts', import.meta.url)), {
+      '@earendil-works/pi-coding-agent': any, '@earendil-works/pi-ai': any,
+      '@xynogen/pix-runtime/io': any, '@xynogen/pix-runtime/collapse': any, '@xynogen/pix-pretty/utils': any,
+    }, { fetch, console: { warn: () => {}, log: () => {} } });
+    const registered = [];
+    const pi = { registerProvider: (_id, cfg) => registered.push(host(cfg.models).map(m => m.id)), unregisterProvider: () => {}, registerTool: () => {}, on: () => {} };
+    const started = await Promise.race([ext.default(pi).then(() => 'returned'), new Promise(r => setTimeout(() => r('blocked'), 1000))]);
+    assert.equal(started, 'returned');
+    assert.deepEqual(registered, [['kr/stale']]);
+    assert.equal(fetched, 1, 'background refresh started');
+    release();
+    await new Promise(r => setTimeout(r, 50));
+    assert.deepEqual(registered.at(-1), ['kr/live']);
+  } finally {
+    if (prevAgent === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prevAgent;
+    if (prevCache === undefined) delete process.env.XDG_CACHE_HOME; else process.env.XDG_CACHE_HOME = prevCache;
+  }
+});

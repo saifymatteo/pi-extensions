@@ -221,7 +221,13 @@ function makeOAuth(pi: ExtensionAPI) {
 	};
 }
 
+/** Fetch (or read the fresh cache) and register. Awaits the network; startup must not. */
 export async function registerProvider(pi: ExtensionAPI): Promise<void> {
+	registerModels(pi, loadConfig().apiKey ? await getRouterModels() : []);
+}
+
+/** Register the provider with the given router models, synchronously. */
+export function registerModels(pi: ExtensionAPI, models: RouterModel[]): void {
 	const cfg = loadConfig();
 	const oauth = makeOAuth(pi);
 
@@ -235,8 +241,6 @@ export async function registerProvider(pi: ExtensionAPI): Promise<void> {
 		});
 		return;
 	}
-
-	const models = await getRouterModels();
 
 	// Upstream moved OpenAI `compat` settings from the provider level to the
 	// per-model level (ProviderModelConfig.compat). Apply the same shim to every

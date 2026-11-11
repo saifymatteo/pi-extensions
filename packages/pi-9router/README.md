@@ -29,7 +29,7 @@ Migrating from `@haoyiyin/9router`: on first launch the extension reads the old 
 
 ## Model discovery
 
-The provider refreshes `<router-base-url>/models` every 30 minutes (cached at `~/.cache/pi/9router.json`) and maps each model to pi's registry from the router's own capabilities:
+The provider refreshes `<router-base-url>/models` every 30 minutes (cached at `~/.cache/pi/9router.json`). Startup never waits on the router: it registers the cached models at once, whatever their age, and refreshes in the background. The provider maps each model to pi's registry from the router's own capabilities:
 
 | Router capability | Registered as |
 | --- | --- |
