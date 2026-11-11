@@ -15,9 +15,10 @@
 // Forks and clones (header.parentSession) get FORK_PREFIX on every title; an inherited
 // generated title is regenerated once from the fork's first prompt, an inherited manual
 // name is only prefixed.
-// Mirrors titles to Herdr when present, retaining its original label for recovery.
+// Mirrors titles to Herdr when present (in the background, never blocking Pi), retaining
+// its original label for recovery.
 // Keep herdr-tab-state.json compatible with recovery records from the old filename.
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -129,19 +130,28 @@ function saveEntry(tabId: string, label: string) {
   writeState(state);
 }
 
-function tabLabel(tabId: string): string | undefined {
-  const r = spawnSync("herdr", ["tab", "get", tabId], { encoding: "utf8", timeout: HERDR_TIMEOUT_MS });
-  if (r.error || r.status !== 0) return undefined;
+// Asynchronous herdr CLI call: stdout on success, undefined on any failure or timeout.
+function herdrRun(args: string[]): Promise<string | undefined> {
+  return new Promise(resolve => {
+    try {
+      execFile("herdr", args, { encoding: "utf8", timeout: HERDR_TIMEOUT_MS }, (error, stdout) => resolve(error ? undefined : stdout));
+    } catch {
+      resolve(undefined);
+    }
+  });
+}
+
+async function tabLabel(tabId: string): Promise<string | undefined> {
+  const out = await herdrRun(["tab", "get", tabId]);
   try {
-    return JSON.parse(r.stdout)?.result?.tab?.label;
+    return out === undefined ? undefined : JSON.parse(out)?.result?.tab?.label;
   } catch {
     return undefined;
   }
 }
 
-function renameTab(tabId: string, label: string): boolean {
-  const r = spawnSync("herdr", ["tab", "rename", tabId, label], { encoding: "utf8", timeout: HERDR_TIMEOUT_MS });
-  return !r.error && r.status === 0;
+async function renameTab(tabId: string, label: string): Promise<boolean> {
+  return (await herdrRun(["tab", "rename", tabId, label])) !== undefined;
 }
 
 // Latest session_info entry (written by /resume ctrl+r rename) from the file tail.
@@ -389,32 +399,42 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
-  const restore = () => {
+  // Herdr calls never block Pi: they run in the background, one at a time and in
+  // call order, and only queued tasks touch the tab state below. Shutdown awaits
+  // the queue so the original label is restored before Pi exits.
+  let herdrQueue: Promise<void> = Promise.resolve();
+  const herdr = (task: () => Promise<void>) => {
+    if (tabId) herdrQueue = herdrQueue.then(task).catch(() => {});
+  };
+
+  const restoreNow = async () => {
     appliedLabel = undefined;
     if (!tabId) return;
-    if (renamed && originalLabel !== undefined && !renameTab(tabId, originalLabel)) return;
+    if (renamed && originalLabel !== undefined && !(await renameTab(tabId, originalLabel))) return;
     renamed = false;
     originalLabel = undefined;
     clearEntry(tabId);
   };
 
-  const applyName = (name: string | undefined) => {
+  const restore = () => herdr(restoreNow);
+
+  const applyName = (name: string | undefined) => herdr(async () => {
     if (!tabId) return;
-    if (name === undefined || name === "") return restore();
+    if (name === undefined || name === "") return restoreNow();
     // Compare displayed labels and avoid splitting Unicode surrogate pairs.
     const chars = Array.from(name);
     const label = chars.length > 40 ? `${chars.slice(0, 39).join("")}…` : name;
     if (label === appliedLabel) return;
     if (!renamed) {
-      originalLabel = tabLabel(tabId);
+      originalLabel = await tabLabel(tabId);
       if (originalLabel === undefined) return; // herdr unreachable
       saveEntry(tabId, originalLabel);
       // Retain recovery state even if a rename fails or times out after applying.
       renamed = true;
     }
     appliedLabel = undefined;
-    if (renameTab(tabId, label)) appliedLabel = label;
-  };
+    if (await renameTab(tabId, label)) appliedLabel = label;
+  });
 
   const watchSessionFile = (file: string | undefined) => {
     const version = ++watchVersion;
@@ -446,18 +466,20 @@ export default function (pi: ExtensionAPI) {
     loadTitleState(ctx);
     titleWarning = false;
 
-    originalLabel = undefined;
-    renamed = false;
-    appliedLabel = undefined;
     firstPromptDone = false;
     ignoreName = undefined;
-    // Keep the saved baseline in memory if crash recovery cannot restore it yet.
-    const state = tabId ? readState() : {};
-    if (tabId && state[tabId] !== undefined) {
-      originalLabel = state[tabId];
-      renamed = true;
-      restore();
-    }
+    herdr(async () => {
+      originalLabel = undefined;
+      renamed = false;
+      appliedLabel = undefined;
+      // Keep the saved baseline in memory if crash recovery cannot restore it yet.
+      const state = readState();
+      if (tabId && state[tabId] !== undefined) {
+        originalLabel = state[tabId];
+        renamed = true;
+        await restoreNow();
+      }
+    });
     const name = pi.getSessionName();
     if (name) {
       applyName(name);
@@ -507,7 +529,8 @@ export default function (pi: ExtensionAPI) {
     if (ctx?.mode && ctx.mode !== "tui") return;
     watcher?.close();
     watcher = undefined;
-    restore();
     rootSession = false;
+    restore();
+    await herdrQueue;
   });
 }
