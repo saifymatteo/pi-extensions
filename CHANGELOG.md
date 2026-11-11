@@ -4,6 +4,12 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.11]
+
+### Fixed
+
+- pi-9router no longer blocks Pi's startup on the router's `/v1/models`: it registers cached models at once and refreshes in the background.
+
 ## [0.1.10]
 
 ### Added

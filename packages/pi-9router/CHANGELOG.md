@@ -4,6 +4,12 @@ All notable changes to this package are documented here. Formats follow [Keep a 
 
 ## [Unreleased]
 
+## [0.1.2]
+
+### Fixed
+
+- Never block Pi's startup on the router: models register at once from the cache (any age; empty only on the very first run) and `/v1/models` is refreshed in the background, re-registering when it answers. Previously a cache older than 30 minutes made startup wait on the router, up to the 15-second timeout when it hung.
+
 ## [0.1.1]
 
 ### Changed
