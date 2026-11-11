@@ -9,7 +9,7 @@ test('child process guard prevents all title hooks and registrations', () => {
   assert.equal(typeof extension.default, 'function');
 });
 
-test('model entry with baseUrl is called directly with its auth.json key, without the model registry', async () => {
+test('model entries with baseUrl are called directly with the auth.json key, and a cut-off reply falls through to the next entry', async () => {
   const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');
   const { join } = await import('node:path');
   const { tmpdir } = await import('node:os');
@@ -18,11 +18,13 @@ test('model entry with baseUrl is called directly with its auth.json key, withou
   writeFileSync(join(dir, 'auth.json'), JSON.stringify({ '9router': { type: 'oauth', access: 'router-key' } }));
   writeFileSync(join(dir, 'extensions', 'session-rename.json'), JSON.stringify({
     model: { provider: '9router', id: 'nous/title:free', thinking: 'max', baseUrl: 'https://router.invalid/v1/' },
-    fallbackModels: [{ provider: 'unused', id: 'model', thinking: 'off' }],
+    fallbackModels: [{ provider: '9router', id: 'omlx/backup', thinking: 'off', baseUrl: 'https://router.invalid/v1' }, { provider: 'unused', id: 'model', thinking: 'off' }],
   }));
   const calls = [];
   const fetch = async (url, init) => {
     calls.push({ url, auth: init.headers.Authorization, body: JSON.parse(init.body) });
+    // The first model runs out of tokens while reasoning; the fallback answers.
+    if (calls.length === 1) return { ok: true, json: async () => ({ choices: [{ finish_reason: 'length', message: { content: '' } }] }) };
     return { ok: true, json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: '{"isNewTopic": true, "title": "Fix login bug"}' } }] }) };
   };
   const extension = loadExtension(new URL('../src/index.ts', import.meta.url), {}, {
@@ -45,12 +47,15 @@ test('model entry with baseUrl is called directly with its auth.json key, withou
   await handlers.input({ text: 'the login page throws' }, ctx);
   await done;
   assert.equal(name, 'Fix login bug');
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
   assert.equal(calls[0].url, 'https://router.invalid/v1/chat/completions');
   assert.equal(calls[0].auth, 'Bearer router-key');
   assert.equal(calls[0].body.model, 'nous/title:free');
   assert.equal(calls[0].body.reasoning_effort, 'high');
-  assert.equal(calls[0].body.max_tokens, 1024);
+  assert.equal(calls[0].body.max_tokens, 4096);
+  assert.equal(calls[1].body.model, 'omlx/backup');
+  assert.equal(calls[1].body.reasoning_effort, undefined);
+  assert.equal(calls[1].body.max_tokens, 128);
 });
 
 test('herdr tab sync runs in the background, in order, and shutdown waits for the restore', async () => {

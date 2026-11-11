@@ -1,8 +1,8 @@
 // Titles main TUI sessions from the first submitted prompt, like Claude Code. Once a
 // generated title exists no further requests are made (free-tier rate limits); a failed
 // request retries on the next prompt.
-// Model: the first usable of `model` and `fallbackModels` in
-// <agent-dir>/extensions/session-rename.json; no implicit default. Each entry is
+// Models: `model`, then `fallbackModels`, in <agent-dir>/extensions/session-rename.json; no
+// implicit default. A failed reply (error, cut off, not title JSON) tries the next one. Each entry is
 // {"provider", "id", "thinking"?, "baseUrl"?}. `thinking` is off, minimal, low, medium,
 // high, xhigh or max (default low). An entry with `baseUrl` is called directly over the
 // OpenAI Chat Completions API with its provider's auth.json key (`key` or `access`), so
@@ -347,36 +347,52 @@ export default function (pi: ExtensionAPI) {
     try {
       const entries = readConfig();
       if (!entries.length) { warn("no model configured"); return; }
-      // An entry with baseUrl needs no registry; others need a registry model with credentials.
-      let model: ReturnType<typeof ctx.modelRegistry.find>;
-      const pick = entries.find(e => e.baseUrl ||
-        ((model = ctx.modelRegistry.find(e.provider, e.id)) && ctx.modelRegistry.hasConfiguredAuth(model)));
-      if (!pick) { warn(`no configured model has credentials: ${entries.map(e => `${e.provider}/${e.id}`).join(", ")}`); return; }
-      const { provider, id, thinking, baseUrl } = pick;
-      spec = `${provider}/${id}`;
       const userText = `Current title: ${forkPending ? "(none)" : generatedName ?? "(none)"}\n\nMessage:\n${prompt}`;
-      // OpenAI-style providers count reasoning against maxTokens, so thinking needs headroom.
-      const maxTokens = thinking === "off" ? 128 : 1024;
-      const result: TitleResult = baseUrl
-        ? await chatCompletion(baseUrl, provider, id, TITLE_PROMPT, userText, thinking, maxTokens, controller.signal)
-        : await ctx.modelRegistry.streamSimple(model!, {
-          systemPrompt: TITLE_PROMPT,
-          messages: [{ role: "user", content: [{ type: "text", text: userText }], timestamp: Date.now() }],
-        }, {
-          signal: controller.signal,
-          maxTokens,
-          reasoning: thinking === "off" ? undefined : thinking,
-        }).result();
+      const failures: string[] = [];
+      let topic: { isNewTopic: boolean; title: string } | undefined;
+      // Try each usable entry in order: one with baseUrl needs no registry, others need a
+      // registry model with credentials. A failed reply falls through to the next entry.
+      for (const { provider, id, thinking, baseUrl } of entries) {
+        const model = baseUrl ? undefined : ctx.modelRegistry.find(provider, id);
+        if (!baseUrl && !(model && ctx.modelRegistry.hasConfiguredAuth(model))) continue;
+        spec = `${provider}/${id}`;
+        // OpenAI-style providers count reasoning against maxTokens, and reasoning models can
+        // spend several hundred tokens on a long prompt, so thinking gets ample headroom.
+        const maxTokens = thinking === "off" ? 128 : 4096;
+        let reason: string;
+        try {
+          const result: TitleResult = baseUrl
+            ? await chatCompletion(baseUrl, provider, id, TITLE_PROMPT, userText, thinking, maxTokens, controller.signal)
+            : await ctx.modelRegistry.streamSimple(model!, {
+              systemPrompt: TITLE_PROMPT,
+              messages: [{ role: "user", content: [{ type: "text", text: userText }], timestamp: Date.now() }],
+            }, {
+              signal: controller.signal,
+              maxTokens,
+              reasoning: thinking === "off" ? undefined : thinking,
+            }).result();
+          if (timedOut || !current()) break;
+          if (result.stopReason === "stop") {
+            topic = parseTopic(result.content.filter(c => c.type === "text" && typeof c.text === "string").map(c => (c as { text: string }).text).join(" "));
+            if (topic) break;
+            reason = "reply was not title JSON";
+          } else {
+            reason = `${result.stopReason}${result.errorMessage ? `: ${result.errorMessage}` : ""}`;
+          }
+        } catch (error) {
+          if (timedOut || !current()) break;
+          reason = typeof (error as any)?.message === "string" ? (error as any).message : String(error);
+        }
+        failures.push(`${spec}: ${reason}`);
+      }
       if (timedOut) { warn(timeoutReason()); return; }
       // Check invalidation before touching a potentially replaced session context.
       if (!current()) return;
       if (manualName || pi.getSessionName() !== name) return;
-      if (result.stopReason !== "stop") {
-        warn(`${spec}: ${result.stopReason}${result.errorMessage ? `: ${result.errorMessage}` : ""}`);
+      if (!topic) {
+        warn(failures.length ? failures.join("; ") : `no configured model has credentials: ${entries.map(e => `${e.provider}/${e.id}`).join(", ")}`);
         return;
       }
-      const topic = parseTopic(result.content.filter(c => c.type === "text" && typeof c.text === "string").map(c => (c as { text: string }).text).join(" "));
-      if (!topic) { warn(`${spec}: reply was not title JSON`); return; }
       if (generatedName && !forkPending && !topic.isNewTopic) return;
       const clean = cleanTitle(topic.title);
       if (!clean) { warn(`${spec}: empty title`); return; }
