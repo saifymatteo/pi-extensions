@@ -120,7 +120,7 @@ is missing. Its `--split-only` mode makes chunks without API requests.
 ### Configuration and failures
 
 `extensions/vision-toolkit.json` under the Pi agent directory selects the CLI `model` and
-`fallbacks`. For image-capable main models, `imagePolicy` defaults to `native`:
+`fallbackModels` (entries `{"provider", "id", "baseUrl", "thinking"}`). For image-capable main models, `imagePolicy` defaults to `native`:
 old and new images stay images, with no automatic description request.
 `describe-old` and `describe` are legacy, explicit opt-ins for lossy image-to-text
 conversion on supported connections. Text-only or unknown-capability models

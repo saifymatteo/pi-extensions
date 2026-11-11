@@ -1,12 +1,12 @@
 {
-  "model": "example-vision/example-model",
-  "fallbacks": [],
+  "model": {
+    "provider": "example-vision",
+    "id": "example-model",
+    "baseUrl": "https://example.invalid/v1",
+    "apiKey": "$PI_VISION_API_KEY",
+    "thinking": "off"
+  },
+  "fallbackModels": [],
   "imagePolicy": "native",
-  "lang": "en",
-  "providers": {
-    "example-vision": {
-      "baseUrl": "https://example.invalid/v1",
-      "apiKey": "$PI_VISION_API_KEY"
-    }
-  }
+  "lang": "en"
 }

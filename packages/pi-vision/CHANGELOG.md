@@ -6,7 +6,13 @@ Release notes are recorded from 0.1.3 onward.
 
 ### Changed
 
-- Resolve the 9router provider's credentials from `saifymatteo/9router.json` instead of `haoyiyin/9router.json`, matching the new `@saifymatteo/pi-9router` package that replaces `@haoyiyin/9router` (the login flow migrates the file automatically on its first launch).
+- Model entries in `vision-toolkit.json` are objects, matching pi-blackhole: `model` and `fallbackModels` take `{"provider", "id", "baseUrl"?, "apiKey"?, "protocol"?, "thinking"?}`. `thinking` is sent as `reasoning_effort` (capped at `high`) by the extension and the skill CLIs. `"provider/model-id"` strings, `fallbacks`, and the `providers` map still load.
+- Stop reading other extensions' config files (previously `saifymatteo/9router.json`). Runtime-registered providers such as 9router resolve from the entry's `baseUrl` plus the `auth.json` credential, so pi-vision works without any other package installed.
+
+### Fixed
+
+- The skill CLIs no longer carry a previous candidate's `protocol` into a fallback candidate.
+- `vision-doctor` masks `apiKey` values set on model entries.
 
 ## [0.1.5]
 

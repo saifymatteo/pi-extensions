@@ -1,9 +1,14 @@
 // Titles main TUI sessions from the first submitted prompt, like Claude Code. Once a
 // generated title exists no further requests are made (free-tier rate limits); a failed
 // request retries on the next prompt.
-// Model: the first of `model` and `fallbacks` in <agent-dir>/extensions/session-rename.json
-// ("provider/model-id") that Pi has credentials for; no implicit default.
-// `thinking` sets the reasoning level (off, minimal, low, medium, high, xhigh, max); default low.
+// Model: the first usable of `model` and `fallbackModels` in
+// <agent-dir>/extensions/session-rename.json; no implicit default. Each entry is
+// {"provider", "id", "thinking"?, "baseUrl"?}. `thinking` is off, minimal, low, medium,
+// high, xhigh or max (default low). An entry with `baseUrl` is called directly over the
+// OpenAI Chat Completions API with its provider's auth.json key (`key` or `access`), so
+// providers registered by other extensions (e.g. 9router) work without them loaded;
+// other entries need Pi's model registry and credentials.
+// Legacy: "provider/model-id" strings, `fallbacks`, and a top-level `thinking` default.
 // Sends up to 4,000 characters of the prompt and the current generated title, never
 // assistant/tool output. Requests time out after 60 seconds.
 // Manual names win; custom session entries preserve title ownership across reloads.
@@ -28,23 +33,69 @@ const TITLE_PROMPT = "Decide whether the user's message starts a new topic compa
   "at most 40 characters, with no quotes, Markdown or secrets. With no current title, isNewTopic is true.";
 const FORK_PREFIX = "⑂ ";
 const STATE_FILE = path.join(os.homedir(), ".pi", "herdr-tab-state.json");
-const CONFIG_FILE = path.join(process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent"), "extensions", "session-rename.json");
+const AGENT_DIR = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent");
+const CONFIG_FILE = path.join(AGENT_DIR, "extensions", "session-rename.json");
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 type Thinking = typeof THINKING_LEVELS[number];
 
+type ModelEntry = { provider: string; id: string; thinking: Thinking; baseUrl?: string };
+
+const text = (v: unknown) => typeof v === "string" && v.trim() ? v.trim() : undefined;
+
 // Read per request so config edits apply without a reload.
-function readConfig(): { models: string[]; thinking: Thinking } {
+function readConfig(): ModelEntry[] {
   let config: any;
   try {
     config = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
   } catch {
     // missing or invalid config
   }
-  const models = [config?.model, ...(Array.isArray(config?.fallbacks) ? config.fallbacks : [])]
-    .filter((spec): spec is string => typeof spec === "string" && spec.includes("/"));
+  const fallback: Thinking = THINKING_LEVELS.includes(config?.thinking) ? config.thinking : "low";
+  const list = Array.isArray(config?.fallbackModels) ? config.fallbackModels : Array.isArray(config?.fallbacks) ? config.fallbacks : [];
+  return [config?.model, ...list].flatMap((raw): ModelEntry[] => {
+    if (typeof raw === "string") {
+      const slash = raw.indexOf("/");
+      return slash > 0 ? [{ provider: raw.slice(0, slash), id: raw.slice(slash + 1), thinking: fallback }] : [];
+    }
+    const provider = text(raw?.provider), id = text(raw?.id);
+    if (!provider || !id) return [];
+    const baseUrl = text(raw.baseUrl)?.replace(/\/+$/, "");
+    return [{ provider, id, thinking: THINKING_LEVELS.includes(raw.thinking) ? raw.thinking : fallback, ...(baseUrl ? { baseUrl } : {}) }];
+  });
+}
+
+type TitleResult = { stopReason: string; errorMessage?: string; content: { type: string; text?: string }[] };
+
+// Direct OpenAI Chat Completions call for providers configured with a baseUrl.
+// The key comes from auth.json (`key`, else `access`); none means keyless.
+async function chatCompletion(baseUrl: string, provider: string, model: string, system: string, user: string,
+  thinking: Thinking, maxTokens: number, signal: AbortSignal): Promise<TitleResult> {
+  let cred: any;
+  try {
+    cred = JSON.parse(fs.readFileSync(path.join(AGENT_DIR, "auth.json"), "utf8"))?.[provider];
+  } catch {
+    // no auth.json
+  }
+  const key = cred?.key || cred?.access;
+  const effort = thinking === "xhigh" || thinking === "max" ? "high" : thinking;
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    signal,
+    headers: { "Content-Type": "application/json", ...(key ? { Authorization: `Bearer ${key}` } : {}) },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "system", content: system }, { role: "user", content: user }],
+      max_tokens: maxTokens,
+      stream: false,
+      ...(thinking === "off" ? {} : { reasoning_effort: effort }),
+    }),
+  });
+  if (!response.ok) return { stopReason: "error", errorMessage: `HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`, content: [] };
+  const choice = (await response.json())?.choices?.[0];
+  const text = choice?.message?.content;
   return {
-    models,
-    thinking: THINKING_LEVELS.includes(config?.thinking) ? config.thinking : "low",
+    stopReason: choice?.finish_reason === "length" ? "length" : "stop",
+    content: typeof text === "string" ? [{ type: "text", text }] : [],
   };
 }
 
@@ -284,22 +335,28 @@ export default function (pi: ExtensionAPI) {
     };
     const timeoutReason = () => `${spec} timed out after ${TITLE_TIMEOUT_MS / 1000}s`;
     try {
-      const { models, thinking } = readConfig();
-      if (!models.length) { warn("no model configured"); return; }
-      const model = models
-        .map(spec => ctx.modelRegistry.find(spec.slice(0, spec.indexOf("/")), spec.slice(spec.indexOf("/") + 1)))
-        .find(candidate => candidate && ctx.modelRegistry.hasConfiguredAuth(candidate));
-      if (!model) { warn(`no configured model has credentials: ${models.join(", ")}`); return; }
-      spec = `${model.provider}/${model.id}`;
+      const entries = readConfig();
+      if (!entries.length) { warn("no model configured"); return; }
+      // An entry with baseUrl needs no registry; others need a registry model with credentials.
+      let model: ReturnType<typeof ctx.modelRegistry.find>;
+      const pick = entries.find(e => e.baseUrl ||
+        ((model = ctx.modelRegistry.find(e.provider, e.id)) && ctx.modelRegistry.hasConfiguredAuth(model)));
+      if (!pick) { warn(`no configured model has credentials: ${entries.map(e => `${e.provider}/${e.id}`).join(", ")}`); return; }
+      const { provider, id, thinking, baseUrl } = pick;
+      spec = `${provider}/${id}`;
+      const userText = `Current title: ${forkPending ? "(none)" : generatedName ?? "(none)"}\n\nMessage:\n${prompt}`;
       // OpenAI-style providers count reasoning against maxTokens, so thinking needs headroom.
-      const result = await ctx.modelRegistry.streamSimple(model, {
-        systemPrompt: TITLE_PROMPT,
-        messages: [{ role: "user", content: [{ type: "text", text: `Current title: ${forkPending ? "(none)" : generatedName ?? "(none)"}\n\nMessage:\n${prompt}` }], timestamp: Date.now() }],
-      }, {
-        signal: controller.signal,
-        maxTokens: thinking === "off" ? 128 : 1024,
-        reasoning: thinking === "off" ? undefined : thinking,
-      }).result();
+      const maxTokens = thinking === "off" ? 128 : 1024;
+      const result: TitleResult = baseUrl
+        ? await chatCompletion(baseUrl, provider, id, TITLE_PROMPT, userText, thinking, maxTokens, controller.signal)
+        : await ctx.modelRegistry.streamSimple(model!, {
+          systemPrompt: TITLE_PROMPT,
+          messages: [{ role: "user", content: [{ type: "text", text: userText }], timestamp: Date.now() }],
+        }, {
+          signal: controller.signal,
+          maxTokens,
+          reasoning: thinking === "off" ? undefined : thinking,
+        }).result();
       if (timedOut) { warn(timeoutReason()); return; }
       // Check invalidation before touching a potentially replaced session context.
       if (!current()) return;

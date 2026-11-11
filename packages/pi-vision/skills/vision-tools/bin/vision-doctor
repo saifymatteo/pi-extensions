@@ -3,8 +3,8 @@
 diagnose any vision error afterwards.
 
 Resolves vision-toolkit.json the same way every tool in this skill does
-(model + fallbacks -> providers -> models.json/models-store.json ->
-package-provider configs -> auth.json), prints what each candidate resolved
+(model + fallbackModels -> each entry's baseUrl/apiKey -> models.json/
+models-store.json -> auth.json), prints what each candidate resolved
 to, and can fire one real 1-token request (--smoke) to prove the chain
 end-to-end. On any vision error, run this first: never scrape auth.json and
 never hand-export VISION_* environment variables.
@@ -45,11 +45,23 @@ def fingerprint(key):
     return key[:6] + "..." + key[-4:] if len(key) > 12 else "***"
 
 
+def public_cfg(cfg):
+    """The config without secrets: legacy providers map dropped, entry apiKeys masked."""
+    def scrub(entry):
+        return {**entry, "apiKey": "***"} if isinstance(entry, dict) and "apiKey" in entry else entry
+    shown = {k: v for k, v in cfg.items() if k != "providers"}
+    if "model" in shown:
+        shown["model"] = scrub(shown["model"])
+    for key in ("fallbackModels", "fallbacks"):
+        if isinstance(shown.get(key), list):
+            shown[key] = [scrub(e) for e in shown[key]]
+    return shown
+
+
 def print_resolution(resolution):
     cfg = resolution["cfg"]
     print("extensions/vision-toolkit.json (%s):" % resolution["agent_dir"])
-    shown = {k: v for k, v in cfg.items() if k != "providers"}
-    print("  " + repr(shown))
+    print("  " + repr(public_cfg(cfg)))
     if cfg.get("providers"):
         print("  providers overrides present for: %s" % ", ".join(cfg["providers"]))
     print()
@@ -108,7 +120,7 @@ def main():
     if args.json:
         import json
         report = {"config": None, "attempts": resolution["attempts"],
-                  "cfg": {k: v for k, v in resolution["cfg"].items() if k != "providers"}}
+                  "cfg": public_cfg(resolution["cfg"])}
         if config:
             report["config"] = {k: v for k, v in config.items() if k != "api_key"}
             report["config"]["key_fingerprint"] = fingerprint(config.get("api_key"))
@@ -155,7 +167,7 @@ def main():
         print("SMOKE FAILED: %s" % exc)
         print("The chain resolves but the API call failed. If this persists "
               "(auth, model unknown, or upstream 4xx), fix the primary or let a "
-              'fallback take over by moving it up in "fallbacks".')
+              'fallback take over by moving it up in "fallbackModels".')
         return 2
     finally:
         try:

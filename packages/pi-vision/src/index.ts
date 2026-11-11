@@ -14,13 +14,11 @@
  * for every provider call, so rewrites do not touch the stored session; an
  * in-process cache avoids repeating successful description requests.
  *
- * Configuration comes from two Pi-managed sources:
- *   - extensions/vision-toolkit.json (under the Pi agent dir): {"model":
- *     "provider/model-id", "lang": "zh"|"en" (optional)}. The model is
- *     validated against Pi's catalog (models.json / models-store.json).
- *   - The API key and base URL are NOT configured here: the key comes from
- *     auth.json as written by Pi's /login, and the base URL from the model's
- *     provider entry.
+ * Configuration: extensions/vision-toolkit.json (under the Pi agent dir):
+ *   {"model": {"provider", "id", "baseUrl"?, "apiKey"?, "protocol"?, "thinking"?},
+ *    "fallbackModels": [same shape], "imagePolicy"?, "lang"?}
+ * Missing connection fields come from Pi's models.json / models-store.json,
+ * and the key from auth.json as written by Pi's /login.
  *
  * A sibling implementation for OpenCode lives at extensions/opencode/vision.ts;
  * both files deliberately duplicate the small describe core so each stays a
@@ -90,6 +88,8 @@ export interface VisionConfig {
   baseUrl: string;
   model: string;
   lang?: string;
+  /** Reasoning level sent as reasoning_effort; omitted or "off" sends none. */
+  thinking?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,14 +116,16 @@ function readJson(path: string): any | undefined {
 
 // ---------------------------------------------------------------------------
 // Configuration resolution, identical in spirit to vision_client.py:
-//   1. user override: providers.<name> in vision-toolkit.json
+//   1. the chain entry's own baseUrl/apiKey/protocol (then the legacy
+//      providers.<name> map) in vision-toolkit.json
 //   2. model entry in models.json / models-store.json (+ modelOverrides)
-//   3. package-provider configs (runtime-registered pi providers, e.g. 9router)
-//   4. auth.json credentials as written by /login (key or access)
-// Candidates: "model" first, then "fallbacks". A bare model id (no slash) is
-// searched across resolvable providers. A candidate needs a baseUrl and an
-// API key; a model id missing from every static catalog is fine when a
-// runtime provider supplies the connection (the API validates the id).
+//   3. auth.json credentials as written by /login (key or access)
+// Candidates: "model" first, then "fallbackModels" (legacy: "fallbacks"). An
+// entry without a provider is searched across resolvable providers. A
+// candidate needs a baseUrl and an API key; a model id missing from every
+// static catalog is fine when the entry's baseUrl supplies the connection (the
+// API validates the id). No other extension's files are read: providers
+// registered at runtime (e.g. 9router) are reached through the entry's baseUrl.
 
 interface ResolvedCandidate extends VisionConfig {
   provider: string;
@@ -139,10 +141,6 @@ interface ChainResult {
   imagePolicy: string;
   lang?: string;
 }
-
-const PACKAGE_PROVIDER_CONFIGS: Record<string, string> = {
-  "9router": "saifymatteo/9router.json",
-};
 
 const API_TYPE_TO_PROTOCOL: Record<string, string> = {
   "openai-completions": "chat_completions",
@@ -160,6 +158,42 @@ function expandSecret(value: any): string {
   }
   return typeof value === "string" ? value : "";
 }
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+// OpenAI-style reasoning_effort stops at "high".
+const REASONING_EFFORT: Record<string, string> = { xhigh: "high", max: "high" };
+
+/** A chain entry: {"provider", "id", "baseUrl"?, "apiKey"?, "protocol"?, "thinking"?},
+ *  or the legacy "provider/model-id" / bare "model-id" string. */
+interface ChainEntry {
+  provider: string;
+  id: string;
+  overrides: Record<string, unknown>;
+  thinking?: string;
+}
+
+function parseEntry(raw: unknown): ChainEntry | undefined {
+  if (typeof raw === "string") {
+    const spec = raw.trim();
+    const slash = spec.indexOf("/");
+    if (!spec) return undefined;
+    return { provider: slash > 0 ? spec.slice(0, slash) : "", id: slash > 0 ? spec.slice(slash + 1) : spec, overrides: {} };
+  }
+  if (!raw || typeof raw !== "object") return undefined;
+  const v = raw as Record<string, unknown>;
+  const id = typeof v.id === "string" ? v.id.trim() : "";
+  if (!id) return undefined;
+  const overrides: Record<string, unknown> = {};
+  for (const key of ["baseUrl", "apiKey", "protocol"]) {
+    if (typeof v[key] === "string" && (v[key] as string).trim()) overrides[key] = (v[key] as string).trim();
+  }
+  return {
+    provider: typeof v.provider === "string" ? v.provider.trim() : "",
+    id,
+    overrides,
+    thinking: THINKING_LEVELS.includes(v.thinking as string) ? (v.thinking as string) : undefined,
+  };
+}
+
 function resolveSpec(
   provider: string,
   modelId: string,
@@ -167,9 +201,9 @@ function resolveSpec(
     models: any;
     store: any;
     auth: any;
-    pkgs: Record<string, any>;
     user: Record<string, any>;
   },
+  entryOverrides: Record<string, any> = {},
 ): ResolvedCandidate | { error: string } {
   const custom = snap.models?.providers?.[provider] ?? {};
   const storeModels = snap.store?.[provider]?.models ?? [];
@@ -183,31 +217,27 @@ function resolveSpec(
   }
   const overrides = custom.modelOverrides?.[modelId] ?? {};
   const cred = snap.auth?.[provider];
-  const pkg = snap.pkgs[provider] ?? {};
-  const user = snap.user[provider] ?? {};
+  // The chain entry's own fields win over the legacy providers.<name> map.
+  const user = { ...(snap.user[provider] ?? {}), ...entryOverrides };
 
-  const baseUrlRaw = user.baseUrl ?? entry?.baseUrl ?? pkg.baseUrl ?? custom.baseUrl ?? "";
+  const baseUrlRaw = user.baseUrl ?? entry?.baseUrl ?? custom.baseUrl ?? "";
   const baseUrl = String(baseUrlRaw).replace(/\/+$/, "");
-  const keyValue = user.apiKey ?? pkg.apiKey ?? custom.apiKey ?? cred?.key ?? cred?.access;
+  const keyValue = user.apiKey ?? custom.apiKey ?? cred?.key ?? cred?.access;
   const apiKey = expandSecret(keyValue);
   const keySource = user.apiKey
-    ? `vision-toolkit.json providers.${provider}`
-    : pkg.apiKey
-      ? PACKAGE_PROVIDER_CONFIGS[provider] ?? "package config"
-      : custom.apiKey
-        ? `models.json providers.${provider}`
-        : cred?.key || cred?.access
-          ? `auth.json (${cred?.key ? "key" : "access"})`
-          : null;
+    ? "vision-toolkit.json"
+    : custom.apiKey
+      ? `models.json providers.${provider}`
+      : cred?.key || cred?.access
+        ? `auth.json (${cred?.key ? "key" : "access"})`
+        : null;
   const baseSource = user.baseUrl
-    ? `vision-toolkit.json providers.${provider}`
+    ? "vision-toolkit.json"
     : entry?.baseUrl
       ? "models.json model entry"
-      : pkg.baseUrl
-        ? PACKAGE_PROVIDER_CONFIGS[provider] ?? "package config"
-        : custom.baseUrl
-          ? `models.json providers.${provider}`
-          : null;
+      : custom.baseUrl
+        ? `models.json providers.${provider}`
+        : null;
 
   const protocol =
     user.protocol ?? custom.protocol ?? API_TYPE_TO_PROTOCOL[custom.api] ?? "chat_completions";
@@ -223,12 +253,12 @@ function resolveSpec(
 
   if (!baseUrl) {
     return {
-      error: `no baseUrl for provider "${provider}" (add providers.${provider}.baseUrl to vision-toolkit.json, a models entry, or log the provider in)`,
+      error: `no baseUrl for provider "${provider}" (add "baseUrl" to its model entry in vision-toolkit.json, or a models.json entry)`,
     };
   }
   if (!apiKey) {
     return {
-      error: `no API key for provider "${provider}" (run /login ${provider}, or set providers.${provider}.apiKey in vision-toolkit.json)`,
+      error: `no API key for provider "${provider}" (run /login ${provider}, or add "apiKey" to its model entry in vision-toolkit.json)`,
     };
   }
   return {
@@ -242,7 +272,7 @@ function resolveSpec(
     inCatalog: entry !== undefined,
   };
 }
-function bareSearchOrder(snap: { models: any; store: any; pkgs: Record<string, any> }): string[] {
+function bareSearchOrder(snap: { models: any; store: any; user: Record<string, any> }): string[] {
   const order: string[] = [];
   for (const [name, prov] of Object.entries(snap.models?.providers ?? {})) {
     if (Array.isArray((prov as any)?.models)) order.push(name);
@@ -252,7 +282,8 @@ function bareSearchOrder(snap: { models: any; store: any; pkgs: Record<string, a
       order.push(name);
     }
   }
-  for (const name of Object.keys(PACKAGE_PROVIDER_CONFIGS)) {
+  // Providers declared in vision-toolkit.json accept any id (runtime catalogs).
+  for (const name of Object.keys(snap.user)) {
     if (!order.includes(name)) order.push(name);
   }
   return order;
@@ -264,7 +295,7 @@ export function loadVisionChain(): ChainResult | { error: string } {
   const cfg = readJson(cfgPath);
   if (!cfg || typeof cfg !== "object") {
     return {
-      error: `vision-toolkit.json not found or invalid. Create ${cfgPath} with {"model": "provider/model-id"} and optionally "fallbacks", "imagePolicy", "lang".`,
+      error: `vision-toolkit.json not found or invalid. Create ${cfgPath} with {"model": {"provider": "...", "id": "..."}} and optionally "fallbackModels", "imagePolicy", "lang".`,
     };
   }
 
@@ -282,45 +313,37 @@ export function loadVisionChain(): ChainResult | { error: string } {
     models: readJson(join(dir, "models.json")) ?? {},
     store: readJson(join(dir, "models-store.json")) ?? {},
     auth: readJson(join(dir, "auth.json")) ?? {},
-    pkgs: {} as Record<string, any>,
     user: (cfg.providers && typeof cfg.providers === "object"
       ? cfg.providers
       : {}) as Record<string, any>,
   };
-  for (const [name, rel] of Object.entries(PACKAGE_PROVIDER_CONFIGS)) {
-    const data = readJson(join(dir, rel as string));
-    if (data && typeof data === "object") snap.pkgs[name] = data;
-  }
 
-  const specs: string[] = [];
-  const fallbacks = Array.isArray(cfg.fallbacks) ? cfg.fallbacks : [];
-  for (const spec of [cfg.model, ...fallbacks]) {
-    if (typeof spec === "string" && spec.trim() && !specs.includes(spec.trim())) {
-      specs.push(spec.trim());
-    }
+  const entries: ChainEntry[] = [];
+  const fallbacks = Array.isArray(cfg.fallbackModels) ? cfg.fallbackModels : Array.isArray(cfg.fallbacks) ? cfg.fallbacks : [];
+  for (const raw of [cfg.model, ...fallbacks]) {
+    const entry = parseEntry(raw);
+    if (entry && !entries.some((e) => e.provider === entry.provider && e.id === entry.id)) entries.push(entry);
   }
-  if (!specs.length) {
+  if (!entries.length) {
     return {
-      error: `vision-toolkit.json has no usable "model" (use "provider/model-id" or a bare "model-id") in ${cfgPath}.`,
+      error: `vision-toolkit.json has no usable "model" (use {"provider": "...", "id": "..."}) in ${cfgPath}.`,
     };
   }
 
   const candidates: ResolvedCandidate[] = [];
   const attempts: { spec: string | null; ok: boolean; error?: string }[] = [];
-  for (const spec of specs) {
-    const slash = spec.indexOf("/");
-    const provider = slash > 0 ? spec.slice(0, slash) : "";
-    const modelId = slash > 0 ? spec.slice(slash + 1) : spec;
+  for (const { provider, id: modelId, overrides, thinking } of entries) {
+    const spec = provider ? `${provider}/${modelId}` : modelId;
     const search = provider ? [provider] : bareSearchOrder(snap);
     for (const cand of search) {
-      const result = resolveSpec(cand, modelId, snap);
+      const result = resolveSpec(cand, modelId, snap, overrides);
       const label = provider ? spec : `${spec} (as ${cand}/${modelId})`;
       if ("error" in result) {
         attempts.push({ spec: label, ok: false, error: result.error });
       } else {
         attempts.push({ spec: label, ok: true });
         // The same bare id on other providers is not a meaningful fallback.
-        candidates.push(result);
+        candidates.push(thinking ? { ...result, thinking } : result);
         break;
       }
     }
@@ -374,9 +397,13 @@ async function describeOnce(
 ): Promise<string> {
   let text = prompt || DESCRIBE_PROMPT;
   if (config.lang) text = LANG_INSTRUCTIONS[config.lang] + "\n\n" + text;
+  const effort = config.thinking && config.thinking !== "off"
+    ? REASONING_EFFORT[config.thinking] ?? config.thinking
+    : undefined;
   const payload = {
     model: config.model,
     max_tokens: 4096,
+    ...(effort ? { reasoning_effort: effort } : {}),
     // Some OpenAI-compatible gateways stream (text/event-stream) by default;
     // an SSE body breaks response.json() below.
     stream: false,

@@ -10,9 +10,9 @@ Registers a `context` hook, not a tool or slash command. Preserves native images
 
 ## Configuration and services
 
-Reads `<agent-dir>/extensions/vision-toolkit.json`: `model`, optional `fallbacks`, `imagePolicy` (native/describe/describe-old), `lang` (en/zh), and `providers` overrides. Example points at example.invalid and must be reviewed manually; it is never loaded automatically. Provider override keys support `$ENV_NAME` references (not brace syntax).
+Reads `<agent-dir>/extensions/vision-toolkit.json`: `model`, optional `fallbackModels`, `imagePolicy` (native/describe/describe-old), and `lang` (en/zh). Each model entry is `{"provider", "id"}` plus optional `baseUrl`, `apiKey`, `protocol`, and `thinking` (off/minimal/low/medium/high/xhigh/max, sent as `reasoning_effort` capped at `high`; omitted sends none). An entry without `provider` is searched across known providers. Legacy `"provider/model-id"` strings, `fallbacks`, and a `providers.<name>` override map still load; entry fields win. Example points at example.invalid and must be reviewed manually; it is never loaded automatically. `apiKey` supports `$ENV_NAME` references (not brace syntax).
 
-Resolution also consults agent `models.json`, `models-store.json`, `auth.json`, and optional `saifymatteo/9router.json`. None of those real files are bundled. An explicit provider/model ID and override can resolve without a static catalog entry. Requires an image-capable OpenAI Chat Completions service; no CLI. Self-description requires current-model credentials in auth.json.
+Resolution also consults agent `models.json`, `models-store.json`, and `auth.json`; it reads no other extension's config. Providers registered at runtime by another extension (e.g. 9router) need `baseUrl` on their model entry, with the key taken from `auth.json` (`key` or `access`) unless the entry sets `apiKey`. None of those real files are bundled. An explicit provider/model ID and override can resolve without a static catalog entry. Requires an image-capable OpenAI Chat Completions service; no CLI. Self-description requires current-model credentials in auth.json.
 
 ## Bundled skill
 

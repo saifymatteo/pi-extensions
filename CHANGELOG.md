@@ -10,7 +10,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ### Changed
 
-- `pi-9router` config is split by secret: `extensions/9router.json` holds the base URL and options (dotfile-versionable, no key), while the API key lives in `auth.json` as pi's standard 9router login credential; the login flow, migration from `haoyiyin/9router.json`, and the bundled tools all follow. pi-vision still reads its own hardcoded legacy path and needs a follow-up to resolve runtime providers via its `vision-toolkit.json` `providers.<name>.baseUrl` override.
+- `pi-9router` config is split by secret: `extensions/9router.json` holds the base URL and options (dotfile-versionable, no key), while the API key lives in `auth.json` as pi's standard 9router login credential; the login flow, migration from `haoyiyin/9router.json`, and the bundled tools all follow.
+- pi-vision and pi-session-rename no longer depend on another extension for model access, and their configs use pi-blackhole's model shape: `model` plus `fallbackModels`, each `{"provider", "id", "thinking"?, "baseUrl"?}`, with the key from `auth.json`. Old string specs still load. pi-vision stops reading `saifymatteo/9router.json`, which left 9router candidates without a base URL.
 
 ## [0.1.9]
 

@@ -76,31 +76,26 @@ def load_env_file(path: str | os.PathLike[str] | None) -> None:
 #
 # extensions/vision-toolkit.json (under the Pi agent dir) drives everything:
 #   {
-#     "model": "9router/designer",     # "provider/model-id", or a bare "model-id"
-#     "fallbacks": ["openrouter/google/gemini-2.5-flash-lite"],
+#     "model": {"provider": "9router", "id": "designer", "baseUrl": "...",
+#               "thinking": "low"},     # apiKey/protocol optional; no provider = search
+#     "fallbackModels": [{"provider": "openrouter", "id": "google/gemini-2.5-flash-lite"}],
 #     "imagePolicy": "describe-old",   # native | describe | describe-old (proxy only)
-#     "lang": "en",
-#     "providers": {
-#       "9router": {"baseUrl": "...", "apiKey": "...", "protocol": "chat_completions"}
-#     }
+#     "lang": "en"
 #   }
+# Legacy forms still load: "provider/model-id" strings, "fallbacks", and a
+# "providers": {"<name>": {"baseUrl", "apiKey", "protocol"}} map.
 #
 # Per provider, sources are consulted in this order:
-#   1. the user override in vision-toolkit.json providers.<name>
+#   1. the entry's own baseUrl/apiKey/protocol, then the legacy providers.<name>
 #   2. the model entry in models.json / models-store.json (baseUrl, api, input)
 #      plus modelOverrides entries (capabilities for extension-registered models)
-#   3. package-provider configs: pi packages register providers at runtime with
-#      a live model catalog, so no static file lists their models; their
-#      connection config lives in a package-owned file under the agent dir
-#   4. auth.json credentials as written by Pi's /login (key or access)
+#   3. auth.json credentials as written by Pi's /login (key or access)
 #
 # A candidate needs a baseUrl and an API key to resolve. A model id missing
-# from every static catalog is fine when a runtime provider supplies the
-# connection: the id is validated at request time by the API itself.
-
-PACKAGE_PROVIDER_CONFIGS = {
-    "9router": "saifymatteo/9router.json",
-}
+# from every static catalog is fine when providers.<name>.baseUrl supplies the
+# connection: the id is validated at request time by the API itself. No other
+# extension's files are read; runtime-registered providers (e.g. 9router) are
+# reached through providers.<name>.baseUrl.
 
 # models.json provider "api" types -> describe_image protocols
 API_TYPE_TO_PROTOCOL = {
@@ -134,25 +129,37 @@ def _load_toolkit_cfg(agent_dir: Path) -> dict:
     return cfg if isinstance(cfg, dict) else {}
 
 
+THINKING_LEVELS = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
+
+
 def _candidate_specs(cfg: dict) -> list:
-    """(provider, model_id) pairs: "model" first, then "fallbacks" in order.
-    A bare id (no slash) has an empty provider and is searched for across
-    every resolvable provider."""
+    """(provider, model_id, overrides, thinking): "model" first, then
+    "fallbackModels" (legacy "fallbacks") in order. Entries are objects
+    {"provider", "id", "baseUrl"?, "apiKey"?, "protocol"?, "thinking"?} or
+    legacy "provider/model-id" strings. An empty provider is searched for
+    across every resolvable provider."""
     specs = []
     seen = set()
-    raw = [cfg.get("model")] + list(cfg.get("fallbacks") or [])
-    for spec in raw:
-        if not isinstance(spec, str) or not spec.strip():
-            continue
-        spec = spec.strip()
-        if "/" in spec:
-            provider, _, model_id = spec.partition("/")
+    fallbacks = cfg.get("fallbackModels")
+    if not isinstance(fallbacks, list):
+        fallbacks = cfg.get("fallbacks") if isinstance(cfg.get("fallbacks"), list) else []
+    for raw in [cfg.get("model")] + fallbacks:
+        overrides, thinking = {}, None
+        if isinstance(raw, str) and raw.strip():
+            spec = raw.strip()
+            provider, _, model_id = spec.partition("/") if "/" in spec else ("", "", spec)
+        elif isinstance(raw, dict) and isinstance(raw.get("id"), str) and raw["id"].strip():
+            provider = raw.get("provider").strip() if isinstance(raw.get("provider"), str) else ""
+            model_id = raw["id"].strip()
+            overrides = {k: raw[k].strip() for k in ("baseUrl", "apiKey", "protocol")
+                         if isinstance(raw.get(k), str) and raw[k].strip()}
+            thinking = raw.get("thinking") if raw.get("thinking") in THINKING_LEVELS else None
         else:
-            provider, model_id = "", spec
+            continue
         key = (provider, model_id)
         if model_id and key not in seen:
             seen.add(key)
-            specs.append(key)
+            specs.append((provider, model_id, overrides, thinking))
     return specs
 
 
@@ -160,18 +167,13 @@ def _snapshots(agent_dir: Path, cfg: dict) -> dict:
     models_json = _read_json(agent_dir / "models.json")
     models_store = _read_json(agent_dir / "models-store.json")
     auth = _read_json(agent_dir / "auth.json")
-    pkgs = {}
-    for name, rel in PACKAGE_PROVIDER_CONFIGS.items():
-        data = _read_json(agent_dir / rel)
-        if data:
-            pkgs[name] = data
     providers_cfg = cfg.get("providers")
     user_providers = providers_cfg if isinstance(providers_cfg, dict) else {}
     return {"models": models_json, "store": models_store, "auth": auth,
-            "pkgs": pkgs, "user": user_providers}
+            "user": user_providers}
 
 
-def _resolve_candidate(provider, model_id, agent_dir, snap):
+def _resolve_candidate(provider, model_id, agent_dir, snap, entry_fields=None):
     """Resolve one candidate to key/baseUrl/protocol/capability, or an error."""
     custom = (snap["models"].get("providers") or {}).get(provider) or {}
     store_models = (snap["store"].get(provider) or {}).get("models") or []
@@ -183,31 +185,26 @@ def _resolve_candidate(provider, model_id, agent_dir, snap):
             break
     overrides = (custom.get("modelOverrides") or {}).get(model_id) or {}
     cred = snap["auth"].get(provider) or {}
-    pkg = snap["pkgs"].get(provider) or {}
     user_raw = snap["user"].get(provider)
-    user = user_raw if isinstance(user_raw, dict) else {}
+    # The chain entry's own fields win over the legacy providers.<name> map.
+    user = {**(user_raw if isinstance(user_raw, dict) else {}), **(entry_fields or {})}
 
-    base_url = (user.get("baseUrl") or (entry.get("baseUrl") if entry else None)
-                or pkg.get("baseUrl") or custom.get("baseUrl"))
-    key_value = (user.get("apiKey") or pkg.get("apiKey")
+    base_url = (user.get("baseUrl") or (entry.get("baseUrl") if entry else None) or custom.get("baseUrl"))
+    key_value = (user.get("apiKey")
                  or custom.get("apiKey") or cred.get("key") or cred.get("access"))
     api_key = _expand_secret(key_value)
     key_source = None
     if user.get("apiKey"):
-        key_source = "vision-toolkit.json providers.%s" % provider
-    elif pkg.get("apiKey"):
-        key_source = PACKAGE_PROVIDER_CONFIGS.get(provider, "package config")
+        key_source = "vision-toolkit.json"
     elif custom.get("apiKey"):
         key_source = "models.json providers.%s" % provider
     elif cred.get("key") or cred.get("access"):
         key_source = "auth.json (%s)" % ("key" if cred.get("key") else "access")
     base_source = None
     if user.get("baseUrl"):
-        base_source = "vision-toolkit.json providers.%s" % provider
+        base_source = "vision-toolkit.json"
     elif entry is not None and entry.get("baseUrl"):
         base_source = "models.json model entry"
-    elif pkg.get("baseUrl"):
-        base_source = PACKAGE_PROVIDER_CONFIGS.get(provider, "package config")
     elif custom.get("baseUrl"):
         base_source = "models.json providers.%s" % provider
 
@@ -225,14 +222,12 @@ def _resolve_candidate(provider, model_id, agent_dir, snap):
 
     if not base_url:
         return {"ok": False,
-                "error": ('no baseUrl for provider "%s" (add providers.%s.baseUrl to '
-                          'vision-toolkit.json, a models entry, or log the provider in)'
-                          % (provider, provider))}
+                "error": ('no baseUrl for provider "%s" (add "baseUrl" to its model entry '
+                          'in vision-toolkit.json, or a models.json entry)' % provider)}
     if not api_key:
         return {"ok": False,
-                "error": ('no API key for provider "%s" (run /login %s, or set '
-                          'providers.%s.apiKey in vision-toolkit.json)'
-                          % (provider, provider, provider))}
+                "error": ('no API key for provider "%s" (run /login %s, or add "apiKey" '
+                          'to its model entry in vision-toolkit.json)' % (provider, provider))}
     return {"ok": True, "provider": provider, "model_id": model_id,
             "api_key": api_key, "base_url": str(base_url).rstrip("/"),
             "protocol": protocol, "image_capable": image_capable,
@@ -251,12 +246,12 @@ def resolve_vision_config(agent_dir=None):
     snap = _snapshots(agent_dir, cfg)
     attempts = []
     resolved = []
-    for provider, model_id in _candidate_specs(cfg):
+    for provider, model_id, entry_fields, thinking in _candidate_specs(cfg):
         if provider:
             search = [provider]
         else:
             # Bare id: search every resolvable provider. Explicit catalog
-            # entries first, then runtime-registered package providers,
+            # entries first, then providers declared in vision-toolkit.json,
             # which accept any model id.
             search = []
             for name, prov in (snap["models"].get("providers") or {}).items():
@@ -266,10 +261,12 @@ def resolve_vision_config(agent_dir=None):
                 if isinstance(prov, dict) and (prov.get("models") or []):
                     if name not in search:
                         search.append(name)
-            search.extend(n for n in PACKAGE_PROVIDER_CONFIGS if n not in search)
+            search.extend(n for n in snap["user"] if n not in search)
         spec = ("%s/%s" % (provider, model_id)) if provider else model_id
         for cand in search:
-            result = _resolve_candidate(cand, model_id, agent_dir, snap)
+            result = _resolve_candidate(cand, model_id, agent_dir, snap, entry_fields)
+            if result.get("ok"):
+                result["thinking"] = thinking
             label = spec if len(search) == 1 else "%s (as %s/%s)" % (spec, cand, model_id)
             record = {k: v for k, v in result.items() if k != "api_key"}
             key = result.get("api_key") or ""
@@ -296,8 +293,14 @@ def apply_resolved_to_env(config):
     if config.get("base_url"):
         os.environ["VISION_BASE_URL"] = config["base_url"]
     os.environ["VISION_MODEL"] = config["model_id"]
-    if config.get("protocol") and config["protocol"] != "chat_completions":
-        os.environ["VISION_API_PROTOCOL"] = config["protocol"]
+    # Set or clear per candidate so a fallback never inherits the previous one's.
+    os.environ["VISION_API_PROTOCOL"] = config.get("protocol") or "chat_completions"
+    thinking = config.get("thinking")
+    if thinking and thinking != "off":
+        # OpenAI-style reasoning effort stops at "high".
+        os.environ["VISION_REASONING_EFFORT"] = {"xhigh": "high", "max": "high"}.get(thinking, thinking)
+    else:
+        os.environ.pop("VISION_REASONING_EFFORT", None)
 
 
 def load_pi_vision_json():
@@ -341,7 +344,7 @@ def _required(name: str) -> str:
     if not value:
         raise VisionError(
             f"Missing config {name}; run 'vision-doctor' to inspect the "
-            "vision-toolkit.json chain (model, fallbacks, providers), or set the "
+            "vision-toolkit.json chain (model, fallbackModels), or set the "
             "legacy .env values"
         )
     return value
@@ -477,6 +480,9 @@ def _describe_attempt(image_url: str | list[str], prompt: str | None = None,
         }
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
+        reasoning_effort = os.environ.get("VISION_REASONING_EFFORT", "").strip()
+        if reasoning_effort:
+            payload["reasoning_effort"] = reasoning_effort
         endpoint = "/chat/completions"
         extract_text = lambda data: _message_text(data["choices"][0]["message"]["content"])
     elif protocol == "anthropic":
