@@ -4,6 +4,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.10]
+
 ### Added
 
 - `pi-9router`: 9Router provider driven entirely by the router's own `/v1/models` endpoint (with `fetch`/`search`/`transcribe` tools), replacing the third-party `@haoyiyin/9router` package and dropping its external model-catalog dependencies (modelgrep.com, models.dev, opencode zen).

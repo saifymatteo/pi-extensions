@@ -4,6 +4,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.5]
+
 ### Added
 
 - Model entries are objects, matching pi-blackhole: `model` and `fallbackModels` take `{"provider", "id", "thinking"?, "baseUrl"?}`, so each model sets its own reasoning level. `"provider/model-id"` strings, `fallbacks`, and a top-level `thinking` still load.

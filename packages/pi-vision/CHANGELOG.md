@@ -4,6 +4,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.6]
+
 ### Changed
 
 - Model entries in `vision-toolkit.json` are objects, matching pi-blackhole: `model` and `fallbackModels` take `{"provider", "id", "baseUrl"?, "apiKey"?, "protocol"?, "thinking"?}`. `thinking` is sent as `reasoning_effort` (capped at `high`) by the extension and the skill CLIs. `"provider/model-id"` strings, `fallbacks`, and the `providers` map still load.
