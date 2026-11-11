@@ -4,6 +4,12 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.12]
+
+### Fixed
+
+- pi-session-rename no longer blocks Pi on the herdr CLI: tab mirroring runs in the background.
+
 ## [0.1.11]
 
 ### Fixed

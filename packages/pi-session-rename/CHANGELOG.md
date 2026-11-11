@@ -4,6 +4,12 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.6]
+
+### Fixed
+
+- Herdr tab mirroring no longer blocks Pi: `herdr tab get`/`rename` run asynchronously in the background, one at a time and in order, instead of synchronously on session start and on every rename (up to 2 seconds each when herdr hung). Shutdown still waits for the original tab label to be restored.
+
 ## [0.1.5]
 
 ### Added
