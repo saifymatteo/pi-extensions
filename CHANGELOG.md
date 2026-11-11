@@ -4,6 +4,12 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.13]
+
+### Fixed
+
+- pi-session-rename: reasoning models no longer fail titles with `length` (4,096-token budget with thinking on), and `fallbackModels` now also cover failed replies.
+
 ## [0.1.12]
 
 ### Fixed

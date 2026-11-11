@@ -4,6 +4,13 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.7]
+
+### Fixed
+
+- Titles no longer fail with `length` on reasoning models: with thinking on, the output budget is 4,096 tokens (was 1,024), since a long prompt can make the model reason past 1,024 before answering.
+- `fallbackModels` now cover failed replies too: an error, a reply cut off by the token limit, or one that is not title JSON tries the next entry, and the warning appears only when every entry fails. Previously fallbacks applied only when an earlier model had no credentials.
+
 ## [0.1.6]
 
 ### Fixed
