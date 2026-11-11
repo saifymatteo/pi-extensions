@@ -85,6 +85,19 @@ export function seedStore({ home, agent }, { old = false } = {}) {
   s(P.infra, 'Backup job · retention', 'keep 14 days of backups', old ? 38 : 5, pr);
 }
 
+// 9router /v1/models fixture: one entry per upstream the router fronts.
+export const ROUTER_MODELS = [
+    { id: 'kr/claude-sonnet-4.5', owned_by: 'kr', capabilities: { vision: true, reasoning: true, thinkingFormat: 'claude-budget', thinkingCanDisable: true, contextWindow: 200000, maxOutput: 64000 } },
+    { id: 'kr/claude-haiku-4.5', owned_by: 'kr', capabilities: { vision: true, reasoning: true, thinkingFormat: 'claude-budget', thinkingCanDisable: true, contextWindow: 200000, maxOutput: 32000 } },
+    { id: 'cx/gpt-6-luna', owned_by: 'cx', capabilities: { vision: true, reasoning: true, thinkingFormat: 'openai', thinkingCanDisable: true, contextWindow: 400000, maxOutput: 128000 } },
+    { id: 'cx/gpt-6-luna[1m]', owned_by: 'cx', capabilities: { vision: true, reasoning: true, thinkingFormat: 'openai', thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 128000 } },
+    { id: 'ag/gemini-4-argon-high', owned_by: 'ag', capabilities: { vision: true, reasoning: true, thinkingFormat: 'gemini-level', thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 64000 } },
+    { id: 'omlx/Ling-3.0-tiny-oQ6e', owned_by: 'omlx', capabilities: { vision: false, reasoning: true, thinkingFormat: 'qwen', thinkingCanDisable: true, contextWindow: 262144, maxOutput: 32000 } },
+    { id: 'ollama/gemma4:cloud', owned_by: 'ollama', capabilities: { vision: true, reasoning: false, contextWindow: 128000, maxOutput: 8192 } },
+    { id: 'nous/meituan/longcat-2.5-preview:free', owned_by: 'nous', capabilities: { vision: false, reasoning: true, thinkingFormat: 'nous', thinkingCanDisable: false, contextWindow: 262144, maxOutput: 32000 } },
+    { id: 'oc/jev-1.13-free', owned_by: 'oc', capabilities: { vision: false, reasoning: false, contextWindow: 200000, maxOutput: 32000 } },
+];
+
 export const SHOTS = {
   'pi-session-finder': async () => {
     const snap = await run({ extensions: ['pi-session-finder'], cols: 100, rows: 25, setup: d => seedStore(d) }, async s => {
@@ -157,26 +170,15 @@ export const SHOTS = {
     return { panels: [solo(rows(snap, { from: /Tool usage/, to: /Esc close/, box: true }))] };
   },
   'pi-9router': async () => {
-    const models = [
-      { id: 'kr/claude-sonnet-4.5', owned_by: 'kr', capabilities: { vision: true, reasoning: true, thinkingFormat: 'claude-budget', thinkingCanDisable: true, contextWindow: 200000, maxOutput: 64000 } },
-      { id: 'kr/claude-haiku-4.5', owned_by: 'kr', capabilities: { vision: true, reasoning: true, thinkingFormat: 'claude-budget', thinkingCanDisable: true, contextWindow: 200000, maxOutput: 32000 } },
-      { id: 'cx/gpt-6-luna', owned_by: 'cx', capabilities: { vision: true, reasoning: true, thinkingFormat: 'openai', thinkingCanDisable: true, contextWindow: 400000, maxOutput: 128000 } },
-      { id: 'cx/gpt-6-luna[1m]', owned_by: 'cx', capabilities: { vision: true, reasoning: true, thinkingFormat: 'openai', thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 128000 } },
-      { id: 'ag/gemini-4-argon-high', owned_by: 'ag', capabilities: { vision: true, reasoning: true, thinkingFormat: 'gemini-level', thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 64000 } },
-      { id: 'omlx/Ling-3.0-tiny-oQ6e', owned_by: 'omlx', capabilities: { vision: false, reasoning: true, thinkingFormat: 'qwen', thinkingCanDisable: true, contextWindow: 262144, maxOutput: 32000 } },
-      { id: 'ollama/gemma4:cloud', owned_by: 'ollama', capabilities: { vision: true, reasoning: false, contextWindow: 128000, maxOutput: 8192 } },
-      { id: 'nous/meituan/longcat-2.5-preview:free', owned_by: 'nous', capabilities: { vision: false, reasoning: true, thinkingFormat: 'nous', thinkingCanDisable: false, contextWindow: 262144, maxOutput: 32000 } },
-      { id: 'oc/jev-1.13-free', owned_by: 'oc', capabilities: { vision: false, reasoning: false, contextWindow: 200000, maxOutput: 32000 } },
-    ];
     const snap = await run({ cols: 110, rows: 36, setup: ({ agent, port }) => {
       mkdirSync(join(agent, 'extensions'), { recursive: true });
       writeFileSync(join(agent, 'extensions', '9router.json'), JSON.stringify({ baseUrl: `http://127.0.0.1:${port}/v1` }, null, 2));
       // pi's picker only lists models from configured providers; seed the login
       // credential the extension's /login flow would have persisted.
       writeFileSync(join(agent, 'auth.json'), JSON.stringify({ '9router': { type: 'oauth', access: 'demo-key', refresh: 'demo-key', expires: Number.MAX_SAFE_INTEGER } }, null, 2));
-    }, routes: { '/models': (req, res) => json(res, { data: models }) }, extensions: ['pi-9router'] }, async s => {
+    }, routes: { '/models': (req, res) => json(res, { data: ROUTER_MODELS }) }, extensions: ['pi-9router'] }, async s => {
+      // Unfiltered: every upstream the router lists, from its own /v1/models.
       await s.type('/model'); s.key(KEY.enter); await s.waitFor(/model/i); await s.settle(1000);
-      s.type('claude'); await s.settle(500);
       s.key(KEY.down); await s.settle(300);
     });
     return { panels: [solo(rows(snap, { from: /model/i, to: /Esc/, box: true }))] };

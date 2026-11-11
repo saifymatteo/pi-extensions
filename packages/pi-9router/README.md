@@ -1,5 +1,7 @@
 # pi-9router
 
+![Pi's model picker listing every model from the router's own /v1/models](screenshot.png)
+
 *9Router model provider driven by the router's own `/v1/models` endpoint, plus `fetch`, `search`, and `transcribe` tools.*
 
 Model discovery uses only the router's models API: every model the router lists is registered from the capabilities it advertises itself (`vision`, `reasoning`, `thinkingFormat`, `contextWindow`, `maxOutput`) — no external catalogs (modelgrep, models.dev, opencode zen) are consulted, so a third-party outage can never break model discovery.

@@ -11,7 +11,7 @@ import omggif from 'omggif';
 const { quantize, applyPalette } = gifenc, { GifWriter } = omggif;
 import { session, KEY, ROOT, HERE, sleep } from './lib.mjs';
 import { page } from './render.mjs';
-import { seedStore, CLIP_ENV, KITTY, BUG_PNG, allText } from './shots.mjs';
+import { seedStore, CLIP_ENV, KITTY, BUG_PNG, allText, json, ROUTER_MODELS } from './shots.mjs';
 
 const COLS = 100, ROWS = 34, TICK = 100, MAX_HOLD = 3000, END_HOLD = 4000;
 const OUT = process.env.OUT ?? join(ROOT, 'demo.gif');
@@ -52,20 +52,26 @@ async function ask(s, text, until, hold = 1800) {
 
 const files = {
   'agent/state/claude-usage.json': { fiveHour: { pct: 42, resetsAt: Date.now() + 133 * 60e3 }, sevenDay: { pct: 78, resetsAt: Date.now() + 76 * 3600e3 }, rejected: false, overage: false },
-  'agent/extensions/session-rename.json': { model: 'claude-code/demo-model', thinking: 'off' },
+  'agent/extensions/session-rename.json': { model: { provider: 'claude-code', id: 'demo-model', thinking: 'off' } },
   'acme-api/package.json': JSON.stringify({ name: 'acme-api', scripts: { test: "sleep 5 && echo '✔ 42 tests passed' && echo 'coverage 91%'" } }, null, 2),
 };
 const s = await session({
   extensions: [ROOT], cols: COLS, rows: ROWS, turns, files, keepSession: true,
+  routes: { '/models': (req, res) => json(res, { data: ROUTER_MODELS }) },
   settings: { defaultProvider: 'claude-code' },
-  setup: d => { seedStore(d); writeFileSync(join(d.agent, 'models.json'), JSON.stringify({ providers: { 'claude-code': { baseUrl: `http://127.0.0.1:${d.port}/v1`, api: 'openai-completions', apiKey: 'demo', models: [{ id: 'demo-model', name: 'demo-model', input: ['text', 'image'], contextWindow: 200000 }] } } })); },
+  setup: d => {
+    seedStore(d);
+    // pi-9router: the router (this fake server) lists its models; the key is the /login credential.
+    writeFileSync(join(d.agent, 'extensions', '9router.json'), JSON.stringify({ baseUrl: `http://127.0.0.1:${d.port}/v1` }));
+    writeFileSync(join(d.agent, 'auth.json'), JSON.stringify({ '9router': { type: 'oauth', access: 'demo-key', refresh: 'demo-key', expires: Number.MAX_SAFE_INTEGER } }));
+    writeFileSync(join(d.agent, 'models.json'), JSON.stringify({ providers: { 'claude-code': { baseUrl: `http://127.0.0.1:${d.port}/v1`, api: 'openai-completions', apiKey: 'demo', models: [{ id: 'demo-model', name: 'demo-model', input: ['text', 'image'], contextWindow: 200000 }] } } })); },
   env: { ...CLIP_ENV, ...KITTY, HERDR_ENV: '', HERDR_TAB_ID: '', ZVEC_GREP_MODEL_CACHE: `${process.env.HOME}/.zvec-grep/models`, ZVEC_GREP_MODE: 'direct' },
 });
 try {
   await s.waitFor(/Zvec: (indexed|synced)/, 90000); await s.waitFor(/CodeGraph: synced/, 30000); await s.waitFor('Claude 5h', 10000); await sleep(500);
   const timer = setInterval(() => sample(s), TICK);
   try {
-    scene(s, 'Loaded: all 23 extensions from @saifymatteo/pi-extensions'); await sleep(2500);
+    scene(s, 'Loaded: all 24 extensions from @saifymatteo/pi-extensions'); await sleep(2500);
     scene(s, 'pi-claude-usage · pi-codegraph · pi-zvec  —  footer status'); await sleep(2500);
     scene(s, 'pi-zvec · pi-codegraph · pi-compact-tools · pi-bg-bash · pi-session-rename');
     await ask(s, 'where is the port set? run the tests in the background too', '91% coverage', 2500);
@@ -73,6 +79,9 @@ try {
     await ask(s, 'add a /health route', "res.writeHead(404)", 3000);
     scene(s, 'pi-root-guard  —  the agent cannot rewrite its own config');
     await ask(s, 'make gpt-5 my default model', 'yourself', 2500);
+    scene(s, "pi-9router  —  /model lists every model from the router's own /v1/models");
+    await s.type('/model', 45); await sleep(300); s.key(KEY.enter); await s.waitFor('oc/jev-1.13-free'); await sleep(800);
+    for (let i = 0; i < 4; i++) { s.key(KEY.down); await sleep(350); } await sleep(1800); dumpScreen(s); s.key(KEY.esc); await sleep(600);
     scene(s, 'pi-clipboard-image · pi-user-image-previews  —  Alt+V pastes a screenshot');
     s.key(KEY.altV); await s.waitFor('Image #1 attached'); await sleep(900);
     await ask(s, 'why does signup fail?', 'email validator', 2500);

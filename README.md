@@ -87,6 +87,7 @@ Each directory under `packages/` is an independently loadable, independently pub
 | [pi-decisions](packages/pi-decisions) | Agent-facing classify tool backed by configured Decisions endpoints | <a href="packages/pi-decisions"><img src="packages/pi-decisions/screenshot.png" width="280" alt="pi-decisions screenshot"></a> |
 | [pi-tts](packages/pi-tts) | Generate WAV files through an OpenAI-compatible speech endpoint | <a href="packages/pi-tts"><img src="packages/pi-tts/screenshot.png" width="280" alt="pi-tts screenshot"></a> |
 | [pi-vision](packages/pi-vision) | Describe images for text-only models via a configured vision chain | <a href="packages/pi-vision"><img src="packages/pi-vision/screenshot.png" width="280" alt="pi-vision screenshot"></a> |
+| [pi-9router](packages/pi-9router) | 9Router provider from the router's own `/v1/models`, plus fetch/search/transcribe tools | <a href="packages/pi-9router"><img src="packages/pi-9router/screenshot.png" width="280" alt="pi-9router screenshot"></a> |
 
 ### Environment and local observability
 
