@@ -4,6 +4,12 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.14]
+
+### Fixed
+
+- pi-zvec: support zg 0.3's command syntax and native Windows executable.
+
 ## [0.1.13]
 
 ### Fixed

@@ -4,6 +4,13 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.6]
+
+### Fixed
+
+- Use zg 0.3's flag-based management commands and explicit search routes instead of legacy subcommands.
+- Resolve the native zg executable on Windows so regex arguments bypass the npm command shim.
+
 ## [0.1.5]
 
 ### Added
