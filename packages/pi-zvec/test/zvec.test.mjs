@@ -16,9 +16,28 @@ test('indexed search uses explicit query routes without legacy subcommands', () 
   }
 });
 
+test('an empty workspace index is a successful no-op, not a missing index', () => {
+  const output = `Workspace index
+files   0 scanned, 0 added, 0 modified, 0 retried, 0 unchanged, 0 deleted, 0 failed
+entities   0
+duration   0ms (0ms)
+roots   /home/matteo/Downloads
+tip   No indexable files were found. Run \`zg --help file-types\` to review supported file types and indexing rules.
+
+Scanning — scanning files
+Indexing: 0/0 files
+Optimizing index: 0/0 files
+Saving index: 0/0 files
+Finishing index: 0/0 files`;
+  assert.equal(mod.hasFailureText(output), false);
+});
+
 test('index success counters and output freshness are interpreted correctly', () => {
   assert.equal(mod.hasFailureText('10 indexed, 0 failed'), false);
   assert.equal(mod.hasFailureText('10 indexed, 1 failed'), true);
+  for (const error of ['No index found', 'No such index', 'Index not initialized', '✗ indexing error']) {
+    assert.equal(mod.hasFailureText(error), true, error);
+  }
   const summary = mod.summarizeOutput('hits: 3\nfreshness: possibly_stale');
   assert.equal(summary.hits, 3);
   assert.equal(summary.fresh, 'possibly_stale');

@@ -68,7 +68,7 @@ const SEARCH_TIMEOUT_MS = 120_000;
 const SYNC_TIMEOUT_MS = 30 * 60_000; // incremental index can still be large on first catch-up
 const INIT_TIMEOUT_MS = 30 * 60_000; // first index downloads the embedding model
 const STATUS_TIMEOUT_MS = 30_000;
-const FAILURE_RE = /✗|not initialized|no index|no such index|failed/i;
+const FAILURE_RE = /✗|not initialized|no index\b|no such index\b|failed/i;
 const FAILED_COUNT_RE = /\b0\s+failed\b/gi;
 
 // zg's success summary ends with e.g. "0 failed"; a bare /failed/ match would
@@ -77,7 +77,8 @@ const FAILED_COUNT_RE = /\b0\s+failed\b/gi;
 export function hasFailureText(out: string): boolean {
 	return FAILURE_RE.test(out.replace(FAILED_COUNT_RE, ""));
 }
-const NO_INDEX_RE = /not initialized|no index|no such index/i;
+// Match the noun "index", not the successful empty-workspace tip "No indexable files".
+const NO_INDEX_RE = /not initialized|no index\b|no such index\b/i;
 
 export type SearchMode = "auto" | "hybrid" | "fts" | "vector" | "exact";
 

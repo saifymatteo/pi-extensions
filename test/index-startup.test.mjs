@@ -12,7 +12,7 @@ const deferred = () => {
 };
 const ok = { code: 0, stdout: 'ok', stderr: '', killed: false };
 
-function harness(kind, { indexed = false, auto = false, windows = false, missing = false, holdConfig = false, holdGitignore = false, holdDiscovery = false } = {}) {
+function harness(kind, { indexed = false, auto = false, windows = false, missing = false, holdConfig = false, holdGitignore = false, holdDiscovery = false, result = ok } = {}) {
   const home = join(tmpdir(), 'pi-index-startup-fixture');
   const root = join(home, 'project');
   const cwd = join(root, 'subdir');
@@ -68,7 +68,7 @@ function harness(kind, { indexed = false, auto = false, windows = false, missing
         await version.promise;
         return { ...ok, code: missing ? 1 : 0 };
       }
-      return ok;
+      return result;
     },
   };
   mod.default(pi);
@@ -306,6 +306,17 @@ test('zvec: CLI probe and manual management commands use zg 0.3 flags', async ()
     ['--index', h.cwd],
   ]);
   assert.deepEqual(h.calls.at(-1).args, ['--status', h.cwd]);
+  await h.shutdown();
+});
+
+test('zvec: empty workspace sync succeeds without an error notification', async () => {
+  const stdout = 'Workspace index\nfiles   0 scanned, 0 failed\ntip   No indexable files were found.';
+  const h = harness('zvec', { result: { ...ok, stdout } });
+  h.version.resolve();
+  await h.commands['zvec-sync'].handler('', h.ctx);
+  assert.deepEqual(h.notifications.filter(item => item.level === 'error'), []);
+  assert.ok(h.notifications.some(item => item.text === 'Zvec synced.'));
+  assert.equal(h.messages.at(-1).content, stdout);
   await h.shutdown();
 });
 
