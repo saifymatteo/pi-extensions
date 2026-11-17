@@ -4,6 +4,12 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.7]
+
+### Fixed
+
+- Treat zg's successful "No indexable files were found" output as an empty-workspace no-op instead of a missing-index failure.
+
 ## [0.1.6]
 
 ### Fixed

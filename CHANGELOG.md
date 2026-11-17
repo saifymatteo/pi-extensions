@@ -4,6 +4,12 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.15]
+
+### Fixed
+
+- pi-zvec: stop reporting successful empty-workspace indexing as a sync failure.
+
 ## [0.1.14]
 
 ### Fixed
