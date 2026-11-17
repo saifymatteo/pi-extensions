@@ -6,8 +6,14 @@ const Type = new Proxy({}, { get: () => () => ({}) });
 const mod = loadExtension(fileURLToPath(new URL('../src/index.ts', import.meta.url)), { typebox: { Type } });
 
 test('exact search preserves regex and glob arguments without index flags', () => {
-  assert.equal(JSON.stringify(mod.buildSearchArgs({ query: 'a|b', mode: 'exact', globs: ['!vendor/**'], fileTypes: ['ts'], limit: 9 })), JSON.stringify(['query', '--rg', '-n', 'a|b', '-g', '!vendor/**', '-t', 'ts']));
-  assert.equal(mod.buildSearchArgs({ query: 'symbol', mode: 'fts', limit: 2 }).join('|'), 'query|--fts|symbol|--limit|2');
+  assert.equal(JSON.stringify(mod.buildSearchArgs({ query: 'a|b', mode: 'exact', globs: ['!vendor/**'], fileTypes: ['ts'], limit: 9 })), JSON.stringify(['--rg', '-n', '-e', 'a|b', '-g', '!vendor/**', '-t', 'ts']));
+  assert.equal(mod.buildSearchArgs({ query: '-word', mode: 'exact' }).join('|'), '--rg|-n|-e|-word');
+});
+
+test('indexed search uses explicit query routes without legacy subcommands', () => {
+  for (const [mode, route] of [['fts', '--fts'], ['vector', '--vector'], ['hybrid', '--hybrid'], ['auto', '--hybrid'], [undefined, '--hybrid']]) {
+    assert.equal(JSON.stringify(mod.buildSearchArgs({ query: 'symbol', mode, limit: 2, globs: ['!vendor/**'], fileTypes: ['ts'] })), JSON.stringify([route, 'symbol', '--limit', '2', '-g', '!vendor/**', '-t', 'ts']));
+  }
 });
 
 test('index success counters and output freshness are interpreted correctly', () => {

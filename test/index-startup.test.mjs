@@ -17,7 +17,7 @@ function harness(kind, { indexed = false, auto = false, windows = false, missing
   const root = join(home, 'project');
   const cwd = join(root, 'subdir');
   const globalRoot = join(home, 'npm global');
-  const entry = join(globalRoot, '@zvec', 'zvec-grep', 'dist', 'cli', 'index.js');
+  const entry = join(globalRoot, '@zvec', 'zvec-grep', 'bin', 'zg.exe');
   const versionEntered = deferred(), version = deferred(), configEntered = deferred(), config = deferred();
   const gitignoreEntered = deferred(), gitignore = deferred(), discoveryEntered = deferred(), discovery = deferred();
   const hooks = {}, commands = {}, tools = {}, calls = [], notifications = [], messages = [], writes = [];
@@ -63,7 +63,7 @@ function harness(kind, { indexed = false, auto = false, windows = false, missing
         if (holdDiscovery) await discovery.promise;
         return { ...ok, stdout: globalRoot };
       }
-      if (args.includes('version')) {
+      if (args.includes('version') || args.includes('--version')) {
         versionEntered.resolve();
         await version.promise;
         return { ...ok, code: missing ? 1 : 0 };
@@ -84,8 +84,8 @@ function harness(kind, { indexed = false, auto = false, windows = false, missing
     tool: (signal, context = ctx) => tool.execute('fixture', { query: 'a|b', mode: 'exact' }, signal, undefined, context),
     start: (context = ctx) => hooks.session_start({}, context),
     shutdown: () => hooks.session_shutdown({}, ctx),
-    versions: () => calls.filter(call => call.args.includes('version')),
-    writers: () => calls.filter(call => call.args.includes('index') || call.args.includes('init') || call.args.includes('sync')),
+    versions: () => calls.filter(call => call.args.includes('version') || call.args.includes('--version')),
+    writers: () => calls.filter(call => call.args.includes('--index') || call.args.includes('index') || call.args.includes('init') || call.args.includes('sync')),
   };
 }
 
@@ -217,6 +217,7 @@ for (const kind of ['zvec', 'codegraph']) {
     await h.tool();
     assert.ok(h.writers().length >= 2);
     assert.ok(h.writers().every(call => call.args.includes(h.root)));
+    if (kind === 'zvec') assert.ok(h.writers().every(call => call.args[0] === '--index'));
     await h.shutdown();
   });
 
@@ -271,7 +272,7 @@ test('zvec: cancelling Windows discovery neither launches a fallback nor poisons
   h.version.resolve();
   await h.tool();
   assert.equal(h.calls.filter(call => call.args.includes('npm')).length, 2);
-  assert.equal(h.calls.at(-1).command, 'node');
+  assert.equal(h.calls.at(-1).command, h.entry);
   await h.shutdown();
 });
 
@@ -284,8 +285,35 @@ test('zvec: Windows discovery is asynchronous, cached, and preserves shell metac
   h.version.resolve();
   await Promise.all([a, b]);
   assert.equal(h.calls.filter(call => call.args.includes('npm')).length, 1);
-  const queries = h.calls.filter(call => call.args.includes('query'));
+  const queries = h.calls.filter(call => call.args.includes('--rg'));
   assert.equal(queries.length, 2);
-  assert.ok(queries.every(call => call.command === 'node' && call.args[0] === h.entry && call.args.includes('a|b')));
+  assert.ok(queries.every(call => call.command === h.entry));
+  assert.ok(queries.every(call => JSON.stringify(call.args) === JSON.stringify(['--rg', '-n', '-e', 'a|b'])));
+  await h.shutdown();
+});
+
+test('zvec: CLI probe and manual management commands use zg 0.3 flags', async () => {
+  const h = harness('zvec');
+  h.start();
+  h.version.resolve();
+  await h.tool();
+  assert.deepEqual(h.versions()[0].args, ['--version']);
+  await h.commands['zvec-init'].handler('', h.ctx);
+  await h.commands['zvec-sync'].handler('', h.ctx);
+  await h.commands['zvec-status'].handler('', h.ctx);
+  assert.deepEqual(h.writers().map(call => call.args), [
+    ['--index', h.cwd, '--embedding', 'fixture/project'],
+    ['--index', h.cwd],
+  ]);
+  assert.deepEqual(h.calls.at(-1).args, ['--status', h.cwd]);
+  await h.shutdown();
+});
+
+test('zvec: automatic initialization uses zg --index', async () => {
+  const h = harness('zvec', { auto: true });
+  h.start();
+  h.version.resolve();
+  await h.tool();
+  assert.deepEqual(h.writers()[0].args, ['--index', h.cwd, '--embedding', 'fixture/project']);
   await h.shutdown();
 });

@@ -10,16 +10,16 @@
 //
 // Provides:
 //   - zvec_search tool : one tool, routed by a `mode` argument:
-//                        exact  → zg query --rg   (managed ripgrep; no index/model)
+//                        exact  → zg --rg   (managed ripgrep; no index/model)
 //                        fts    → BM25 lexical ranking
 //                        vector → semantic-only
-//                        hybrid/auto → positional hybrid query
+//                        hybrid/auto → --hybrid query
 //   - /zvec-init /zvec-sync /zvec-status
 //   - session_start : non-blocking CLI check (report once if missing), config setup,
 //                     index discovery by walking up from cwd for .zvec-grep/,
 //                     startup sync when indexed, auto-index when not (bounded
 //                     by home dir / filesystem root)
-//   - agent_settled : single-flight incremental `zg index` after each completed
+//   - agent_settled : single-flight incremental `zg --index` after each completed
 //                     turn (at most one queued trailing sync)
 //   - Footer status : "Zvec: init | sync | synced HH:MM | failed" — empty when inactive
 //   - Errors        : background init/sync notify only after retries are exhausted;
@@ -241,29 +241,26 @@ function textResult(text: string) {
 	return { content: [{ type: "text" as const, text }], details: undefined };
 }
 
-// On Windows `zg` is a `.cmd` shim. Reparsing the command line through cmd.exe
-// (and again through the shim's `%*`) misinterprets shell metacharacters, so a
-// regex like `a|b` becomes a pipe and the query is destroyed. Resolve the
-// package's JS entry once and drive it with `node` directly: no shell involved,
-// every argument preserved verbatim.
-let zgJsEntry: string | null | undefined;
-async function resolveZgJsEntry(pi: ExtensionAPI, signal?: AbortSignal): Promise<string | null> {
+// On Windows `zg` is a `.cmd` shim that reparses regex metacharacters. Resolve
+// zg 0.3's native executable once and spawn it directly to preserve arguments.
+let zgExecutable: string | null | undefined;
+async function resolveZgExecutable(pi: ExtensionAPI, signal?: AbortSignal): Promise<string | null> {
 	signal?.throwIfAborted();
-	if (zgJsEntry !== undefined) return zgJsEntry;
+	if (zgExecutable !== undefined) return zgExecutable;
 	try {
 		const result = await pi.exec("cmd.exe", ["/d", "/s", "/c", "npm", "root", "-g"], {
 			timeout: CLI_CHECK_TIMEOUT_MS,
 			signal,
 		});
 		signal?.throwIfAborted();
-		const entry = path.join(result.stdout.trim(), "@zvec", "zvec-grep", "dist", "cli", "index.js");
-		zgJsEntry = result.code === 0 && !result.killed && existsSync(entry) ? entry : null;
+		const entry = path.join(result.stdout.trim(), "@zvec", "zvec-grep", "bin", "zg.exe");
+		zgExecutable = result.code === 0 && !result.killed && existsSync(entry) ? entry : null;
 	} catch {
 		// Cancellation is not a missing installation and must not poison the cache.
 		signal?.throwIfAborted();
-		zgJsEntry = null;
+		zgExecutable = null;
 	}
-	return zgJsEntry;
+	return zgExecutable;
 }
 
 async function execZg(
@@ -272,18 +269,11 @@ async function execZg(
 	options: { signal?: AbortSignal; timeout?: number; cwd?: string } = {},
 ) {
 	if (process.platform === "win32") {
-		const entry = await resolveZgJsEntry(pi, options.signal);
-		if (entry) {
-			try {
-				return await pi.exec("node", [entry, ...args], options);
-			} catch {
-				options.signal?.throwIfAborted();
-				/* node missing from PATH: fall back to the shim below */
-			}
-		}
+		const entry = await resolveZgExecutable(pi, options.signal);
+		if (entry) return await pi.exec(entry, args, options);
 		// Fallback only: the cmd shim re-parses the command line, so arguments
 		// containing shell metacharacters (`|`, `&`, `<`, `>`, `%`, `^`) are not
-		// safe here. The node-entry path above exists precisely to avoid this.
+		// safe here. The native-executable path above exists to avoid this.
 		return await pi.exec("cmd.exe", ["/d", "/s", "/c", "zg", ...args], options);
 	}
 	return await pi.exec("zg", args, options);
@@ -294,15 +284,13 @@ export function buildSearchArgs(p: SearchParams): string[] {
 	const mode: SearchMode = p.mode ?? "auto";
 	if (mode === "exact") {
 		// Managed ripgrep: no index and no embedding model required.
-		const args = ["query", "--rg", "-n", p.query];
+		const args = ["--rg", "-n", "-e", p.query];
 		for (const g of p.globs ?? []) args.push("-g", g);
 		for (const t of p.fileTypes ?? []) args.push("-t", t);
 		return args;
 	}
-	const args = ["query"];
-	if (mode === "fts") args.push("--fts", p.query);
-	else if (mode === "vector") args.push("--vector", p.query);
-	else args.push(p.query); // auto/hybrid: positional query = hybrid
+	const route = mode === "fts" ? "--fts" : mode === "vector" ? "--vector" : "--hybrid";
+	const args = [route, p.query];
 	if (typeof p.limit === "number" && p.limit > 0) args.push("--limit", String(p.limit));
 	for (const g of p.globs ?? []) args.push("-g", g);
 	for (const t of p.fileTypes ?? []) args.push("-t", t);
@@ -381,7 +369,7 @@ export default function zvec(pi: ExtensionAPI) {
 		const signal = runtimeAbort.signal;
 		cliCheck ??= (async () => {
 			try {
-				const r = await execZg(pi2, ["version"], { timeout: CLI_CHECK_TIMEOUT_MS, signal });
+				const r = await execZg(pi2, ["--version"], { timeout: CLI_CHECK_TIMEOUT_MS, signal });
 				if (gen !== sessionGen || signal.aborted) return false;
 				cliAvailable = r.code === 0 && !r.killed;
 			} catch {
@@ -426,7 +414,7 @@ export default function zvec(pi: ExtensionAPI) {
 		const token = ++opSeq;
 		currentOpToken = token;
 		const embedding = state?.config.embedding ?? DEFAULT_EMBEDDING;
-		const args = kind === "init" ? ["index", target, "--embedding", embedding] : ["index", target];
+		const args = kind === "init" ? ["--index", target, "--embedding", embedding] : ["--index", target];
 		const timeout = kind === "init" ? INIT_TIMEOUT_MS : SYNC_TIMEOUT_MS;
 		status(ctx, gen, kind === "init" ? "Zvec: init" : "Zvec: sync");
 
@@ -576,7 +564,7 @@ export default function zvec(pi: ExtensionAPI) {
 				if (mode !== "exact" && NO_INDEX_RE.test(failOut)) {
 					return textResult(
 						`${failOut}\n\nThis workspace has no Zvec index yet. Build one with /zvec-init ` +
-							`(or run: zg index "${root}"), or use mode:'exact' for index-free search.`,
+							`(or run: zg --index "${root}"), or use mode:'exact' for index-free search.`,
 					);
 				}
 				return textResult(failOut);
@@ -618,7 +606,7 @@ export default function zvec(pi: ExtensionAPI) {
 
 	// ── /zvec-init ─────────────────────────────────────────────────────────
 	registerCommand("zvec-init", {
-		description: "Build the Zvec index for the current project (zg index)",
+		description: "Build the Zvec index for the current project (zg --index)",
 		handler: async (args, ctx) => {
 			const sig = runtimeAbort.signal;
 			const target = args?.trim() || ctx.cwd;
@@ -631,7 +619,7 @@ export default function zvec(pi: ExtensionAPI) {
 			if (ctx.hasUI) {
 				ctx.ui.notify(`Indexing ${target} with ${embedding} — first run downloads the model…`, "info");
 			}
-			const result = await execZg(pi, ["index", target, "--embedding", embedding], {
+			const result = await execZg(pi, ["--index", target, "--embedding", embedding], {
 				timeout: INIT_TIMEOUT_MS,
 				cwd: target,
 				signal: sig,
@@ -657,7 +645,7 @@ export default function zvec(pi: ExtensionAPI) {
 
 	// ── /zvec-sync ─────────────────────────────────────────────────────────
 	registerCommand("zvec-sync", {
-		description: "Update the Zvec index for new/changed files (zg index)",
+		description: "Update the Zvec index for new/changed files (zg --index)",
 		handler: async (args, ctx) => {
 			const sig = runtimeAbort.signal;
 			const target = args?.trim() || state?.projectRoot || ctx.cwd;
@@ -667,7 +655,7 @@ export default function zvec(pi: ExtensionAPI) {
 			}
 			if (sig.aborted) return;
 			if (ctx.hasUI) ctx.ui.notify(`Syncing Zvec for ${target}…`, "info");
-			const result = await execZg(pi, ["index", target], { timeout: SYNC_TIMEOUT_MS, cwd: target, signal: sig });
+			const result = await execZg(pi, ["--index", target], { timeout: SYNC_TIMEOUT_MS, cwd: target, signal: sig });
 			if (sig.aborted) return; // reloaded mid-run: ctx and pi are stale
 			const out = outputOf(result);
 			const success = !result.killed && result.code === 0 && !hasFailureText(out);
@@ -693,7 +681,7 @@ export default function zvec(pi: ExtensionAPI) {
 				return;
 			}
 			if (sig.aborted) return;
-			const result = await execZg(pi, ["status", target], { timeout: STATUS_TIMEOUT_MS, signal: sig });
+			const result = await execZg(pi, ["--status", target], { timeout: STATUS_TIMEOUT_MS, signal: sig });
 			if (sig.aborted) return; // reloaded mid-run: ctx and pi are stale
 			const out = outputOf(result);
 			if (result.code !== 0 || result.killed || hasFailureText(out)) {
