@@ -34,12 +34,12 @@
  * `diff` fences are natively supported by pi (+/- lines are colored via the
  * toolDiffAdded / toolDiffRemoved theme colors) and are left untouched.
  *
- * Implementation: wraps Markdown.prototype.renderToken from the bundled
- * @earendil-works/pi-tui, swapping theme.codeBlockBorder and
- * theme.highlightCode for the duration of each call. Widths come from the
- * actual render call, so rules and gutters size correctly in nested contexts
- * (blockquotes, list items). Caching, streaming, and theme colors are
- * untouched. Display-only: session content and LLM context keep the original
+ * Implementation: wraps Markdown.prototype.codeBlockParts when available,
+ * otherwise renderToken, from the bundled @earendil-works/pi-tui. Swaps the
+ * theme.codeBlockBorder and theme.highlightCode callbacks for each call.
+ * Widths come from the actual render call, so rules and gutters size correctly
+ * in nested contexts (blockquotes, list items). Caching, streaming, and theme
+ * colors are untouched. Display-only: session content and LLM context keep the original
  * fences.
  *
  * Remove this file to restore the previous rendering, then run /reload or
@@ -185,13 +185,15 @@ interface MarkdownLike {
 	theme?: ThemeLike;
 }
 
-type RenderTokenFn = (
+// codeBlockParts returns an opaque parts object; legacy renderToken returns lines.
+// Both take the same leading arguments and must return their result unchanged.
+type RenderCodeFn = (
 	this: MarkdownLike,
 	token: unknown,
 	width: number,
 	nextTokenType?: string,
 	styleContext?: unknown,
-) => string[];
+) => unknown;
 
 /** Apply :line-numbers and {2,4-6} to highlighted code lines. */
 function decorateLines(lines: string[], parsed: FenceInfo): string[] {
@@ -222,20 +224,24 @@ function decorateLines(lines: string[], parsed: FenceInfo): string[] {
 
 export default function (pi: ExtensionAPI) {
 	const proto = Markdown.prototype as unknown as {
-		renderToken?: RenderTokenFn;
-		__codeblockBordersPatched?: boolean | RenderTokenFn;
+		codeBlockParts?: RenderCodeFn;
+		renderToken?: RenderCodeFn;
+		__codeblockBordersPatched?: boolean | RenderCodeFn;
 	};
 
 	// Legacy boolean markers cannot be safely unwrapped: restart once to migrate.
 	// New markers identify the owner so stale shutdowns cannot remove a reload.
 	if (proto.__codeblockBordersPatched) return;
 
-	const originalRenderToken = proto.renderToken;
-	if (typeof originalRenderToken !== "function") {
+	// Pi-Bolt's optimized top-level renderer skips renderToken. codeBlockParts
+	// is shared by that fast path and nested code, so patch it once, not both.
+	const method = typeof proto.codeBlockParts === "function" ? "codeBlockParts" : "renderToken";
+	const originalRender = proto[method];
+	if (typeof originalRender !== "function") {
 		// pi-tui internals changed; stay inert instead of breaking rendering.
 		pi.on("session_start", async (_event, ctx) => {
 			ctx.ui.notify(
-				"codeblock-borders: Markdown.renderToken not found, extension inactive",
+				"codeblock-borders: Markdown.codeBlockParts/renderToken not found, extension inactive",
 				"warning",
 			);
 		});
@@ -243,14 +249,14 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	let active = true;
-	const renderToken: RenderTokenFn = function (token, width, nextTokenType, styleContext) {
+	const renderCode: RenderCodeFn = function (token, width, nextTokenType, styleContext) {
 		// A later wrapper may retain us in its chain after shutdown.
-		if (!active) return originalRenderToken.call(this, token, width, nextTokenType, styleContext);
+		if (!active) return originalRender.call(this, token, width, nextTokenType, styleContext);
 		const theme = this.theme;
 		const originalBorder = theme?.codeBlockBorder;
 		const originalHighlight = theme?.highlightCode;
 		if (!theme || typeof originalBorder !== "function") {
-			return originalRenderToken.call(this, token, width, nextTokenType, styleContext);
+			return originalRender.call(this, token, width, nextTokenType, styleContext);
 		}
 
 		// codeBlockBorder is called once for the opening fence ("```info") and
@@ -280,7 +286,7 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		try {
-			return originalRenderToken.call(this, token, width, nextTokenType, styleContext);
+			return originalRender.call(this, token, width, nextTokenType, styleContext);
 		} finally {
 			theme.codeBlockBorder = originalBorder;
 			if (theme && typeof originalHighlight === "function") {
@@ -289,14 +295,14 @@ export default function (pi: ExtensionAPI) {
 		}
 	};
 
-	proto.renderToken = renderToken;
-	proto.__codeblockBordersPatched = renderToken;
+	proto[method] = renderCode;
+	proto.__codeblockBordersPatched = renderCode;
 	pi.on("session_shutdown", () => {
 		if (!active) return;
 		active = false;
 		// Do not overwrite another extension's wrapper. Our retained wrapper is
 		// now pass-through, and a replacement can safely wrap the current chain.
-		if (proto.renderToken === renderToken) proto.renderToken = originalRenderToken;
-		if (proto.__codeblockBordersPatched === renderToken) delete proto.__codeblockBordersPatched;
+		if (proto[method] === renderCode) proto[method] = originalRender;
+		if (proto.__codeblockBordersPatched === renderCode) delete proto.__codeblockBordersPatched;
 	});
 }

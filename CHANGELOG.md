@@ -4,9 +4,15 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.16]
+
 ### Added
 
 - pi-draft: autosave the unsent prompt per folder and restore it on the next launch; footer status and Alt+S to save now.
+
+### Fixed
+
+- pi-codeblock-borders: restore decorated code-block rules on Pi-Bolt's optimized renderer; retain older Pi compatibility.
 
 ## [0.1.15]
 
