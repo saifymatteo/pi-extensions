@@ -4,6 +4,10 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Added
+
+- pi-draft: autosave the unsent prompt per folder and restore it on the next launch; footer status and Alt+S to save now.
+
 ## [0.1.15]
 
 ### Fixed

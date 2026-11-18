@@ -25,6 +25,9 @@
       "directory": "pi-decisions"
     },
     {
+      "directory": "pi-draft"
+    },
+    {
       "directory": "pi-load-pi-dotenv"
     },
     {

@@ -1,0 +1,38 @@
+{
+  "name": "@saifymatteo/pi-draft",
+  "version": "0.1.1",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension"
+  ],
+  "files": [
+    "src",
+    "README.md",
+    "CHANGELOG.md",
+    "NOTICE.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "image": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-draft/screenshot.png",
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "description": "Autosave the unsent prompt and restore it on the next launch in the same folder.",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saifymatteo/pi-extensions.git",
+    "directory": "packages/pi-draft"
+  }
+}

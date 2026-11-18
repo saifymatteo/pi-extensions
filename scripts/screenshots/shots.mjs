@@ -255,6 +255,19 @@ export const SHOTS = {
     });
     return { panels: [solo(rows(snap, { from: /Copied session ID/, footer: 5 }), { highlight: [/Copied session ID/] })] };
   },
+  'pi-draft': async () => {
+    // Seed what a killed session left behind for ~/acme-api, then launch fresh.
+    const setup = ({ agent, project }) => {
+      const file = join(agent, 'drafts', `${createHash('sha256').update(project).digest('hex').slice(0, 16)}.txt`);
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, 'Refactor router.ts so /health returns the git SHA,\nthen add a test for it');
+    };
+    const snap = await run({ extensions: ['pi-draft'], cols: 92, rows: 16, setup }, async s => {
+      await s.waitFor('Restored unsent draft'); await s.settle(400);
+    });
+    return { panels: [solo(rows(snap, { from: /Restored unsent draft/, footer: 6 }), { highlight: [/Restored unsent draft/, /draft saved/] })],
+      caption: 'pi was killed mid-prompt. The next launch in the same folder puts the unsent text back in the editor.' };
+  },
   'pi-claude-usage': async () => {
     const now = Date.now();
     const files = { 'agent/state/claude-usage.json': { fiveHour: { pct: 42, resetsAt: now + (2 * 60 + 13) * 60e3 }, sevenDay: { pct: 78, resetsAt: now + (3 * 24 + 4) * 3600e3 }, rejected: false, overage: false } };
