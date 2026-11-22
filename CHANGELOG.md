@@ -4,6 +4,12 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.17]
+
+### Changed
+
+- pi-prestart-working: the spinner now reads `Loading extension: <name>`.
+
 ## [0.1.16]
 
 ### Added
