@@ -480,11 +480,13 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		const images: Array<{ type: "image"; data: string; mimeType: string }> = [];
-		const submittedPaths: string[] = [];
+		const pathLines: string[] = [];
 		for (const item of pending) {
-			if (event.text.includes(item.marker.trim())) {
+			const label = item.marker.trim();
+			if (event.text.includes(label)) {
 				images.push({ type: "image" as const, data: item.base64, mimeType: item.mimeType });
-				submittedPaths.push(item.path);
+				// Reuse the marker's own number so `[Image #2]` maps to `Image #2: <path>`.
+				pathLines.push(`${label.slice(1, -1)}: ${item.path}`);
 			} else {
 				removeTempFile(item.path);
 			}
@@ -496,9 +498,7 @@ export default function (pi: ExtensionAPI) {
 		if (images.length === 0) {
 			return { action: "continue" as const };
 		}
-		const pathsText = submittedPaths.map((path, idx) => `Image #${idx + 1}: ${path}`).join("\n");
-		const text = pathsText ? `${event.text}\n${pathsText}` : event.text;
-		return { action: "transform" as const, text, images };
+		return { action: "transform" as const, text: `${event.text}\n${pathLines.join("\n")}`, images };
 	});
 
 	pi.on("session_start", (_event, sessionCtx) => {

@@ -99,3 +99,29 @@ test('image previews store only source references and do not duplicate model pay
   hooks.session_shutdown();
   assert.equal(renderers['user-image-preview'](entries[1], {}, {}), undefined);
 });
+
+test('clipboard image path labels keep the marker number after an earlier image is removed', async () => {
+  const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+  const hooks = {}; const shortcuts = {}; const pasted = [];
+  const pi = {
+    on: (name, fn) => { hooks[name] = fn; },
+    registerShortcut: (key, { handler }) => { shortcuts[key] = handler; },
+    events: { on: () => () => {}, emit: () => {} },
+  };
+  const fakeProcess = { ...process, platform: 'darwin', env: {} };
+  loadExtension(source('pi-clipboard-image'), {
+    '@earendil-works/pi-coding-agent': { convertToPng: async () => null },
+    '@earendil-works/pi-tui': { getNativeClipboard: () => ({ getImage: async () => png }) },
+  }, { process: fakeProcess }).default(pi);
+  hooks.session_start({}, { hasUI: true, ui: { pasteToEditor: text => pasted.push(text), notify: () => {} } });
+
+  await shortcuts['alt+v']();
+  await shortcuts['alt+v']();
+  assert.deepEqual(pasted, ['[Image #1] ', '[Image #2] ']);
+
+  const result = hooks.input({ source: 'interactive', text: 'look [Image #2]' });
+  assert.equal(result.images.length, 1);
+  assert.match(result.text, /\nImage #2: .*clipboard-.*\.png$/);
+  assert.doesNotMatch(result.text, /Image #1:/);
+  hooks.session_shutdown();
+});
