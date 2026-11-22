@@ -4,6 +4,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.5]
+
 ### Fixed
 
 - Label appended image paths with their `[Image #N]` marker number, so removing an earlier image no longer points a later marker at the wrong path.

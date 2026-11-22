@@ -4,6 +4,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.18]
+
 ### Fixed
 
 - pi-clipboard-image: appended image paths keep their `[Image #N]` number after an earlier image is removed.
