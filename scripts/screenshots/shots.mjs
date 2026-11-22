@@ -286,8 +286,8 @@ export const SHOTS = {
     const go = async s => { await s.type('summarise yesterday\'s changes'); s.key(KEY.enter); await s.settle(1800); };
     const v = snap => { const i = snap.lines.findIndex(l => /~\/acme-api/.test(lineText(l))); return rows(snap, { from: i - 3 }); };
     const stock = await run({ extensions: [demo], cols: 92, rows: 18, turns: turns() }, go);
-    const withExt = await run({ extensions: ['pi-prestart-working', demo], cols: 92, rows: 18, turns: turns() }, async s => { await s.type('summarise yesterday\'s changes'); s.key(KEY.enter); await s.waitFor('Loading memory-recall'); await s.settle(300); });
-    return { panels: [{ ...before(v(stock)), label: 'Stock pi: a slow before_agent_start hook leaves the UI silent' }, after('pi-prestart-working', v(withExt), { highlight: [/Loading memory-recall/] })],
+    const withExt = await run({ extensions: ['pi-prestart-working', demo], cols: 92, rows: 18, turns: turns() }, async s => { await s.type('summarise yesterday\'s changes'); s.key(KEY.enter); await s.waitFor('Loading extension: memory-recall'); await s.settle(300); });
+    return { panels: [{ ...before(v(stock)), label: 'Stock pi: a slow before_agent_start hook leaves the UI silent' }, after('pi-prestart-working', v(withExt), { highlight: [/Loading extension: memory-recall/] })],
       caption: 'Just after pressing Enter, while a slow before_agent_start hook (here a demo "memory-recall" extension) is still running.' };
   },
   'pi-session-rename': async () => {

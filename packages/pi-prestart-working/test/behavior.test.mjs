@@ -46,8 +46,8 @@ test('labels the spinner with each blocking extension, then restores', async t =
   assert.equal(await runner.emitBeforeAgentStart(), 'result');
   assert.deepEqual(runner.log, [
     'visible:true',
-    'msg:Loading hindsight-coding-agents', 'run:hindsight',
-    'msg:Loading zvec', 'run:zvec',
+    'msg:Loading extension: hindsight-coding-agents', 'run:hindsight',
+    'msg:Loading extension: zvec', 'run:zvec',
     'msg:<default>',
   ]);
   // Original handler arrays are back, so pi.on() unsubscribe still finds them.

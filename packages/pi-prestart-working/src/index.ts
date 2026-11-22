@@ -71,7 +71,7 @@ export default function () {
 			ext.handlers.set(
 				EVENT,
 				list.map((h) => (...a: unknown[]) => {
-					ui.setWorkingMessage(`Loading ${label}`);
+					ui.setWorkingMessage(`Loading extension: ${label}`);
 					return h(...a);
 				}),
 			);
