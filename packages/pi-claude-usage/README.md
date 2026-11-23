@@ -1,8 +1,8 @@
 # Claude subscription usage
 
-![Footer showing Claude 5-hour and 7-day usage with reset timers](screenshot.png)
+![Footer showing Claude 5-hour, 7-day and weekly Fable usage with reset timers](screenshot.png)
 
-*An extra footer line shows Claude 5-hour and 7-day usage and when each window resets. Its colour changes at 75% and 90%.*
+*An extra footer line shows Claude 5-hour and 7-day usage and when each window resets. Its colour changes at 75% and 90%. The weekly Fable window appears too once Claude reports it.*
 
 Displays Claude subscription rate-limit windows from provider message diagnostics.
 

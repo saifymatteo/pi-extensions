@@ -50,6 +50,8 @@ test('Claude diagnostic conversion and countdown format do not require provider 
   assert.equal(usage.formatLeft(3_660_000), '1h01m');
   assert.equal(usage.formatFooter(result, 0), 'Claude 5h 42% ↻1h00m · 7d ? · overage');
   assert.match(usage.formatFooter(result, 3_600_001), /5h 0%/);
+  const fable = usage.fromRateLimit({ unifiedWindows: { seven_day_overage_included: { utilization: 0.12, resetsAt: 7200 } } });
+  assert.equal(usage.formatFooter(fable, 0), 'Claude 5h ? · 7d ? · Fable 12% ↻2h00m');
 });
 
 test('codeblock patch fits rules, restores theme callbacks, and unpatches on shutdown', () => {

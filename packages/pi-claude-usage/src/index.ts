@@ -1,4 +1,5 @@
-// Claude subscription usage (5h + 7d windows) in the footer.
+// Claude subscription usage (5h + 7d windows, plus the weekly Fable window
+// once the server reports it) in the footer.
 //
 // Data is free: pi-claude-code attaches Claude Code's rate_limit_event to
 // every assistant message as a "claude-code.rate-limit" diagnostic, whose
@@ -21,6 +22,7 @@ export interface Window {
 export interface Usage {
 	fiveHour?: Window;
 	sevenDay?: Window;
+	fable?: Window; // seven_day_overage_included, labelled "Fable limit" by Claude Code
 	rejected?: boolean;
 	overage?: boolean;
 }
@@ -40,6 +42,7 @@ export function fromRateLimit(info: any): Usage | undefined {
 	return {
 		fiveHour: win(w.five_hour),
 		sevenDay: win(w.seven_day),
+		fable: win(w.seven_day_overage_included),
 		rejected: info.status === "rejected",
 		overage: info.isUsingOverage === true,
 	};
@@ -63,12 +66,13 @@ function part(label: string, w: Window | undefined, now: number): string {
 }
 
 export function formatFooter(u: Usage, now = Date.now()): string {
-	return `Claude ${part("5h", u.fiveHour, now)} · ${part("7d", u.sevenDay, now)}${u.overage ? " · overage" : ""}`;
+	const fable = u.fable ? ` · ${part("Fable", u.fable, now)}` : "";
+	return `Claude ${part("5h", u.fiveHour, now)} · ${part("7d", u.sevenDay, now)}${fable}${u.overage ? " · overage" : ""}`;
 }
 
 function peak(u: Usage, now: number): number {
 	const live = (w?: Window) => (w && w.resetsAt > now ? w.pct : 0);
-	return Math.max(live(u.fiveHour), live(u.sevenDay));
+	return Math.max(live(u.fiveHour), live(u.sevenDay), live(u.fable));
 }
 
 export default function (pi: ExtensionAPI) {

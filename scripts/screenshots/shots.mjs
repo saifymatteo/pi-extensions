@@ -270,7 +270,7 @@ export const SHOTS = {
   },
   'pi-claude-usage': async () => {
     const now = Date.now();
-    const files = { 'agent/state/claude-usage.json': { fiveHour: { pct: 42, resetsAt: now + (2 * 60 + 13) * 60e3 }, sevenDay: { pct: 78, resetsAt: now + (3 * 24 + 4) * 3600e3 }, rejected: false, overage: false } };
+    const files = { 'agent/state/claude-usage.json': { fiveHour: { pct: 42, resetsAt: now + (2 * 60 + 13) * 60e3 }, sevenDay: { pct: 78, resetsAt: now + (3 * 24 + 4) * 3600e3 }, fable: { pct: 12, resetsAt: now + (5 * 24 + 7) * 3600e3 }, rejected: false, overage: false } };
     // Cache-only demo: select the supported provider identity without loading Claude Code.
     const models = { providers: { 'claude-code': { baseUrl: 'http://127.0.0.1:1/v1', api: 'openai-completions', apiKey: 'demo', models: [{ id: 'demo-model', name: 'demo-model', contextWindow: 200000 }] } } };
     const opts = { cols: 92, rows: 12, files, models, settings: { defaultProvider: 'claude-code' } };
