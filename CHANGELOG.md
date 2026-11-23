@@ -4,6 +4,12 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.19]
+
+### Added
+
+- pi-claude-usage: shows the weekly Fable window (`seven_day_overage_included`) when Claude reports it.
+
 ## [0.1.18]
 
 ### Fixed

@@ -4,6 +4,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.5]
+
 ### Added
 
 - Show the weekly Fable window (`seven_day_overage_included`) when Claude reports it.
