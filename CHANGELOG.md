@@ -4,9 +4,7 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
-### Fixed
-
-- pi-atelier: saving settings keeps a symlinked `pi-atelier.json` linked instead of replacing it with a local copy.
+## [0.1.23]
 
 ### Added
 
@@ -15,6 +13,10 @@ Release notes are recorded from 0.1.3 onward.
 ### Changed
 
 - pi-atelier: every Status Rail segment and Sidebar panel can now be hidden; nothing is required. Hiding every Sidebar panel collapses the sidebar.
+
+### Fixed
+
+- pi-atelier: saving settings keeps a symlinked `pi-atelier.json` linked instead of replacing it with a local copy.
 
 ## [0.1.22]
 

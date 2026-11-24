@@ -4,14 +4,16 @@ Release notes are recorded from 0.20.1 onward. Earlier fork and upstream history
 
 ## [Unreleased]
 
-### Fixed
-
-- Saving settings writes through a symlinked `pi-atelier.json` instead of replacing the link with a local copy, so dotfile-managed configs keep syncing.
+## [0.20.4] - 2026-11-24
 
 ### Changed
 
 - Every Status Rail segment can be hidden, including metrics and context, and the Sidebar may hide every panel. Settings no longer marks segments as required.
 - With every Sidebar panel hidden, the sidebar collapses and gives its width back to the transcript; the Control Center reports it as `hidden: no panels shown`.
+
+### Fixed
+
+- Saving settings writes through a symlinked `pi-atelier.json` instead of replacing the link with a local copy, so dotfile-managed configs keep syncing.
 
 ## [0.20.3] - 2026-11-24
 
