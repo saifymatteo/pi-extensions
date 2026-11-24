@@ -4,6 +4,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.25]
+
 ### Added
 
 - Every package with a JSON config ships a JSON Schema under `schemas/`; add `"$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/<package>/schemas/<name>.schema.json"` for editor completion and descriptions.

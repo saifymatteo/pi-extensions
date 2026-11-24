@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-25
+
 ### Changed
 
 - The user config now lives in `~/.pi/agent/extensions/orchestrator.jsonc`. An existing `~/.pi/agent/orchestrator.jsonc` (or legacy `.json`) moves there once on load, symlink-safe; if the move fails, the old file is read for that session. Fresh installs save into `extensions/`.

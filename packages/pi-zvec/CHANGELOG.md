@@ -4,6 +4,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-25
+
 ### Added
 
 - JSON schema for `zvec.json` (`schemas/zvec.schema.json`); the auto-created global config and the example include its `$schema` line, which the loader ignores.

@@ -1,6 +1,6 @@
 {
   "name": "@saifymatteo/pi-x-ide",
-  "version": "1.22.0",
+  "version": "1.23.0",
   "license": "AGPL-3.0-only",
   "type": "module",
   "description": "IDE selection context for Pi: VS Code, JetBrains, Neovim, and Zed",

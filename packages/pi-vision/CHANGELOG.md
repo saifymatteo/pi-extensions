@@ -4,6 +4,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-25
+
 ### Added
 
 - JSON schema for `vision-toolkit.json` (`schemas/vision-toolkit.schema.json`) for editor completion and validation. A top-level `$schema` line is ignored at runtime. The example config includes it.

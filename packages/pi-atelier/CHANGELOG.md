@@ -4,6 +4,8 @@ Release notes are recorded from 0.20.1 onward. Earlier fork and upstream history
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-25
+
 ### Added
 
 - JSON schema at `schemas/pi-atelier.schema.json` for editor completion; saving settings adds its `$schema` URL only when the file has none.

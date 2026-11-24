@@ -4,6 +4,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-25
+
 ### Added
 
 - Ship `schemas/service-models.schema.json` for editor validation of `service-models.json`; the example registry sets `$schema`.

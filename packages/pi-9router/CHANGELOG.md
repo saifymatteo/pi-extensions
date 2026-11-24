@@ -4,6 +4,8 @@ All notable changes to this package are documented here. Formats follow [Keep a 
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-25
+
 ### Added
 
 - JSON schema for `extensions/9router.json` (`schemas/9router.schema.json`); saving the config sets `$schema` only when absent and keeps any existing value.

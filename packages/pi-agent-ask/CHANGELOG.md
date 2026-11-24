@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-25
+
 ### Added
 
 - JSON schema for `pi-agent-ask.json` (`schemas/pi-agent-ask.schema.json`) for editor completion and validation. Saved configs start with its `$schema` URL; an existing `$schema` is kept, and the loader ignores the key.
