@@ -4,6 +4,10 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Added
+
+- pi-atelier: status rail footer, copy-friendly composer, and live activity sidebar join the collection. It replaces the footer and editor; if you also installed `npm:@saifymatteo/pi-atelier`, remove one of them.
+
 ## [0.1.21]
 
 ### Added

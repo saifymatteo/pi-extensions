@@ -332,6 +332,19 @@ export const SHOTS = {
     const snap = await run({ extensions: ['pi-bg-bash', 'pi-wait'], cols: 92, rows: 50, turns }, s => prompt(s, 'build in the background, then deploy once it is done', 'ready to deploy', 900));
     return { panels: [solo(rows(snap, { from: /build in the background/, to: /ready to deploy/ }), { highlight: [/^\s*wait\b/] })] };
   },
+  'pi-atelier': async () => {
+    const turns = [
+      { tools: [{ name: 'read', args: { path: 'src/router.ts' } }] },
+      { tools: [{ name: 'edit', args: { path: 'src/router.ts', edits: [{ oldText: '// TODO: add /health\n', newText: '' }] } }] },
+      { text: 'Removed the stale TODO from `src/router.ts`.' },
+    ];
+    const snap = await run({ extensions: ['pi-atelier'], cols: 150, rows: 36, turns, trusted: true, settings: { tuiMode: 'fullscreen' } }, async s => {
+      await prompt(s, 'tidy the router TODO', 'Removed the stale TODO', 1200);
+    });
+    const top = snap.lines.findIndex(l => /tidy the router TODO/.test(lineText(l)));
+    return { panels: [solo(rows(snap, { from: Math.max(0, top - 1) }))],
+      caption: 'Status rail footer and the live activity sidebar on the right: run status, context meter, and changed files.' };
+  },
   'pi-agent-ask': async () => {
     const turns = [
       { tools: [{ name: 'ask_user', args: { title: 'Session store', questions: [{ id: 'store', label: 'Store', prompt: 'Where should login sessions live?', options: [

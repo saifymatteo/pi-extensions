@@ -71,6 +71,7 @@ Each directory under `packages/` is an independently loadable, independently pub
 | --- | --- | --- |
 | [pi-compact-tools](packages/pi-compact-tools) | Group consecutive tool calls into one collapsible card | <a href="packages/pi-compact-tools"><img src="packages/pi-compact-tools/screenshot.png" width="280" alt="pi-compact-tools screenshot"></a> |
 | [pi-clipboard-image](packages/pi-clipboard-image) | Attach clipboard images or copied image files (Alt+V) | <a href="packages/pi-clipboard-image"><img src="packages/pi-clipboard-image/screenshot.png" width="280" alt="pi-clipboard-image screenshot"></a> |
+| [pi-atelier](packages/pi-atelier) | Status rail footer, copy-friendly composer, and a live activity sidebar | <a href="packages/pi-atelier"><img src="packages/pi-atelier/screenshot.png" width="280" alt="pi-atelier screenshot"></a> |
 | [pi-codeblock-borders](packages/pi-codeblock-borders) | Render code fences as rules with titles, line numbers, and highlights | <a href="packages/pi-codeblock-borders"><img src="packages/pi-codeblock-borders/screenshot.png" width="280" alt="pi-codeblock-borders screenshot"></a> |
 | [pi-draft](packages/pi-draft) | Autosave the unsent prompt; restore it on the next launch in the same folder | <a href="packages/pi-draft"><img src="packages/pi-draft/screenshot.png" width="280" alt="pi-draft screenshot"></a> |
 | [pi-user-image-previews](packages/pi-user-image-previews) | Collapsible inline previews for newly submitted attachments | <a href="packages/pi-user-image-previews"><img src="packages/pi-user-image-previews/screenshot.png" width="280" alt="pi-user-image-previews screenshot"></a> |
@@ -126,7 +127,6 @@ Configuration paths are unchanged by packaging: for example, many adapters read 
 
 | Component | Relationship to this collection |
 | --- | --- |
-| [`@saifymatteo/pi-atelier`](https://github.com/saifymatteo/pi-atelier) (fork of [michaelmjhhhh/pi-atelier](https://github.com/michaelmjhhhh/pi-atelier)) | Separate package; competing UI patches (including codeblock rendering) need integration testing |
 | [`@saifymatteo/pi-x-ide`](https://github.com/saifymatteo/pi-x-ide) (fork of [balaenis/pi-x-ide](https://github.com/balaenis/pi-x-ide)) | Separate package, loaded independently; UI patches can overlap collection patches |
 | [`@saifymatteo/Pi-Bolt`](https://github.com/saifymatteo/Pi-Bolt) (fork of [opensec-git/Pi-Bolt](https://github.com/opensec-git/Pi-Bolt)) | Host fork; one of the compatible `pi` executables that can load these packages. UI patches are host-version-sensitive |
 | External CLIs and provider dependencies | Install independently where needed; package documentation lists prerequisites |

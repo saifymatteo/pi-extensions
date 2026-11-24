@@ -92,17 +92,18 @@ export function makeHome(port, { settings = {}, files = {}, models, setup, realH
 export function hostEnv({ home, agent }, env = {}) {
   return { ...process.env, PI_CODING_AGENT_DIR: agent, PI_CODING_AGENT_SESSION_DIR: join(agent, 'sessions'), TMPDIR: DEMO_TMP, COLORTERM: 'truecolor', TERM: 'xterm-256color', TERM_PROGRAM: 'shots', HOME: home, PI_SKIP_VERSION_CHECK: '1', PI_OFFLINE: '1', PI_TELEMETRY: '0', ...env };
 }
-export const hostArgs = (extensions, { session = false, skills = false } = {}) => [STOCK,
-  '--no-extensions', ...(skills ? [] : ['--no-skills']), '--no-prompt-templates', '--no-themes', '--no-mcp', '--no-context-files', ...(session ? [] : ['--no-session']), '--no-approve',
+// `trusted` keeps the demo project trusted (trust.json) for extensions that gate on it.
+export const hostArgs = (extensions, { session = false, skills = false, trusted = false } = {}) => [STOCK,
+  '--no-extensions', ...(skills ? [] : ['--no-skills']), '--no-prompt-templates', '--no-themes', '--no-mcp', '--no-context-files', ...(session ? [] : ['--no-session']), ...(trusted ? [] : ['--no-approve']),
   '--tools', '*', ...extensions.flatMap(e => ['-e', e.includes('/') ? e : pkg(e)])];
 
 // --- PTY session ------------------------------------------------------------
-export async function session({ extensions = [], cols = 100, rows = 30, turns, routes, settings, files, setup, realHome, args = [], env = {}, cwd, models, keepSession = false, skills = false, dirs }) {
+export async function session({ extensions = [], cols = 100, rows = 30, turns, routes, settings, files, setup, realHome, args = [], env = {}, cwd, models, keepSession = false, skills = false, trusted = false, dirs }) {
   const provider = await startProvider(turns, routes);
   dirs ??= makeHome(provider.port, { settings, files, models, setup, realHome });
   const { home } = dirs;
   const term = new xterm.Terminal({ cols, rows, allowProposedApi: true, scrollback: 2000 });
-  const p = pty.spawn(process.execPath, [...hostArgs(extensions, { session: keepSession, skills }), ...args], {
+  const p = pty.spawn(process.execPath, [...hostArgs(extensions, { session: keepSession, skills, trusted }), ...args], {
     name: 'xterm-256color', cols, rows, cwd: cwd ?? dirs.project, env: hostEnv(dirs, env),
   });
   let title = '';

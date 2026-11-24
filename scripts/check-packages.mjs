@@ -71,10 +71,10 @@ for (const { directory } of inventory.extensions) {
       if (spec.startsWith('.')) {
         const target = resolve(dirname(path), spec);
         assert.ok(inside(target, packageRoot), `${directory}: import escapes package: ${spec}`);
-        assert.ok([target, target + '.ts', target + '.js', resolve(target, 'index.ts')].some(existsSync), `${path}: unresolved ${spec}`);
+        assert.ok([target, target + '.ts', target + '.js', target.replace(/\.js$/, '.ts'), resolve(target, 'index.ts')].some(existsSync), `${path}: unresolved ${spec}`);
       } else if (!isBuiltin(spec)) {
         const dep = spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0];
-        assert.ok(pkg.peerDependencies?.[dep] || pkg.dependencies?.[dep], `${directory}: undeclared dependency ${dep}`);
+        assert.ok(pkg.peerDependencies?.[dep] || pkg.dependencies?.[dep] || ((/[\\/]tests?[\\/]/.test(path) || path.endsWith("vitest.config.ts")) && pkg.devDependencies?.[dep]), `${directory}: undeclared dependency ${dep}`);
         if (hostPackages.has(dep)) {
           assert.equal(pkg.peerDependencies?.[dep], '*', `${directory}: host API must be a peer`);
           assert.ok(!pkg.dependencies?.[dep], `${directory}: do not bundle the host`);

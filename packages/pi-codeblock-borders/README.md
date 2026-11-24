@@ -29,6 +29,6 @@ None. The extension holds no configuration file and reads no user data beyond th
 
 ## Compatibility
 
-Node.js >=24 for development checks; run extensions through Pi's TypeScript loader. Host imports are wildcard peers, not bundled runtime copies. The patch reaches into Pi-TUI `Markdown` internals, so host-version changes can break it; verify against your target host before relying on it. Overlapping UI patches (for example from pi-atelier) need integration testing; load one renderer patch at a time in an isolated session first.
+Node.js >=24 for development checks; run extensions through Pi's TypeScript loader. Host imports are wildcard peers, not bundled runtime copies. The patch reaches into Pi-TUI `Markdown` internals, so host-version changes can break it; verify against your target host before relying on it.
 
 See [NOTICE.md](NOTICE.md) for provenance. Tests patch a stubbed renderer and never contact services or write to user-home resources.

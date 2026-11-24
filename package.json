@@ -9,8 +9,8 @@
 	],
 	"scripts": {
 		"check": "node scripts/check-packages.mjs",
-		"typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.agent-ask.json",
-		"test": "node --test test/*.test.mjs packages/*/test/*.test.mjs && npm test -w packages/pi-orchestrator -w packages/pi-agent-ask",
+		"typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.agent-ask.json && tsc -p tsconfig.atelier.json",
+		"test": "node --test test/*.test.mjs packages/*/test/*.test.mjs && npm test -w packages/pi-orchestrator -w packages/pi-agent-ask -w packages/pi-atelier",
 		"pack:check": "node scripts/check-pack.mjs",
 		"dev": "node scripts/dev.mjs",
 		"smoke": "node scripts/smoke.mjs",
@@ -38,6 +38,7 @@
 			"./packages/pi-load-pi-dotenv/src/index.ts",
 			"./packages/pi-9router/src/index.ts",
 			"./packages/pi-agent-ask/src/index.ts",
+			"./packages/pi-atelier/src/index.ts",
 			"./packages/pi-bg-bash/src/index.ts",
 			"./packages/pi-claude-usage/src/index.ts",
 			"./packages/pi-clipboard-image/src/index.ts",

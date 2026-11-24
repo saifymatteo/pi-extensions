@@ -1,0 +1,54 @@
+{
+  "name": "@saifymatteo/pi-atelier",
+  "version": "0.20.2",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "A responsive status rail and live activity sidebar for Pi",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi",
+    "tui",
+    "status-bar",
+    "sidebar"
+  ],
+  "files": [
+    "src",
+    "README.md",
+    "CHANGELOG.md",
+    "NOTICE.md",
+    "LICENSE",
+    "LICENSE.MIT"
+  ],
+  "pi": {
+    "image": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-atelier/screenshot.png",
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "vitest": "4.1.12"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://github.com/saifymatteo/pi-extensions/tree/main/packages/pi-atelier#readme",
+  "bugs": {
+    "url": "https://github.com/saifymatteo/pi-extensions/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saifymatteo/pi-extensions.git",
+    "directory": "packages/pi-atelier"
+  }
+}

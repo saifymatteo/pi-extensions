@@ -1,0 +1,325 @@
+import { disposeAfterTest } from "./helpers/cleanup.js";
+import { DEFAULT_CONFIG, resolveDisplayLayers } from "../src/config.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { selectWorkingPhrase } from "../src/activity.js";
+import { AtelierRuntime, type RuntimeDependencies } from "../src/state.js";
+import type { DisplayLayerState } from "../src/types.js";
+
+afterEach(() => {
+	vi.useRealTimers();
+});
+
+const assistant = {
+	type: "message",
+	message: {
+		role: "assistant",
+		content: [{ type: "text", text: "private-message-sentinel" }],
+		usage: { input: 100, output: 20, cacheRead: 900, cacheWrite: 0, cost: { total: 0.01 } },
+	},
+};
+
+const cleanInspection = {
+	kind: "available" as const,
+	root: "/repo",
+	relativeCwd: "",
+	branch: "main",
+	snapshot: {
+		trackedFiles: 0,
+		untrackedFiles: 0,
+		linesAdded: 0,
+		linesRemoved: 0,
+		binaryFiles: 0,
+		submodules: 0,
+		conflicts: 0,
+	},
+};
+
+function fakeContext(entries: unknown[] = [assistant]) {
+	return {
+		model: { id: "model", provider: "provider", reasoning: true },
+		modelRegistry: { isUsingOAuth: vi.fn().mockReturnValue(true) },
+		getContextUsage: vi.fn().mockReturnValue({ tokens: 1_000, contextWindow: 10_000, percent: 10 }),
+		isProjectTrusted: vi.fn().mockReturnValue(true),
+		sessionManager: {
+			getEntries: vi.fn().mockReturnValue(entries),
+			getSessionFile: vi.fn().mockReturnValue(undefined),
+			getSessionId: vi.fn().mockReturnValue("session"),
+		},
+	};
+}
+
+function buildRuntime(
+	overrides: Partial<RuntimeDependencies> & { displayLayers?: DisplayLayerState } = {},
+	ctx = fakeContext(),
+) {
+	const displayLayers = overrides.displayLayers ?? {};
+	return disposeAfterTest(
+		new AtelierRuntime({
+			pi: { events: { on: vi.fn(() => () => undefined) }, getThinkingLevel: vi.fn(() => "medium") } as never,
+			ctx: ctx as never,
+			config: DEFAULT_CONFIG,
+			displayProvenance: resolveDisplayLayers(displayLayers).provenance,
+			autoCompact: null,
+			requestRender: vi.fn(),
+			...overrides,
+			displayLayers,
+		}),
+	);
+}
+
+function createRuntime(
+	random: () => number = Math.random,
+	inspectWorkspace = vi.fn().mockResolvedValue(cleanInspection),
+	enabled = true,
+) {
+	const requestRender = vi.fn();
+	const ctx = fakeContext();
+	const runtime = buildRuntime({ autoCompact: true, enabled, random, requestRender, inspectWorkspace }, ctx);
+	return { runtime, requestRender, inspectWorkspace, ctx };
+}
+
+describe("AtelierRuntime", () => {
+	it("does no history/context or workspace work when initialized disabled", async () => {
+		vi.useFakeTimers();
+		const inspectWorkspace = vi.fn().mockResolvedValue(cleanInspection);
+		const { runtime, ctx, requestRender } = createRuntime(Math.random, inspectWorkspace, false);
+		runtime.refreshUsage();
+		runtime.scheduleWorkspacePulseRefresh();
+		await runtime.flushWorkspacePulseRefresh();
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(ctx.sessionManager.getEntries).not.toHaveBeenCalled();
+		expect(ctx.getContextUsage).not.toHaveBeenCalled();
+		expect(inspectWorkspace).not.toHaveBeenCalled();
+		expect(requestRender).not.toHaveBeenCalled();
+	});
+
+	it("resynchronizes once after suspension while retaining activity and marking old workspace data stale", async () => {
+		vi.useFakeTimers();
+		const { runtime, ctx, inspectWorkspace, requestRender } = createRuntime();
+		await runtime.flushWorkspacePulseRefresh();
+		runtime.scheduleWorkspacePulseRefresh();
+		runtime.setEnabled(false);
+		ctx.sessionManager.getEntries.mockClear();
+		ctx.getContextUsage.mockClear();
+		inspectWorkspace.mockClear();
+		requestRender.mockClear();
+		runtime.setActivity("working");
+		runtime.refreshUsage();
+		runtime.scheduleWorkspacePulseRefresh();
+		await runtime.flushWorkspacePulseRefresh();
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(ctx.sessionManager.getEntries).not.toHaveBeenCalled();
+		expect(ctx.getContextUsage).not.toHaveBeenCalled();
+		expect(inspectWorkspace).not.toHaveBeenCalled();
+		expect(requestRender).not.toHaveBeenCalled();
+
+		ctx.sessionManager.getEntries.mockReturnValue([assistant, assistant]);
+		runtime.setEnabled(true);
+		runtime.setEnabled(true);
+		expect(runtime.getState()).toMatchObject({
+			activity: "working",
+			metrics: { output: 40 },
+			workspacePulse: { status: "stale" },
+		});
+		expect(ctx.sessionManager.getEntries).toHaveBeenCalledOnce();
+		expect(ctx.getContextUsage).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(inspectWorkspace).toHaveBeenCalledOnce();
+		expect(runtime.getState().workspacePulse.status).toBe("clean");
+	});
+
+	it("derives metrics without retaining message content", () => {
+		const { runtime } = createRuntime();
+		runtime.refreshUsage();
+		expect(runtime.getState()).toMatchObject({
+			modelId: "model",
+			provider: "provider",
+			metrics: { input: 100, output: 20, cacheRead: 900, subscription: true, autoCompact: true },
+		});
+		expect(JSON.stringify(runtime.getState())).not.toContain("private-message-sentinel");
+	});
+
+	it("starts inspecting and derives clean or changed Pulse states from successful inspection", async () => {
+		const changed = {
+			...cleanInspection,
+			branch: "feature/pulse",
+			snapshot: { ...cleanInspection.snapshot, trackedFiles: 2, linesAdded: 12, linesRemoved: 3 },
+		};
+		const inspectWorkspace = vi.fn().mockResolvedValue(changed);
+		const { runtime } = createRuntime(Math.random, inspectWorkspace);
+
+		expect(runtime.getState()).toMatchObject({ workspacePulse: { status: "inspecting" } });
+		await runtime.flushWorkspacePulseRefresh();
+
+		expect(runtime.getState()).toMatchObject({
+			branch: "feature/pulse",
+			dirty: true,
+			workspacePulse: {
+				status: "changed",
+				data: { branch: "feature/pulse", root: "/repo", snapshot: changed.snapshot },
+			},
+		});
+	});
+
+	it("keeps the Footer dirty marker tracked-only for an untracked-only Pulse", async () => {
+		const untrackedOnly = {
+			...cleanInspection,
+			snapshot: { ...cleanInspection.snapshot, untrackedFiles: 2 },
+		};
+		const { runtime } = createRuntime(Math.random, vi.fn().mockResolvedValue(untrackedOnly));
+
+		await runtime.flushWorkspacePulseRefresh();
+
+		expect(runtime.getState()).toMatchObject({
+			dirty: false,
+			workspacePulse: { status: "changed", data: { snapshot: { untrackedFiles: 2 } } },
+		});
+	});
+
+	it("preserves the last successful Pulse as stale when a later inspection fails", async () => {
+		const inspectWorkspace = vi
+			.fn()
+			.mockResolvedValueOnce(cleanInspection)
+			.mockResolvedValueOnce({ kind: "unavailable" });
+		const { runtime } = createRuntime(Math.random, inspectWorkspace);
+
+		await runtime.flushWorkspacePulseRefresh();
+		await runtime.flushWorkspacePulseRefresh();
+
+		expect(runtime.getState()).toMatchObject({
+			branch: "main",
+			dirty: false,
+			workspacePulse: {
+				status: "stale",
+				data: { branch: "main", root: "/repo", snapshot: cleanInspection.snapshot },
+			},
+		});
+	});
+
+	it("does not invalidate rendering when a refresh confirms the same Pulse", async () => {
+		const inspectWorkspace = vi.fn().mockResolvedValue(cleanInspection);
+		const { runtime, requestRender } = createRuntime(Math.random, inspectWorkspace);
+		await runtime.flushWorkspacePulseRefresh();
+		requestRender.mockClear();
+
+		await runtime.flushWorkspacePulseRefresh();
+
+		expect(requestRender).not.toHaveBeenCalled();
+	});
+
+	it("reports context-free inert state once disposed without consulting the retired context", async () => {
+		const { runtime, ctx } = createRuntime();
+		runtime.setActivity("working");
+		await runtime.flushWorkspacePulseRefresh();
+		expect(runtime.getState()).toMatchObject({
+			activity: "working",
+			branch: "main",
+			metrics: { contextTokens: 1_000, contextWindow: 10_000, contextPercent: 10 },
+		});
+		ctx.getContextUsage.mockImplementation(() => {
+			throw new Error("retired context is unavailable");
+		});
+
+		expect(() => runtime.dispose()).not.toThrow();
+
+		const state = runtime.getState();
+		expect(state.branch).toBeUndefined();
+		expect(state.workingLabel).toBeUndefined();
+		expect(state.activity).toBe("ready");
+		expect(state.dirty).toBe(false);
+		expect(state.extensionStatuses).toEqual([]);
+		expect(state.metrics).toMatchObject({
+			usageAvailable: false,
+			costAvailable: false,
+			contextTokens: null,
+			contextWindow: 0,
+			contextPercent: null,
+		});
+		expect(state.workspacePulse).toEqual({ status: "unavailable" });
+	});
+
+	it("selects one stable label when a work cycle starts", () => {
+		const random = vi.fn().mockReturnValue(0.5);
+		const { runtime, requestRender } = createRuntime(random);
+		requestRender.mockClear();
+
+		runtime.setActivity("working");
+		const selected = runtime.getState().workingLabel;
+		runtime.setActivity("working");
+		runtime.refreshUsage();
+
+		expect(selected).toBe(selectWorkingPhrase(0.5));
+		expect(runtime.getState()).toMatchObject({ activity: "working", workingLabel: selected });
+		expect(random).toHaveBeenCalledOnce();
+		expect(requestRender).toHaveBeenCalledTimes(2);
+	});
+
+	it("recomputes Session Display patches from retained lower layers with provenance", () => {
+		const requestRender = vi.fn();
+		const runtime = buildRuntime(
+			{ displayLayers: { user: { density: "compact" } }, requestRender },
+			fakeContext([]),
+		);
+		requestRender.mockClear();
+
+		runtime.replaceSessionDisplayOverride({
+			segmentLayout: DEFAULT_CONFIG.segmentLayout.map((entry) =>
+				entry.id === "performance" ? { ...entry, visible: true } : { ...entry },
+			),
+		});
+
+		expect(runtime.getDisplaySettings()).toMatchObject({ preset: "custom", density: "compact" });
+		expect(runtime.getDisplaySettings().segmentLayout).toContainEqual({ id: "performance", visible: true });
+		expect(runtime.getDisplayProvenance()).toMatchObject({ density: "user", order: "session" });
+		expect(runtime.getDisplayProvenance().visibility.performance).toBe("session");
+		expect(requestRender).toHaveBeenCalledOnce();
+
+		runtime.clearSessionDisplayOverride();
+		expect(runtime.getDisplaySettings()).toMatchObject({ density: "compact" });
+		expect(runtime.getDisplaySettings().segmentLayout).toContainEqual({ id: "performance", visible: false });
+		expect(runtime.getDisplayProvenance()).toMatchObject({ density: "user", order: "product" });
+		expect(requestRender).toHaveBeenCalledTimes(2);
+	});
+
+	it("snapshots and replaces raw Session Display overrides without aliasing", () => {
+		const { runtime } = createRuntime();
+		runtime.replaceSessionDisplayOverride({
+			density: "compact",
+			segmentLayout: DEFAULT_CONFIG.segmentLayout,
+		});
+		const snapshot = runtime.getSessionDisplayOverride();
+		expect(snapshot).toMatchObject({ density: "compact" });
+		if (snapshot?.segmentLayout) snapshot.segmentLayout[0]!.visible = true;
+		expect(runtime.getSessionDisplayOverride()?.segmentLayout?.[0]?.visible).toBe(false);
+		runtime.clearSessionDisplayOverride();
+		expect(runtime.getSessionDisplayOverride()).toBeUndefined();
+	});
+
+	it("recomputes trusted Project precedence after a successful User Display save", () => {
+		const runtime = buildRuntime({ displayLayers: { project: { density: "comfortable" } } }, fakeContext([]));
+		runtime.applySavedUserDisplayPatch({ density: "compact" });
+		expect(runtime.getDisplaySettings().density).toBe("comfortable");
+		expect(runtime.getDisplayProvenance().density).toBe("project");
+		expect(runtime.getSessionDisplayOverride()).toBeUndefined();
+	});
+
+	it("selects again for the next work cycle and still updates configuration", () => {
+		const random = vi.fn().mockReturnValueOnce(0).mockReturnValueOnce(0.999_999);
+		const { runtime, requestRender } = createRuntime(random);
+		requestRender.mockClear();
+
+		runtime.setActivity("working");
+		expect(runtime.getState().workingLabel).toBe(selectWorkingPhrase(0));
+		runtime.setActivity("ready");
+		runtime.setActivity("working");
+		runtime.setConfig({ ...DEFAULT_CONFIG, preset: "minimal" });
+
+		expect(runtime.getState()).toMatchObject({
+			activity: "working",
+			workingLabel: selectWorkingPhrase(0.999_999),
+		});
+		expect(runtime.getConfig().preset).toBe("minimal");
+		expect(random).toHaveBeenCalledTimes(2);
+		expect(requestRender).toHaveBeenCalledTimes(4);
+	});
+});

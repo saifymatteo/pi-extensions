@@ -10,5 +10,5 @@
     "resolveJsonModule": true
   },
   "include": ["packages/*/src/**/*.ts"],
-  "exclude": ["packages/pi-agent-ask/**"]
+  "exclude": ["packages/pi-agent-ask/**", "packages/pi-atelier/**"]
 }
