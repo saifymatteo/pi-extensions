@@ -33,6 +33,7 @@ type ThinkingLevel = Parameters<ExtensionAPI["setThinkingLevel"]>[0];
 export function sidebarStatusLabel(status: SidebarStatus): string {
 	const label = status.mode === "auto" ? "Auto" : "Manual";
 	if (!status.enabled) return `${label} · hidden`;
+	if (status.presentation === "empty") return `${label} · hidden: no panels shown`;
 	return status.presentation === "auto-collapsed" || status.presentation === "too-narrow"
 		? `${label} · hidden: narrow terminal`
 		: label;

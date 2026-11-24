@@ -3,7 +3,6 @@ import {
 	applyDisplayTemplate,
 	cloneLayout,
 	derivePresetIdentity,
-	isRequiredSegment,
 	reorderSegment,
 	TEMPLATE_NAMES,
 	toggleSegmentVisibility,
@@ -321,10 +320,6 @@ export function createSettingsWorkspace(options: SettingsWorkspaceOptions): Sett
 		changeSidebar(cloneLayout(DEFAULT_SIDEBAR_PANEL_LAYOUT), "Restored product Sidebar default");
 	const save = async (): Promise<void> => {
 		if (saving) return;
-		if (sidebarDirty && !sidebarDraft.some((entry) => entry.visible)) {
-			warn("At least one Sidebar panel must remain visible");
-			return;
-		}
 		saving = true;
 		request();
 		const patch: DisplayPatch = {
@@ -370,10 +365,6 @@ export function createSettingsWorkspace(options: SettingsWorkspaceOptions): Sett
 				);
 				return;
 			case "segment":
-				if (isRequiredSegment(row.id)) {
-					warn(`${row.id} is required; use Shift+Up/Down to reorder`);
-					return;
-				}
 				commitMutation(
 					{ ...cloneDisplay(display), segmentLayout: toggleSegmentVisibility(display.segmentLayout, row.id) },
 					`Toggled ${row.id}`,
@@ -441,14 +432,13 @@ export function createSettingsWorkspace(options: SettingsWorkspaceOptions): Sett
 			actionLine("undo", "Undo", undo ? ACTION_KEYS.undo : "—"),
 		];
 		const segmentLines: LayoutLine[] = [
-			{ line: theme.fg("muted", `  ● shown   ○ hidden   ◆ required   order ${provenance.order}`) },
+			{ line: theme.fg("muted", `  ● shown   ○ hidden   order ${provenance.order}`) },
 			{ line: "" },
 			...display.segmentLayout.map((entry, index) => {
-				const required = isRequiredSegment(entry.id);
-				const state = required ? "◆" : entry.visible ? "●" : "○";
+				const state = entry.visible ? "●" : "○";
 				return rowLine(
 					{ kind: "segment", id: entry.id },
-					`${String(index + 1).padStart(2)}  ${state} ${entry.id.padEnd(12)}${required ? "  required" : ""}`,
+					`${String(index + 1).padStart(2)}  ${state} ${entry.id}`,
 				);
 			}),
 		];
@@ -527,13 +517,10 @@ export function createSettingsWorkspace(options: SettingsWorkspaceOptions): Sett
 		const selected = allRows[focus];
 		let guidance = KEY_HINTS;
 		if (selected?.kind === "segment") {
-			const required = isRequiredSegment(selected.id);
-			const visibility = required
-				? "required"
-				: display.segmentLayout.find((entry) => entry.id === selected.id)?.visible
-					? "shown"
-					: "hidden";
-			guidance = `${selected.id} · ${visibility} · source:${provenance.visibility[selected.id]} · order:${provenance.order} · ${required ? "Shift+↑/↓ Reorder" : "Enter Toggle · Shift+↑/↓ Reorder"}`;
+			const visibility = display.segmentLayout.find((entry) => entry.id === selected.id)?.visible
+				? "shown"
+				: "hidden";
+			guidance = `${selected.id} · ${visibility} · source:${provenance.visibility[selected.id]} · order:${provenance.order} · Enter Toggle · Shift+↑/↓ Reorder`;
 		} else if (selected?.kind === "preset" || selected?.kind === "density") {
 			guidance = `${selected.kind} · source:${provenance[selected.kind]} · Enter Change · U Undo`;
 		} else if (selected?.kind === "sidebarPanel") {

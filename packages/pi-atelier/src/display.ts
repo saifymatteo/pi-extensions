@@ -22,12 +22,9 @@ export const PRODUCT_SEGMENT_ORDER = [
 export const TEMPLATE_NAMES = ["editorial", "minimal", "classic"] as const;
 export const DENSITIES = ["comfortable", "compact"] as const;
 
-const REQUIRED_SEGMENT_IDS: ReadonlySet<SegmentId> = new Set(["metrics", "context"]);
 const SEGMENT_IDS: ReadonlySet<string> = new Set(PRODUCT_SEGMENT_ORDER);
 const PRESET_NAMES: ReadonlySet<string> = new Set([...TEMPLATE_NAMES, "custom"]);
 const DENSITY_NAMES: ReadonlySet<string> = new Set(DENSITIES);
-
-export const isRequiredSegment = (id: SegmentId): boolean => REQUIRED_SEGMENT_IDS.has(id);
 
 export const isSegmentId = (value: unknown): value is SegmentId =>
 	typeof value === "string" && SEGMENT_IDS.has(value);
@@ -77,16 +74,13 @@ export const normalizeSegmentLayout = (entries: readonly SegmentLayoutEntry[]): 
 	for (const id of PRODUCT_SEGMENT_ORDER) {
 		if (!seen.has(id)) result.push({ id, visible: false });
 	}
-	for (const entry of result) {
-		if (isRequiredSegment(entry.id)) entry.visible = true;
-	}
 	return result;
 };
 
 export const toggleSegmentVisibility = (value: readonly SegmentLayoutEntry[], id: SegmentId): SegmentLayout =>
 	value.map((entry) => ({
 		...entry,
-		visible: entry.id === id && !isRequiredSegment(id) ? !entry.visible : entry.visible,
+		visible: entry.id === id ? !entry.visible : entry.visible,
 	}));
 
 export const reorderSegment = (

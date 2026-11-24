@@ -267,11 +267,6 @@ export function normalizeSidebarPanelLayout(
 		}
 		seen.add(id);
 	}
-	if (!normalized.some((entry) => entry.visible)) {
-		warnings.push("sidebarPanelLayout must include at least one visible panel; restoring activity");
-		const activity = normalized.find((entry) => entry.id === "activity");
-		if (activity) activity.visible = true;
-	}
 	return normalized;
 }
 

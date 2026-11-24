@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
 	applyDisplayTemplate,
@@ -525,7 +525,12 @@ async function applyUserConfigPatch(path: string, patch: Partial<AtelierConfig>)
 	await writeJsonAtomic(path, { ...current, ...patch });
 }
 
-async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
+async function writeJsonAtomic(linkPath: string, value: unknown): Promise<void> {
+	// Write through a symlink (dotfile-managed configs) instead of replacing it with a regular file.
+	const path = await realpath(linkPath).catch((error: unknown) => {
+		if (isEnoent(error)) return linkPath;
+		throw error;
+	});
 	await mkdir(dirname(path), { recursive: true });
 	const temporaryPath = `${path}.${process.pid}.tmp`;
 	try {

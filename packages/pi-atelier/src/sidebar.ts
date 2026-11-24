@@ -1378,6 +1378,7 @@ export function createSidebarController(options: SidebarControllerOptions): Side
 	const split = createSplitPaneController({
 		...(options.initialWidth === undefined ? {} : { initialWidth: options.initialWidth }),
 		subscribeInput: (handler) => options.ctx.ui.onTerminalInput(handler),
+		hasContent: () => binding.getConfig().sidebarPanelLayout.some((entry) => entry.visible),
 		onVisibilityChange: () => syncAnimation(),
 		onResizeChange: () => {
 			safely(() => requestOverlayRender?.());

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -11,7 +11,7 @@ const visibility = (layout: typeof DEFAULT_CONFIG.segmentLayout, id: string) =>
 	layout.find((entry) => entry.id === id)?.visible;
 
 describe("configuration validation", () => {
-	it("defines complete templates with the required segments visible", () => {
+	it("defines complete templates with metrics and context visible by default", () => {
 		for (const template of [DEFAULT_CONFIG, ...Object.values(DISPLAY_TEMPLATES)]) {
 			expect(template.segmentLayout.map((entry) => entry.id)).toEqual(PRODUCT_SEGMENT_ORDER);
 			expect(new Set(template.segmentLayout.map((entry) => entry.id)).size).toBe(9);
@@ -128,7 +128,7 @@ describe("configuration validation", () => {
 		});
 		expect(result.config.segmentLayout.slice(0, 3)).toEqual([
 			{ id: "menu", visible: true },
-			{ id: "metrics", visible: true },
+			{ id: "metrics", visible: false },
 			{ id: "brand", visible: false },
 		]);
 		expect(result.config.segmentLayout.map((entry) => entry.id)).toHaveLength(9);
@@ -145,7 +145,7 @@ describe("configuration validation", () => {
 		]);
 		expect(visibility(result.config.segmentLayout, "performance")).toBe(true);
 		expect(visibility(result.config.segmentLayout, "git")).toBe(false);
-		expect(visibility(result.config.segmentLayout, "metrics")).toBe(true);
+		expect(visibility(result.config.segmentLayout, "metrics")).toBe(false);
 	});
 
 	it.each([
@@ -315,6 +315,15 @@ describe("configuration files", () => {
 			futureSetting: "keep",
 			completionNotifications: false,
 		});
+	});
+
+	it("writes through a symlinked user config instead of replacing the link", async () => {
+		const target = join(root, "dotfiles.json");
+		await writeJson(target, { futureSetting: "keep" });
+		await symlink(target, userPath);
+		await saveUserConfigPatch(userPath, { nerdFont: false });
+		expect((await lstat(userPath)).isSymbolicLink()).toBe(true);
+		expect(JSON.parse(await readFile(target, "utf8"))).toEqual({ futureSetting: "keep", nerdFont: false });
 	});
 
 	it("keeps every field when patches are saved concurrently", async () => {

@@ -123,7 +123,7 @@ describe("Display Settings Workspace", () => {
 		expect(resolveDisplayLayers(h.layers).display.preset).toBe("editorial");
 	});
 
-	it("accumulates Segment edits, protects required entries, and retains overrides on close", () => {
+	it("accumulates Segment edits, toggles any segment, and retains overrides on close", () => {
 		const h = harness();
 		// Focus performance (preset, density, brand, activity, metrics, performance).
 		for (let index = 0; index < 5; index += 1) h.component.handleInput("\u001b[B");
@@ -132,10 +132,12 @@ describe("Display Settings Workspace", () => {
 			resolveDisplayLayers(h.layers).display.segmentLayout.find((entry) => entry.id === "performance")
 				?.visible,
 		).toBe(true);
-		// metrics is required and rejects toggling.
+		// metrics is no longer required and toggles like any other segment.
 		h.component.handleInput("\u001b[A");
 		h.component.handleInput(" ");
-		expect(text(h.component)).toContain("metrics is required");
+		expect(
+			resolveDisplayLayers(h.layers).display.segmentLayout.find((entry) => entry.id === "metrics")?.visible,
+		).toBe(false);
 		h.component.handleInput("\u001b");
 		expect(h.close).toHaveBeenCalledOnce();
 		expect(h.layers.session).toBeDefined();
@@ -208,7 +210,7 @@ describe("Display Settings Workspace", () => {
 		expect(rendered).toContain("Density      compact       user");
 		expect(rendered).toContain("order user");
 		expect(rendered.indexOf("1  ○ brand")).toBeLessThan(rendered.indexOf("2  ● activity"));
-		expect(rendered.indexOf("2  ● activity")).toBeLessThan(rendered.indexOf("3  ◆ metrics"));
+		expect(rendered.indexOf("2  ● activity")).toBeLessThan(rendered.indexOf("3  ● metrics"));
 		expect(rendered).not.toContain("brand › activity");
 	});
 

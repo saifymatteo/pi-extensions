@@ -4,9 +4,17 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Fixed
+
+- pi-atelier: saving settings keeps a symlinked `pi-atelier.json` linked instead of replacing it with a local copy.
+
 ### Added
 
 - Disable individual packages with `disabled` in `<agent-dir>/extensions/pi-extensions.json`. A JSON Schema ships at `schemas/pi-extensions.schema.json`. Without the file, every package loads.
+
+### Changed
+
+- pi-atelier: every Status Rail segment and Sidebar panel can now be hidden; nothing is required. Hiding every Sidebar panel collapses the sidebar.
 
 ## [0.1.22]
 

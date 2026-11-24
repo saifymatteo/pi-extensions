@@ -91,7 +91,7 @@ const AUTO_MAIN_WIDTH = 80;
 const AUTO_REOPEN_MARGIN = 8;
 
 export type SidebarMode = "auto" | "manual";
-export type SidebarPresentation = "shown" | "auto-collapsed" | "too-narrow" | "off";
+export type SidebarPresentation = "shown" | "auto-collapsed" | "too-narrow" | "empty" | "off";
 
 export interface SidebarStatus {
 	mode: SidebarMode;
@@ -109,6 +109,8 @@ export interface SplitPaneControllerOptions {
 	onResizeCommit?(width: number): void;
 	onVisibilityChange?(): void;
 	onWarning?(message: string): void;
+	/** False collapses an enabled sidebar to zero width, as when every panel is hidden. */
+	hasContent?(): boolean;
 }
 
 export interface SplitPaneController {
@@ -442,7 +444,9 @@ export function createSplitPaneController(options: SplitPaneControllerOptions = 
 		}
 		const presentation: SidebarPresentation = !enabled
 			? "off"
-			: !validWidth || terminalWidth < MIN_MAIN_WIDTH + MIN_SIDEBAR_WIDTH
+			: options.hasContent?.() === false
+				? "empty"
+				: !validWidth || terminalWidth < MIN_MAIN_WIDTH + MIN_SIDEBAR_WIDTH
 				? "too-narrow"
 				: mode === "auto" && !autoExpanded
 					? "auto-collapsed"

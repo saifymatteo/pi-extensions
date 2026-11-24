@@ -572,6 +572,20 @@ describe("Pi 0.84 split layout", () => {
 		expect(tui.render(120)).toEqual(["base:76"]);
 	});
 
+	it("collapses to zero width while no panel is shown", () => {
+		let hasContent = false;
+		const renderer = new TuiMainScreen();
+		const tui = stableTuiReference(() => renderer as unknown as TUI);
+		const split = disposeAfterTest(createSplitPaneController({ hasContent: () => hasContent }));
+		split.attach(tui);
+		split.show();
+		expect(tui.render(120)).toEqual(["base:120"]);
+		expect(split.getStatus()).toMatchObject({ enabled: true, presentation: "empty" });
+		hasContent = true;
+		expect(tui.render(120)).toEqual(["base:76"]);
+		expect(split.getStatus().presentation).toBe("shown");
+	});
+
 	it("restores the prototype renderer on disposal", () => {
 		const renderer = new TuiMainScreen();
 		const prototypeRender = TuiMainScreen.prototype.render;

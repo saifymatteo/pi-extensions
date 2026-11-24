@@ -220,7 +220,7 @@ describe("sidebar snapshot and layout", () => {
 		expect(headingIndex(rows, "Agent")).toBe(-1);
 	});
 
-	it("renders an explicit empty state when every configured-visible panel is unavailable", () => {
+	it("renders an explicit empty state when every visible panel is unregistered", () => {
 		const hiddenBuiltins = DEFAULT_CONFIG.sidebarPanelLayout.map((entry) => ({ ...entry, visible: false }));
 		const emptyConfig = {
 			...DEFAULT_CONFIG,
