@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-11-24
+
 ### Changed
 
 - Moved into the [pi-extensions](https://github.com/saifymatteo/pi-extensions) monorepo (`packages/pi-agent-ask`); the npm package name is unchanged. Issues and releases now live there.
