@@ -4,6 +4,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.24]
+
 ### Added
 
 - pi-x-ide: the file and lines open in VS Code, JetBrains, Neovim, or Zed reach the agent as an IDE Context message; Zed works from any terminal. If you also installed `npm:@saifymatteo/pi-x-ide`, remove one of them.

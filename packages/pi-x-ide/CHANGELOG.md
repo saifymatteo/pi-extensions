@@ -4,6 +4,8 @@ Release notes are recorded from 1.21.0 onward. Earlier fork history: [saifymatte
 
 ## [Unreleased]
 
+## [1.22.0] - 2026-11-24
+
 ### Changed
 
 - Moved into the [pi-extensions](https://github.com/saifymatteo/pi-extensions) monorepo (`packages/pi-x-ide`); the npm package name is unchanged. Issues and releases now live there.
