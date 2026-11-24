@@ -9,5 +9,6 @@
     "strict": false,
     "resolveJsonModule": true
   },
-  "include": ["packages/*/src/**/*.ts"]
+  "include": ["packages/*/src/**/*.ts"],
+  "exclude": ["packages/pi-agent-ask/**"]
 }

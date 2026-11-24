@@ -4,6 +4,10 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Added
+
+- pi-agent-ask: `ask_user` / `wait_for_answers` structured questions join the collection. If you also installed `npm:@saifymatteo/pi-agent-ask`, remove one of them.
+
 ## [0.1.20]
 
 ### Added

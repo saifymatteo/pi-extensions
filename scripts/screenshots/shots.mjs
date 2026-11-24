@@ -332,6 +332,21 @@ export const SHOTS = {
     const snap = await run({ extensions: ['pi-bg-bash', 'pi-wait'], cols: 92, rows: 50, turns }, s => prompt(s, 'build in the background, then deploy once it is done', 'ready to deploy', 900));
     return { panels: [solo(rows(snap, { from: /build in the background/, to: /ready to deploy/ }), { highlight: [/^\s*wait\b/] })] };
   },
+  'pi-agent-ask': async () => {
+    const turns = [
+      { tools: [{ name: 'ask_user', args: { title: 'Session store', questions: [{ id: 'store', label: 'Store', prompt: 'Where should login sessions live?', options: [
+        { value: 'redis', label: 'Redis', description: 'Already in the stack; TTL handles expiry.', recommended: true },
+        { value: 'postgres', label: 'Postgres table', description: 'No new service; needs a cleanup job.' },
+        { value: 'jwt', label: 'Stateless JWT', description: 'No storage; revocation gets harder.' },
+      ] }] } }] },
+      { text: 'Going with Redis.' },
+    ];
+    const snap = await run({ extensions: ['pi-agent-ask'], cols: 92, rows: 34, turns }, async s => {
+      await s.type('add login sessions to the api'); s.key(KEY.enter); await s.waitFor('Where should login sessions live'); await s.settle(600);
+    });
+    return { panels: [solo(rows(snap, { from: /add login sessions/ }), { highlight: [/Redis/] })],
+      caption: 'The agent asks a structured question instead of guessing; answer in the form or keep working.' };
+  },
   'pi-orchestrator': async () => {
     const snap = await run({ extensions: ['pi-bg-bash', 'pi-wait', 'pi-orchestrator'], cols: 92, rows: 34 }, async s => {
       await s.type('/orchestrator-tools'); s.key(KEY.enter); await s.waitFor('discovered extensions'); await s.settle(500);

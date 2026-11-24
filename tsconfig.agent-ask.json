@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "strict": true, "types": ["node"] },
+  "include": ["packages/pi-agent-ask/src/**/*.ts"],
+  "exclude": []
+}

@@ -1,0 +1,913 @@
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
+import {
+	Editor,
+	type EditorTheme,
+	type KeyId,
+	matchesKey,
+	type TuiMouseEvent,
+	type TuiMouseEventResult,
+} from "@earendil-works/pi-tui";
+import { withAskSurface } from "../ask-surface.ts";
+import { invalidPayloadResponse } from "../ask-tool-helpers.ts";
+import { readClipboardImage } from "../clipboard-image.ts";
+import type { AskConfig } from "../config/schema.ts";
+import { getAskConfigStore } from "../config/store.ts";
+import {
+	createQuestionWaitingNotification,
+	notifyQuestionWaiting,
+} from "../notifications.ts";
+import { resolvePreviewFiles } from "../preview-files.ts";
+import {
+	applyRemoteAskResponse,
+	type RemoteAskFlowHandle,
+	type RemoteAskResponse,
+	type RemoteAskRuntime,
+	type RemoteAskSource,
+	type RemoteAskSubmitResolution,
+} from "../remote-ask.ts";
+import { createInitialState } from "../state/create.ts";
+import {
+	getEditorDraft,
+	getEditorImages,
+	saveEditorDraft,
+	setEditorImages,
+	submitEditorDraft,
+	syncStateToSelection,
+} from "../state/editor.ts";
+import { cycleCurrentQuestionType } from "../state/question-type.ts";
+import { toAskResult } from "../state/result.ts";
+import {
+	getCurrentOption,
+	getCurrentQuestion,
+	isSubmitTab,
+} from "../state/selectors.ts";
+import {
+	applyNumberShortcut,
+	cancelFlow,
+	confirmCurrentSelection,
+	dismissFlow,
+	enterOptionNoteMode,
+	enterQuestionNoteMode,
+	moveOption,
+	moveTab,
+	toggleCurrentMultiOption,
+} from "../state/transitions.ts";
+import { isEditingView } from "../state/view.ts";
+import type { AskParams, AskResult, AskState } from "../types.ts";
+import { maybeAutoSubmitState } from "./auto-submit.ts";
+import { createAskAutocompleteProvider } from "./autocomplete.ts";
+import {
+	DIRTY_DISMISS_NOTICE,
+	shouldConfirmDirtyDismiss,
+	shouldDiscardAfterConfirmation,
+} from "./dismiss-guard.ts";
+import type { AskInputCommand } from "./input.ts";
+import { getInputCommand } from "./input.ts";
+import { showPersistentAsk } from "./persistent-ask.ts";
+import {
+	getPreviewPage,
+	getPreviewPageAction,
+	movePreviewPage,
+	type PreviewBounds,
+	type PreviewPage,
+} from "./preview-pagination.ts";
+import { renderAskScreen } from "./render.ts";
+import {
+	getReviewShortcutHint,
+	resolveReviewShortcutDoublePress,
+} from "./review-shortcuts.ts";
+import { showAskSettings } from "./show-settings.ts";
+
+type CustomCallback = Parameters<ExtensionContext["ui"]["custom"]>[0];
+type CustomCallbackArgs = CustomCallback extends (...args: infer T) => unknown
+	? T
+	: never;
+type Tui = CustomCallbackArgs[0];
+type Theme = CustomCallbackArgs[1];
+type Keybindings = CustomCallbackArgs[2];
+type Done = (result: AskResult) => void;
+type AskEvents = Pick<ExtensionAPI["events"], "emit">;
+
+interface AskFlowOptions {
+	clipboardEvents?: ExtensionAPI["events"];
+	herdrEvents?: AskEvents;
+	keepVisible?: boolean;
+	presentSingleAsMulti?: boolean;
+	remote?: {
+		runtime: RemoteAskRuntime;
+		source: RemoteAskSource;
+		toolCallId?: string;
+	};
+	signal?: AbortSignal;
+}
+
+type AskFlowParams = AskParams &
+	Pick<ExtensionContext, "cwd"> & {
+		config: AskConfig;
+		configNotice?: string;
+		ctx: ExtensionContext;
+		flowOptions: AskFlowOptions;
+	};
+
+interface AskFlowController {
+	clipboardAbort: AbortController;
+	clipboardEvents?: ExtensionAPI["events"];
+	clipboardNotice?: string;
+	clipboardReading: boolean;
+	config: AskConfig;
+	configNotice?: string;
+	ctx: ExtensionContext;
+	dismissNotice?: string;
+	disposed: boolean;
+	done: Done;
+	editor: Editor;
+	keybindings: Keybindings;
+	pendingQuestionTypeChangeQuestionId?: string;
+	pendingReviewShortcutActionIndex?: number;
+	previewBounds?: PreviewBounds;
+	previewKey?: string;
+	previewPage?: PreviewPage;
+	remoteFlow?: RemoteAskFlowHandle;
+	settingsOpen: boolean;
+	state: AskState;
+	suppressAutoInputForSelection: boolean;
+	theme: Theme;
+	tui: Tui;
+	unsubscribeConfig: () => void;
+}
+
+export async function runAskFlow(
+	ctx: ExtensionContext,
+	input: AskParams,
+	options: AskFlowOptions = {}
+): Promise<AskResult> {
+	const resolved = await resolvePreviewFiles(input, ctx.cwd);
+	if (!resolved.ok) {
+		return invalidPayloadResponse(input, resolved.issues).details;
+	}
+	const params = resolved.params;
+	const store = getAskConfigStore();
+	const { config, notice } = await store.ensureLoaded();
+	const flowOptions = {
+		...options,
+		presentSingleAsMulti:
+			options.presentSingleAsMulti ?? config.behaviour.presentSingleAsMulti,
+	};
+	if (ctx.mode !== "tui") {
+		return {
+			...toAskResult(createInitialState(params, flowOptions)),
+			cancelled: true,
+		};
+	}
+	return withAskSurface(options.signal, async () => {
+		emitHerdrBlocked(options.herdrEvents, true);
+		try {
+			const factory = (...args: [Tui, Theme, Keybindings, Done]) =>
+				createAskFlowController(args, {
+					...params,
+					config,
+					configNotice: notice?.text,
+					cwd: ctx.cwd,
+					ctx,
+					flowOptions,
+				});
+			const customOptions = {
+				overlay: false,
+				blocked: { kind: "question", message: "Waiting for user response" },
+			};
+			return options.keepVisible
+				? await showPersistentAsk(ctx, factory)
+				: await ctx.ui.custom<AskResult>(factory, customOptions);
+		} finally {
+			emitHerdrBlocked(options.herdrEvents, false);
+		}
+	});
+}
+
+function emitHerdrBlocked(
+	events: AskEvents | undefined,
+	active: boolean
+): void {
+	try {
+		events?.emit(
+			"herdr:blocked",
+			active
+				? { active: true, label: "Waiting for user response" }
+				: { active: false }
+		);
+	} catch {
+		// Herdr status is best effort and must not affect the ask flow.
+	}
+}
+
+function createAskFlowController(
+	[tui, theme, keybindings, done]: [
+		Tui,
+		Theme,
+		Keybindings,
+		(result: AskResult) => void,
+	],
+	params: AskFlowParams
+) {
+	const controller: AskFlowController = {
+		clipboardAbort: new AbortController(),
+		clipboardEvents: params.flowOptions.clipboardEvents,
+		clipboardReading: false,
+		disposed: false,
+		keybindings,
+		config: params.config,
+		configNotice: params.configNotice,
+		ctx: params.ctx,
+		dismissNotice: undefined,
+		done,
+		editor: createEditor(tui, theme, params.cwd),
+		settingsOpen: false,
+		state: createInitialState(params, params.flowOptions),
+		suppressAutoInputForSelection: false,
+		pendingQuestionTypeChangeQuestionId: undefined,
+		pendingReviewShortcutActionIndex: undefined,
+		theme,
+		tui,
+		unsubscribeConfig: () => {
+			// replaced immediately after controller creation
+		},
+	};
+
+	controller.unsubscribeConfig = getAskConfigStore().subscribe((config) => {
+		controller.config = config;
+		controller.configNotice = undefined;
+		controller.state = maybeAutoSubmitState(
+			controller.state,
+			controller.config
+		);
+		refresh(controller);
+		maybeFinish(controller);
+	});
+
+	const abort = () => {
+		controller.state = cancelFlow(controller.state);
+		controller.done(toAskResult(controller.state));
+	};
+	params.flowOptions.signal?.addEventListener("abort", abort, { once: true });
+	if (params.flowOptions.signal?.aborted) {
+		abort();
+	}
+	controller.editor.onSubmit = (value) => submitEditor(controller, value);
+	controller.remoteFlow = startRemoteFlow(controller, params);
+	syncSelection(controller);
+	notifyCurrentQuestion(controller).catch(() => {
+		// Notification failures are best-effort and must not affect the ask flow.
+	});
+
+	return {
+		get capturesViewportInput() {
+			return (
+				!controller.settingsOpen &&
+				getCurrentQuestion(controller.state)?.type === "preview"
+			);
+		},
+		get focused() {
+			return controller.editor.focused;
+		},
+		set focused(value: boolean) {
+			controller.editor.focused = value;
+		},
+		render: (width: number) => renderController(controller, width),
+		invalidate() {
+			controller.editor.invalidate();
+		},
+		handleInput(data: string) {
+			handleControllerInput(controller, data);
+		},
+		handleMouse(event: TuiMouseEvent) {
+			return handleControllerMouse(controller, event);
+		},
+		dispose() {
+			controller.disposed = true;
+			controller.clipboardAbort.abort();
+			params.flowOptions.signal?.removeEventListener("abort", abort);
+			controller.remoteFlow?.dispose();
+			controller.unsubscribeConfig();
+		},
+	};
+}
+
+function renderController(
+	controller: AskFlowController,
+	width: number
+): string[] {
+	syncPreviewSelection(controller);
+	controller.previewBounds = undefined;
+	return renderAskScreen({
+		config: controller.config,
+		editor: controller.editor,
+		// Leave space for Pi's own footer/status outside the custom component.
+		height: Math.max(1, (controller.tui.terminal?.rows ?? 40) - 6),
+		preview: {
+			offset: controller.previewPage?.offset ?? 0,
+			onLayout: (page, bounds) => {
+				controller.previewPage = page;
+				controller.previewBounds = bounds;
+			},
+		},
+		footerNotice: getFooterNotice(controller),
+		reviewShortcutHint: getActiveReviewShortcutHint(controller),
+		state: controller.state,
+		theme: controller.theme,
+		width,
+	});
+}
+
+function handleControllerInput(controller: AskFlowController, data: string) {
+	controller.editor.disableSubmit = !isNativeEditorSubmitEnabled(controller);
+	const command = getInputCommand(
+		controller.state,
+		controller.config,
+		data,
+		isEditingView(controller.state) ? controller.editor.getText() : ""
+	);
+	if (isEditingView(controller.state)) {
+		if (
+			command.kind === "delegateToEditor" &&
+			getImagePasteKeys(controller).some((key) => matchesKey(data, key))
+		) {
+			pasteImage(controller);
+			return;
+		}
+		if (
+			command.kind === "delegateToEditor" &&
+			matchesKey(data, "ctrl+alt+d") &&
+			getEditorImages(controller.state).length
+		) {
+			controller.state = setEditorImages(
+				controller.state,
+				getEditorImages(controller.state).slice(0, -1)
+			);
+			refresh(controller);
+			return;
+		}
+		handleEditingCommand(controller, command, data);
+		return;
+	}
+	if (command.kind === "ignore" && handlePreviewInput(controller, data)) {
+		return;
+	}
+	handleNavigationCommand(controller, command);
+}
+
+function syncPreviewSelection(controller: AskFlowController) {
+	const key =
+		getCurrentQuestion(controller.state)?.type === "preview" &&
+		!getCurrentOption(controller.state)?.isCustomOption
+			? `${controller.state.activeTabIndex}:${controller.state.activeOptionIndex}`
+			: undefined;
+	if (key !== controller.previewKey) {
+		controller.previewKey = key;
+		controller.previewPage = undefined;
+		controller.previewBounds = undefined;
+	}
+}
+
+function handlePreviewInput(
+	controller: AskFlowController,
+	data: string
+): boolean {
+	syncPreviewSelection(controller);
+	const action = getPreviewPageAction(data);
+	if (!(controller.previewKey && controller.previewPage && action)) {
+		return false;
+	}
+	clearQuestionTypeChangePending(controller);
+	controller.previewPage = movePreviewPage(controller.previewPage, action);
+	refresh(controller);
+	return true;
+}
+
+function handleControllerMouse(
+	controller: AskFlowController,
+	event: TuiMouseEvent
+): TuiMouseEventResult | undefined {
+	if (
+		event.type !== "wheel" ||
+		controller.settingsOpen ||
+		controller.disposed ||
+		controller.state.completed
+	) {
+		return;
+	}
+	syncPreviewSelection(controller);
+	const { previewBounds: bounds, previewPage: page } = controller;
+	if (
+		!(bounds && page) ||
+		event.x < bounds.x ||
+		event.x >= bounds.x + bounds.width ||
+		event.y < bounds.y ||
+		event.y >= bounds.y + bounds.height
+	) {
+		return;
+	}
+	// Pi already applies its wheel speed and acceleration settings.
+	const delta = Math.trunc(event.wheelDelta ?? 0);
+	if (!Number.isFinite(delta) || delta === 0) {
+		return;
+	}
+	const next = getPreviewPage(page.total, page.pageSize, page.offset + delta);
+	const changed = next.offset !== page.offset;
+	if (changed) {
+		clearQuestionTypeChangePending(controller);
+		controller.previewPage = next;
+		refresh(controller);
+	}
+	// Keep wheel events inside the pane even at either end; never scroll-chain
+	// into the transcript or change keyboard focus while the pointer is here.
+	return { handled: true, render: changed };
+}
+
+function isPasteTarget(
+	controller: AskFlowController,
+	view: AskState["view"]
+): boolean {
+	return (
+		!(controller.disposed || controller.state.completed) &&
+		controller.state.view === view
+	);
+}
+function clipboardErrorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+async function pasteImage(controller: AskFlowController): Promise<void> {
+	if (controller.clipboardReading) {
+		return;
+	}
+	const view = controller.state.view;
+	controller.clipboardReading = true;
+	controller.clipboardNotice = "Reading image clipboard…";
+	refresh(controller);
+	try {
+		const image = await readClipboardImage(
+			controller.clipboardEvents,
+			controller.clipboardAbort.signal
+		);
+		if (!isPasteTarget(controller, view)) {
+			return;
+		}
+		controller.clipboardNotice = image
+			? undefined
+			: "No image in the clipboard.";
+		if (image) {
+			controller.state = setEditorImages(controller.state, [
+				...getEditorImages(controller.state),
+				image,
+			]);
+		}
+	} catch (error) {
+		if (isPasteTarget(controller, view)) {
+			controller.clipboardNotice = clipboardErrorMessage(error);
+		}
+	} finally {
+		controller.clipboardReading = false;
+		if (!isPasteTarget(controller, view)) {
+			controller.clipboardNotice = undefined;
+		}
+		if (!controller.disposed) {
+			refresh(controller);
+		}
+	}
+}
+function isNativeEditorSubmitEnabled(controller: AskFlowController): boolean {
+	if (controller.state.view.kind === "input") {
+		return controller.config.keymaps.editor.submit.includes("enter");
+	}
+	if (controller.state.view.kind === "note") {
+		return controller.config.keymaps.noteEditor.save.includes("enter");
+	}
+	return true;
+}
+
+function handleEditingCommand(
+	controller: AskFlowController,
+	command: AskInputCommand,
+	data: string
+) {
+	if (command.kind === "dismiss") {
+		handleExitFlow(controller, dismissFlow(controller.state));
+		return;
+	}
+	if (command.kind === "showSettings") {
+		showSettingsModal(controller);
+		return;
+	}
+	if (command.kind === "editMoveTab") {
+		commitSavedEditorNavigation(controller, moveTab, command.delta);
+		return;
+	}
+	if (command.kind === "editMoveOption") {
+		commitSavedEditorNavigation(controller, moveOption, command.delta);
+		return;
+	}
+	if (command.kind === "editClose") {
+		closeEditor(controller);
+		return;
+	}
+	if (command.kind === "editSubmit") {
+		submitEditor(controller, controller.editor.getText());
+		return;
+	}
+	if (command.kind === "delegateToEditor") {
+		controller.editor.handleInput(data);
+		refresh(controller);
+	}
+}
+
+function handleNavigationCommand(
+	controller: AskFlowController,
+	command: AskInputCommand
+) {
+	switch (command.kind) {
+		case "moveTab":
+			clearReviewShortcutPending(controller);
+			clearQuestionTypeChangePending(controller);
+			commitState(controller, moveTab(controller.state, command.delta));
+			return;
+		case "moveOption":
+			clearReviewShortcutPending(controller);
+			clearQuestionTypeChangePending(controller);
+			commitState(controller, moveOption(controller.state, command.delta));
+			return;
+		case "toggleMulti":
+			clearReviewShortcutPending(controller);
+			clearQuestionTypeChangePending(controller);
+			handleToggleCurrentOption(controller);
+			return;
+		case "changeQuestionType":
+			clearReviewShortcutPending(controller);
+			handleChangeQuestionType(controller);
+			return;
+		case "openQuestionNote":
+			clearQuestionTypeChangePending(controller);
+			openQuestionNote(controller);
+			return;
+		case "openOptionNote":
+			clearQuestionTypeChangePending(controller);
+			openOptionNote(controller);
+			return;
+		case "confirm":
+			clearReviewShortcutPending(controller);
+			clearQuestionTypeChangePending(controller);
+			commitState(controller, confirmCurrentSelection(controller.state), {
+				finish: true,
+			});
+			return;
+		case "cancel":
+			clearReviewShortcutPending(controller);
+			clearQuestionTypeChangePending(controller);
+			handleExitFlow(controller, cancelFlow(controller.state));
+			return;
+		case "numberShortcut":
+			if (handleReviewShortcutNumber(controller, command.digit)) {
+				return;
+			}
+			clearReviewShortcutPending(controller);
+			clearQuestionTypeChangePending(controller);
+			commitState(
+				controller,
+				applyNumberShortcut(controller.state, command.digit)
+			);
+			return;
+		case "dismiss":
+			clearReviewShortcutPending(controller);
+			clearQuestionTypeChangePending(controller);
+			handleExitFlow(controller, dismissFlow(controller.state));
+			return;
+		case "showSettings":
+			showSettingsModal(controller);
+			return;
+		case "ignore":
+		case "editMoveTab":
+		case "editMoveOption":
+		case "editClose":
+		case "editSubmit":
+		case "delegateToEditor":
+			return;
+		default:
+			return;
+	}
+}
+
+function handleToggleCurrentOption(controller: AskFlowController) {
+	const question = getCurrentQuestion(controller.state);
+	if (!question) {
+		return;
+	}
+	commitState(controller, toggleCurrentMultiOption(controller.state));
+}
+
+function handleChangeQuestionType(controller: AskFlowController) {
+	const question = getCurrentQuestion(controller.state);
+	if (!question || isSubmitTab(controller.state)) {
+		return;
+	}
+	const confirmed =
+		controller.pendingQuestionTypeChangeQuestionId === question.id;
+	const result = cycleCurrentQuestionType(controller.state, { confirmed });
+	controller.dismissNotice = result.notice;
+	if (result.needsConfirmation) {
+		controller.pendingQuestionTypeChangeQuestionId = question.id;
+		refresh(controller);
+		return;
+	}
+	clearQuestionTypeChangePending(controller);
+	commitState(controller, result.state, { finish: true });
+}
+
+function openQuestionNote(controller: AskFlowController) {
+	const question = getCurrentQuestion(controller.state);
+	if (!question || isSubmitTab(controller.state)) {
+		return;
+	}
+	commitState(
+		controller,
+		enterQuestionNoteMode(controller.state, question.id),
+		{
+			syncSelection: false,
+		}
+	);
+}
+
+function openOptionNote(controller: AskFlowController) {
+	const question = getCurrentQuestion(controller.state);
+	const option = getCurrentOption(controller.state);
+	if (
+		!(question && option) ||
+		option.isCustomOption ||
+		isSubmitTab(controller.state)
+	) {
+		return;
+	}
+	commitState(
+		controller,
+		enterOptionNoteMode(controller.state, question.id, option.value),
+		{ syncSelection: false }
+	);
+}
+
+function commitState(
+	controller: AskFlowController,
+	nextState: AskState,
+	options: { finish?: boolean; syncSelection?: boolean } = {}
+) {
+	if (nextState.activeTabIndex !== controller.state.activeTabIndex) {
+		clearFooterNotices(controller);
+	}
+	controller.suppressAutoInputForSelection = false;
+	controller.state = nextState;
+	if (options.syncSelection !== false) {
+		syncSelection(controller);
+	}
+	controller.state = maybeAutoSubmitState(controller.state, controller.config);
+	hydrateEditor(controller);
+	refresh(controller);
+	if (options.finish) {
+		maybeFinish(controller);
+	}
+}
+
+function submitEditor(controller: AskFlowController, value: string) {
+	controller.suppressAutoInputForSelection = false;
+	const nextState = submitEditorDraft(controller.state, value);
+	if (nextState.activeTabIndex !== controller.state.activeTabIndex) {
+		clearFooterNotices(controller);
+	}
+	controller.state = nextState;
+	syncSelection(controller);
+	controller.state = maybeAutoSubmitState(controller.state, controller.config);
+	hydrateEditor(controller);
+	refresh(controller);
+	maybeFinish(controller);
+}
+
+function commitSavedEditorNavigation(
+	controller: AskFlowController,
+	navigate: (state: AskState, delta: 1 | -1) => AskState,
+	delta: 1 | -1
+) {
+	commitState(controller, navigate(saveEditorState(controller), delta));
+}
+
+function closeEditor(controller: AskFlowController) {
+	const nextState = saveEditorState(controller);
+	controller.suppressAutoInputForSelection = nextState.view.kind !== "input";
+	controller.state = nextState;
+	refresh(controller);
+}
+
+function handleExitFlow(controller: AskFlowController, nextState: AskState) {
+	if (!shouldRequestDismissConfirmation(controller)) {
+		commitState(controller, nextState, { finish: true });
+		return;
+	}
+	if (shouldDiscardAfterConfirmation(!!controller.dismissNotice)) {
+		commitState(controller, nextState, { finish: true });
+		return;
+	}
+	controller.dismissNotice = DIRTY_DISMISS_NOTICE;
+	refresh(controller);
+}
+
+function shouldRequestDismissConfirmation(
+	controller: AskFlowController
+): boolean {
+	return shouldConfirmDirtyDismiss({
+		config: controller.config,
+		state: controller.state,
+		editingText: isEditingView(controller.state)
+			? controller.editor.getText()
+			: "",
+	});
+}
+
+function clearFooterNotices(controller: AskFlowController) {
+	controller.configNotice = undefined;
+	controller.dismissNotice = undefined;
+	controller.clipboardNotice = undefined;
+}
+
+function clearReviewShortcutPending(controller: AskFlowController) {
+	controller.pendingReviewShortcutActionIndex = undefined;
+}
+
+function clearQuestionTypeChangePending(controller: AskFlowController) {
+	controller.pendingQuestionTypeChangeQuestionId = undefined;
+}
+
+function getActiveReviewShortcutHint(
+	controller: AskFlowController
+): string | undefined {
+	if (
+		!(
+			isSubmitTab(controller.state) &&
+			controller.config.behaviour.doublePressReviewShortcuts
+		)
+	) {
+		return;
+	}
+	return getReviewShortcutHint(controller.pendingReviewShortcutActionIndex);
+}
+
+function handleReviewShortcutNumber(
+	controller: AskFlowController,
+	digit: number
+): boolean {
+	if (
+		!(
+			isSubmitTab(controller.state) &&
+			controller.config.behaviour.doublePressReviewShortcuts
+		)
+	) {
+		return false;
+	}
+
+	const resolution = resolveReviewShortcutDoublePress(
+		digit,
+		controller.pendingReviewShortcutActionIndex
+	);
+	if (resolution.actionIndex === undefined) {
+		return false;
+	}
+
+	controller.pendingReviewShortcutActionIndex = resolution.pendingActionIndex;
+	const nextState = resolution.confirmed
+		? applyNumberShortcut(controller.state, digit)
+		: {
+				...controller.state,
+				activeSubmitActionIndex: resolution.actionIndex,
+			};
+	commitState(controller, nextState, { finish: resolution.confirmed });
+	return true;
+}
+
+function getImagePasteKeys(controller: AskFlowController): KeyId[] {
+	const keys = controller.keybindings.getKeys("app.clipboard.pasteImage");
+	return keys.length ? keys : ["alt+v", "ctrl+alt+v"];
+}
+
+function getFooterNotice(controller: AskFlowController): string | undefined {
+	const notice =
+		controller.clipboardNotice ??
+		controller.dismissNotice ??
+		controller.configNotice;
+	if (!isEditingView(controller.state)) {
+		return notice;
+	}
+	const keys = getImagePasteKeys(controller).join("/");
+	const hint = `${keys}: attach image${getEditorImages(controller.state).length ? " · Ctrl+Alt+D: remove last image" : ""}`;
+	return [notice, hint].filter(Boolean).join("\n");
+}
+
+function showSettingsModal(controller: AskFlowController) {
+	if (controller.settingsOpen) {
+		return;
+	}
+	controller.settingsOpen = true;
+	showAskSettings(controller.ctx).finally(() => {
+		controller.settingsOpen = false;
+		refresh(controller);
+	});
+}
+
+function refresh(controller: AskFlowController) {
+	syncPreviewSelection(controller);
+	controller.tui.requestRender();
+}
+
+async function notifyCurrentQuestion(
+	controller: AskFlowController
+): Promise<void> {
+	const question = getCurrentQuestion(controller.state);
+	if (!question) {
+		return;
+	}
+	await notifyQuestionWaiting(
+		controller.config,
+		createQuestionWaitingNotification(question)
+	);
+}
+
+function maybeFinish(controller: AskFlowController) {
+	if (controller.state.completed) {
+		const result = toAskResult(controller.state);
+		controller.remoteFlow?.complete(result);
+		controller.done(result);
+		if (result.cancelled) {
+			controller.ctx.abort();
+		}
+	}
+}
+
+function startRemoteFlow(
+	controller: AskFlowController,
+	params: AskFlowParams
+): RemoteAskFlowHandle | undefined {
+	const remote = params.flowOptions.remote;
+	if (!remote) {
+		return;
+	}
+	return remote.runtime.startFlow({
+		source: remote.source,
+		toolCallId: remote.toolCallId,
+		title: controller.state.title,
+		questions: controller.state.questions,
+		onSubmit: (response) => submitRemoteResponse(controller, response),
+	});
+}
+
+function submitRemoteResponse(
+	controller: AskFlowController,
+	response: RemoteAskResponse
+): RemoteAskSubmitResolution {
+	const resolution = applyRemoteAskResponse(controller.state, response);
+	if (!resolution.ok) {
+		return resolution;
+	}
+	commitState(controller, resolution.state, { finish: true });
+	return { ok: true };
+}
+
+function hydrateEditor(controller: AskFlowController) {
+	controller.editor.setText(getEditorDraft(controller.state));
+}
+
+function syncSelection(controller: AskFlowController) {
+	if (controller.suppressAutoInputForSelection) {
+		return;
+	}
+	controller.state = syncStateToSelection(controller.state);
+}
+
+function saveEditorState(controller: AskFlowController): AskState {
+	const text = controller.editor.getText();
+	controller.editor.setText("");
+	return saveEditorDraft(controller.state, text);
+}
+
+function createEditor(tui: Tui, theme: Theme, cwd: string) {
+	const editor = new Editor(tui, createEditorTheme(theme));
+	editor.setAutocompleteProvider(createAskAutocompleteProvider(cwd));
+	return editor;
+}
+
+function createEditorTheme(theme: Theme): EditorTheme {
+	return {
+		borderColor: (text) => theme.fg("accent", text),
+		selectList: {
+			description: (text) => theme.fg("muted", text),
+			noMatch: (text) => theme.fg("warning", text),
+			scrollInfo: (text) => theme.fg("dim", text),
+			selectedPrefix: (text) => theme.fg("accent", text),
+			selectedText: (text) => theme.fg("accent", text),
+		},
+	};
+}

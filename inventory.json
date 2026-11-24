@@ -4,6 +4,9 @@
       "directory": "pi-9router"
     },
     {
+      "directory": "pi-agent-ask"
+    },
+    {
       "directory": "pi-bg-bash"
     },
     {
