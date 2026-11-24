@@ -86,7 +86,7 @@ for (const { directory } of inventory.extensions) {
   for (const path of files(packageRoot)) {
     const name = path.split(/[\\/]/).at(-1);
     assert.ok(!['auth.json', 'coding-agent.json', '.env'].includes(name), `${directory}: personal file included`);
-    if (extname(path) === '.json' && name !== 'package.json') assert.ok(name.endsWith('.example.json') || name.endsWith('.example'), `${directory}: config must be an explicit example: ${name}`);
+    if (extname(path) === '.json' && name !== 'package.json' && !name.endsWith('.schema.json')) assert.ok(name.endsWith('.example.json') || name.endsWith('.example'), `${directory}: config must be an explicit example: ${name}`);
   }
 }
 console.log(`Checked ${actual.length} standalone packages and ${count} TypeScript files: inventory, entrypoints, syntax, contained imports, dependencies, publication fields, changelogs, and example-only configs.`);

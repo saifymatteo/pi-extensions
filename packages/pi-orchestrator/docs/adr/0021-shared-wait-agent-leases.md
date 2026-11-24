@@ -1,0 +1,17 @@
+# Event-bus result leases preserve agent fleet lifetime
+
+Other extensions can collect agent results through a session-scoped provider without a direct package dependency. This extends ADR-0014's dispatch model: a consumer can combine agent outcomes with other compatible sources, while blocking dispatch remains available. The consumer discovers the session's agent producer synchronously through the `async-work:providers:v1` event-bus protocol; the existing live-session owner in ADR-0020 owns claims, execution promises, retained outcomes, and delivery. There is no second execution registry or additional delegate action.
+
+## Handoff and fallback
+
+Discovery carries `{ sessionFile?: string, add(provider) }`. The agent provider exposes `{ source: 'agent', claim(ids: number[], owner: string) }`, returning a lease with `result`, `commit()`, and `release()`. Results are outcome values shaped as `{ source: 'agent', id, content, details }`, including worker failures. The entire batch is validated before ownership changes. Missing/consumed, blocking, claimed, and already-submitted runs are rejected; an ambiguous native submission cannot be withdrawn. Claims may precede execution completion or follow completion while its outcome is still held. Successful handoff commits consumption; timeout or independent cancellation releases the claim and restores ordinary delivery eligibility. Commit and release are synchronous, idempotent, and nonthrowing. An early commit is a no-op while execution is unfinished; the consumer can commit after receiving results. Repeated or stale lease cleanup cannot replay consumed results. Providers are scoped by session epoch, not hook-context object identity (Pi creates a fresh context for each invocation); an outstanding lease rejects stale-session handoff after parent abort or session replacement.
+
+Async outcomes are held while the parent is busy or the run is claimed. At a completed pre-settle boundary, eligible outcomes are appended to existing entries as custom-message drafts, requesting continuation only when results were added. The preview's `canContinue` may be false before those drafts exist and is not a veto. Aborted/error boundaries and queued user messages are not rewritten. Native branch receipts still establish insertion; merely offering a draft does not consume an outcome. After final settlement, a session-epoch-guarded one-shot callback checks receipts and true public `ctx.isIdle()`, restoring missing boundary offers (including drafts replaced by a later handler) and flushing eligible held results. It is not a polling/retry timer. Ambiguous native sends remain retained for explicit manual retry only.
+
+## Cancellation is not keep-alive
+
+Escape while an extension consumer holds a lease still cancels the fleet through the existing parent-abort policy. Session teardown does the same. Leases do **not** shield agents from `abortAll`. Only a consumer timeout or independent consumer cancellation releases ownership without cancelling agent execution. Detached shell jobs have their own provider/lifetime policy and are outside this decision.
+
+## Runtime boundary
+
+The supported integration uses public Pi 1.3.0 lifecycle and extension event APIs, with no private queues or targeted withdrawal. The producer exposes an event-bus integration point; any compatible consumer extension can use it when loaded in the same parent session. No dependency upgrade, restart recovery, disk-durability guarantee, or exactly-once guarantee across an ambiguous native submission is included.

@@ -332,6 +332,13 @@ export const SHOTS = {
     const snap = await run({ extensions: ['pi-bg-bash', 'pi-wait'], cols: 92, rows: 50, turns }, s => prompt(s, 'build in the background, then deploy once it is done', 'ready to deploy', 900));
     return { panels: [solo(rows(snap, { from: /build in the background/, to: /ready to deploy/ }), { highlight: [/^\s*wait\b/] })] };
   },
+  'pi-orchestrator': async () => {
+    const snap = await run({ extensions: ['pi-bg-bash', 'pi-wait', 'pi-orchestrator'], cols: 92, rows: 34 }, async s => {
+      await s.type('/orchestrator-tools'); s.key(KEY.enter); await s.waitFor('discovered extensions'); await s.settle(500);
+    });
+    return { panels: [solo(rows(snap, { from: /orchestrator|keep/i }), { highlight: [/delegate/] })],
+      caption: 'Orchestrator mode blocks the main agent\'s tools except a keep-list; work goes to subagents through delegate.' };
+  },
   'pi-root-guard': async () => {
     const turns = () => [
       { tools: [{ name: 'write', args: { path: '~/.pi/agent/settings.json', content: '{ "defaultModel": "gpt-5" }\n' } }] },

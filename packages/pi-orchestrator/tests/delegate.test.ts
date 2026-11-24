@@ -1,0 +1,1798 @@
+/**
+ * Unit tests for the fleet widget line builder (renderFleetLines in
+ * delegate.ts): grouped header (mode + running count), per-agent lines with
+ * turn/context/token stats and truncated task summary, mixed-mode header,
+ * name alignment, and the idle fallback line.
+ *
+ * Runs on Node's built-in test runner with type stripping; the pi package
+ * imports are redirected to stubs via ../resolve-stub-hook.mjs.
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import * as os from "node:os";
+import * as path from "node:path";
+import * as fs from "node:fs";
+
+import { fleetTasksSnapshot, idleFleetWidgetLines, renderFleetLines, runSingleAgent } from "../src/delegate.ts";
+import { createFleetPanel, renderFleetPanel } from "../src/fleet-panel.ts";
+import type { Message } from "@earendil-works/pi-ai";
+import { collectTouchedFiles, fleetKey, formatTouchedFiles, isToolTurn, nextFleetRunId, parallelProgress, runStatus, taskStatus, type SingleResult } from "../src/delegate.ts";
+import { buildChildSpawnArgs, expandBlockedToolsToNames, passThroughMatchers, resolveChildExcludeTools, resolveThinkingLevel, stableSessionId } from "../src/delegate.ts";
+
+// Provider-neutral model placeholders and OS-native synthetic paths — the
+// tests must not depend on any concrete model registry or drive letters.
+const TEST_MODEL = "test/model";
+const TEST_MODEL_ALT = "test/other-model";
+
+/** Minimal RunningTask-shaped fixture (mode is the only other required field).
+ *  toolTurns defaults to turns (1); tests that need a mismatch override it. */
+function task(overrides: Partial<{ id: string; agent: string; task: string; mode: "single" | "parallel" | "chain"; turns: number; toolTurns: number; contextTokens: number; inputTokens: number; outputTokens: number }> = {}): { id: string; agent: string; task: string; mode: "single" | "parallel" | "chain"; turns: number; toolTurns: number; contextTokens: number; inputTokens: number; outputTokens: number } {
+	return {
+		id: "task0",
+		agent: "scout",
+		task: "recon auth flow",
+		mode: "single",
+		turns: 1,
+		toolTurns: 1,
+		contextTokens: 0,
+		inputTokens: 0,
+		outputTokens: 0,
+		...overrides,
+	};
+}
+
+test("idle fallback: engaged state shows the engaged line with fleet names", () => {
+	assert.deepEqual(renderFleetLines([], ["scout", "worker"], "engaged"), [
+		"Orchestrator: ENGAGED · Fleet: scout, worker",
+	]);
+});
+
+test("idle fallback: empty fleet shows (empty)", () => {
+	assert.deepEqual(renderFleetLines([], [], "engaged"), ["Orchestrator: ENGAGED · Fleet: (empty)"]);
+});
+
+test("idle fallback: disengaged shows `auto`, never `engaged` (the gate is not forcing)", () => {
+	assert.deepEqual(renderFleetLines([], ["scout", "worker"], "auto"), [
+		"Orchestrator: AUTO · Fleet: scout, worker",
+	]);
+	assert.deepEqual(renderFleetLines([], [], "auto"), ["Orchestrator: AUTO · Fleet: (empty)"]);
+});
+
+test("state label is the only difference between the two modes (no hidden claim in auto)", () => {
+	const engaged = renderFleetLines([], ["scout"], "engaged")[0];
+	const auto = renderFleetLines([], ["scout"], "auto")[0];
+	assert.equal(auto.toLowerCase().replace("auto", "engaged"), engaged.toLowerCase());
+});
+
+test("running-task lines stay state-neutral in both modes", () => {
+	const one = task({ agent: "scout", mode: "single" });
+	assert.deepEqual(renderFleetLines([one], ["scout"], "engaged"), renderFleetLines([one], ["scout"], "auto"));
+});
+
+test("idleFleetWidgetLines matches the idle fallback of renderFleetLines (both states)", () => {
+	for (const orchestratorMode of ["engaged", "auto"] as const) {
+		assert.deepEqual(idleFleetWidgetLines(["scout"], orchestratorMode), renderFleetLines([], ["scout"], orchestratorMode));
+	}
+	assert.deepEqual(idleFleetWidgetLines(["scout"], "engaged"), ["Orchestrator: ENGAGED · Fleet: scout"]);
+	assert.deepEqual(idleFleetWidgetLines(["scout"], "auto"), ["Orchestrator: AUTO · Fleet: scout"]);
+});
+
+test("grouped header with shared mode and running count (even for 1 task)", () => {
+	const lines = renderFleetLines([task({ agent: "scout", mode: "single" })], ["scout"], "engaged");
+	assert.equal(lines.length, 2);
+	assert.equal(lines[0], "⏳ Fleet · single · 1 running");
+	assert.match(lines[1], /^  scout · turn 1 · ctx 0 · ↑0 ↓0 · "recon auth flow"$/);
+});
+
+test("per-agent line keeps token formatting and quoted task summary", () => {
+	const lines = renderFleetLines(
+		[
+			task({
+				agent: "worker",
+				task: "implement guardrail",
+				mode: "parallel",
+				turns: 7,
+				toolTurns: 7,
+				contextTokens: 45200,
+				inputTokens: 3000,
+				outputTokens: 12000,
+			}),
+			task({
+				agent: "worker",
+				task: "fix config parse",
+				mode: "parallel",
+				turns: 1,
+				contextTokens: 2100,
+				inputTokens: 900,
+				outputTokens: 120,
+			}),
+		],
+		["worker"],
+		"engaged",
+	);
+	assert.equal(lines[0], "⏳ Fleet · parallel · 2 running");
+	assert.equal(lines[1], '  worker · turn 7 · ctx 45k · ↑3.0k ↓12k · "implement guardrail"');
+	assert.equal(lines[2], '  worker · turn 1 · ctx 2.1k · ↑900 ↓120 · "fix config parse"');
+});
+
+test("mixed header when concurrent runs have different modes", () => {
+	const lines = renderFleetLines(
+		[task({ agent: "scout", mode: "single" }), task({ agent: "worker", mode: "parallel" })],
+		["scout", "worker"],
+		"engaged",
+	);
+	assert.equal(lines[0], "⏳ Fleet · mixed · 2 running");
+});
+
+test("chain mode is shown in the header", () => {
+	const lines = renderFleetLines([task({ agent: "planner", mode: "chain" })], ["planner"], "engaged");
+	assert.equal(lines[0], "⏳ Fleet · chain · 1 running");
+});
+
+test("task summary is truncated to 40 chars including the ellipsis", () => {
+	const long = "a".repeat(100);
+	const lines = renderFleetLines([task({ task: long })], ["scout"], "engaged");
+	const summary = lines[1].split('· "')[1].replace(/"$/, "");
+	assert.equal(summary.length, 40);
+	assert.ok(summary.endsWith("…"));
+	assert.ok(summary.startsWith("a"));
+});
+
+test("task summary at exactly 40 chars is not truncated", () => {
+	const exact = "b".repeat(40);
+	const lines = renderFleetLines([task({ task: exact })], ["scout"], "engaged");
+	assert.ok(lines[1].endsWith(`"${exact}"`));
+	assert.ok(!lines[1].includes("…"));
+});
+
+test("agent names are padded to the longest current name for alignment", () => {
+	const lines = renderFleetLines(
+		[task({ agent: "scout" }), task({ agent: "longername", turns: 2, toolTurns: 2 })],
+		["scout", "longername"],
+		"engaged",
+	);
+	assert.ok(lines[1].startsWith("  scout      · turn 1"));
+	assert.ok(lines[2].startsWith("  longername · turn 2"));
+});
+
+test("agent names longer than 12 chars are truncated, never padded", () => {
+	const lines = renderFleetLines([task({ agent: "averylongagentname", turns: 3, toolTurns: 3 })], ["averylongagentname"], "engaged");
+	assert.ok(lines[1].startsWith("  averylongage · turn 3"));
+	assert.equal(lines[1].indexOf("averylongagentname"), -1);
+});
+
+// ── renderResult: single-mode running/success/failure icons ────────────────
+// Captures the tool definition pi would register, then drives renderResult
+// directly with a passthrough theme (fg/bold return the text unchanged).
+
+import { registerDelegateTool } from "../src/delegate.ts";
+
+const delegateTool: any = (() => {
+	let captured: any;
+	registerDelegateTool(
+		{ registerTool: (t: any) => (captured = t) } as any,
+		{
+			getAgents: () => [],
+			getDispatchDefaults: () => ({}),
+			getCwd: () => process.cwd(),
+			getSignal: () => undefined,
+			onIdle: () => {},
+			getOrchestratorMode: () => "engaged",
+		},
+	);
+	return captured;
+})();
+
+const passthroughTheme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
+
+function singleResult(overrides: Partial<Omit<SingleResult, "messages">> & { messages?: unknown[] } = {}): SingleResult {
+	return {
+		agent: "worker",
+		agentSource: "builtin",
+		task: "do a thing",
+		exitCode: 0,
+		completedNormally: false,
+		messages: [] as Message[],
+		stderr: "",
+		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0, toolTurns: 0 },
+		...overrides,
+	} as SingleResult;
+}
+
+function renderSingleCollapsed(result: any, options: Record<string, unknown> = {}, context: any = undefined): string {
+	const out = delegateTool.renderResult(
+		{ content: [], details: { mode: "single", results: [result] } },
+		{ expanded: false, ...options },
+		passthroughTheme,
+		context,
+	);
+	return out.text;
+}
+
+test("renderResult single mid-run (isPartial): warning ⏳ icon, no error ✗, no red [stopReason]", () => {
+	const text = renderSingleCollapsed(singleResult({ stopReason: "toolUse" }), { isPartial: true });
+	assert.ok(text.includes("⏳"), `expected running icon, got: ${text}`);
+	assert.ok(!text.includes("✗"), `unexpected error icon: ${text}`);
+	assert.ok(!text.includes("✓"), `unexpected success icon: ${text}`);
+	assert.ok(!text.includes("[toolUse]"), `mid-run stopReason must not render as error tag: ${text}`);
+	assert.match(text, /\(running\.\.\.\)/);
+});
+
+test("renderResult single mid-run via context.isPartial fallback also renders ⏳", () => {
+	const text = renderSingleCollapsed(singleResult({ stopReason: "toolUse" }), {}, { isPartial: true });
+	assert.ok(text.includes("⏳"), `expected running icon, got: ${text}`);
+	assert.ok(!text.includes("✗"), `unexpected error icon: ${text}`);
+});
+
+test("renderResult single success (settled): green ✓", () => {
+	const text = renderSingleCollapsed(singleResult({ completedNormally: true, messages: [{ role: "assistant", content: [{ type: "text", text: "done" }] }] }));
+	assert.ok(text.includes("✓"), `expected success icon, got: ${text}`);
+	assert.ok(!text.includes("✗") && !text.includes("⏳"), `unexpected icons: ${text}`);
+});
+
+test("renderResult single genuine failure (error stopReason, not partial): red ✗ with [stopReason] tag", () => {
+	const text = renderSingleCollapsed(
+		singleResult({ completedNormally: false, stopReason: "error", errorMessage: "boom" }),
+	);
+	assert.ok(text.includes("✗"), `expected error icon, got: ${text}`);
+	assert.ok(text.includes("[error]"), `expected stopReason tag: ${text}`);
+	assert.ok(text.includes("Error: boom"), `expected error message: ${text}`);
+	assert.ok(!text.includes("⏳") && !text.includes("✓"), `unexpected icons: ${text}`);
+});
+
+// ── Unique fleet keys (concurrent delegate invocations) ────────────────────
+
+test("nextFleetRunId successive calls differ", () => {
+	const a = nextFleetRunId();
+	const b = nextFleetRunId();
+	assert.notEqual(a, b);
+	assert.ok(b > a);
+});
+
+test("fleetKey is distinct for two simulated concurrent invocations of every mode", () => {
+	// Two delegate calls at the same "time": same mode/index, different run ids.
+	for (const [modeA, modeB] of [
+		["single", "single"],
+		["parallel", "parallel"],
+		["chain", "chain"],
+	] as const) {
+		const runA = nextFleetRunId();
+		const runB = nextFleetRunId();
+		assert.notEqual(fleetKey(runA, modeA, 0), fleetKey(runB, modeB, 0), `mode ${modeA} collides`);
+	}
+});
+
+test("renderFleetLines with two single-mode tasks shows 2 running", () => {
+	const lines = renderFleetLines(
+		[task({ agent: "scout" }), task({ agent: "worker", turns: 2, toolTurns: 2 })],
+		["scout", "worker"],
+		"engaged",
+	);
+	assert.equal(lines[0], "⏳ Fleet · single · 2 running");
+});
+
+// ── Fleet widget shows tool-bearing turns (matches TUI tool-call view) ─────
+
+test("renderFleetLines displays toolTurns, not the raw turn count", () => {
+	// 7 raw turns, 6 tool-bearing (final text-only wrap-up excluded) — the
+	// widget must read turn 6 to match the TUI's tool-call count.
+	const lines = renderFleetLines([task({ turns: 7, toolTurns: 6 })], ["scout"], "engaged");
+	assert.match(lines[1], /· turn 6 ·/);
+	assert.ok(!lines[1].includes("turn 7"));
+});
+
+// ── isToolTurn (turn_end counting helper) ───────────────────────────────
+
+test("isToolTurn: assistant message with toolCall parts → true", () => {
+	const msg = assistantMsg([toolCall("read", { file_path: "/a.ts" })]);
+	assert.equal(isToolTurn(msg as any), true);
+});
+
+test("isToolTurn: text-only assistant message → false", () => {
+	const msg = assistantMsg([{ type: "text", text: "all done" }]);
+	assert.equal(isToolTurn(msg as any), false);
+});
+
+test("isToolTurn: empty/missing message → false", () => {
+	assert.equal(isToolTurn(assistantMsg([]) as any), false);
+	assert.equal(isToolTurn(undefined), false);
+});
+
+test("isToolTurn: non-empty toolResults → true even without toolCall parts", () => {
+	const msg = assistantMsg([{ type: "text", text: "hmm" }]);
+	assert.equal(isToolTurn(msg as any, [{ toolCallId: "t1" }]), true);
+});
+
+// ── Touched-files extraction (collectTouchedFiles / formatTouchedFiles) ────
+
+function assistantMsg(content: any[]) {
+	return { role: "assistant", content };
+}
+
+function toolCall(name: string, args: Record<string, unknown>) {
+	return { type: "toolCall", name, arguments: args };
+}
+
+test("collectTouchedFiles: write + edit paths collected, read/bash ignored", () => {
+	const messages = [
+		assistantMsg([
+			toolCall("read", { file_path: "/src/ignored.ts" }),
+			toolCall("bash", { command: "touch /src/ignored2.ts" }),
+		]),
+		assistantMsg([toolCall("write", { file_path: "/src/a.ts", content: "x" })]),
+		assistantMsg([toolCall("edit", { path: "/src/b.ts", oldText: "a", newText: "b" })]),
+	];
+	assert.deepEqual(collectTouchedFiles(messages as any), ["/src/a.ts", "/src/b.ts"]);
+});
+
+test("collectTouchedFiles: falls back from file_path to path", () => {
+	const messages = [
+		assistantMsg([toolCall("write", { path: "/via/path.ts" })]),
+		assistantMsg([toolCall("edit", { file_path: "/via/file_path.ts" })]),
+	];
+	assert.deepEqual(collectTouchedFiles(messages as any), ["/via/path.ts", "/via/file_path.ts"]);
+});
+
+test("collectTouchedFiles: dedupes preserving first-seen order", () => {
+	const messages = [
+		assistantMsg([toolCall("write", { file_path: "/b.ts" }), toolCall("edit", { file_path: "/a.ts" })]),
+		assistantMsg([toolCall("edit", { path: "/b.ts" })]),
+	];
+	assert.deepEqual(collectTouchedFiles(messages as any), ["/b.ts", "/a.ts"]);
+});
+
+test("collectTouchedFiles: skips non-string and empty paths, empty messages → []", () => {
+	const messages = [
+		assistantMsg([toolCall("write", { file_path: 42 }), toolCall("edit", { file_path: "" })]),
+		assistantMsg([{ type: "text", text: "no tool calls here" }]),
+	];
+	assert.deepEqual(collectTouchedFiles(messages as any), []);
+	assert.deepEqual(collectTouchedFiles([]), []);
+});
+
+test("formatTouchedFiles: caps at 10 with a … and N more suffix", () => {
+	const files = Array.from({ length: 12 }, (_, i) => `/f${i}.ts`);
+	const text = formatTouchedFiles(files);
+	assert.ok(text.startsWith(`Files touched: ${files.slice(0, 10).join(", ")}`));
+	assert.ok(text.endsWith(", … and 2 more"));
+});
+
+test("formatTouchedFiles: empty input returns empty string", () => {
+	assert.equal(formatTouchedFiles([]), "");
+});
+
+// ── Child spawn args (ADR-0008) ─────────────────────────────────────────────
+
+test("buildChildSpawnArgs: base RPC args are always present, in order", () => {
+	assert.deepEqual(buildChildSpawnArgs({ extensions: [], excludeTools: [] }), ["--mode", "rpc", "--no-session"]);
+});
+
+test("buildChildSpawnArgs: ephemeral child keeps --no-session plus the deterministic id (cache-shard stability)", () => {
+	const args = buildChildSpawnArgs({ extensions: [], excludeTools: [], persistSessions: false, sessionId: "abc123" });
+	assert.deepEqual(args.slice(-3), ["--no-session", "--session-id", "abc123"]);
+});
+
+test("buildChildSpawnArgs: persistent child keeps a session and points it at the parent's session dir", () => {
+	const sessionDir = path.join(os.tmpdir(), "proj", ".pi-sessions");
+	const args = buildChildSpawnArgs({
+		model: TEST_MODEL,
+		extensions: [],
+		excludeTools: ["advisor"],
+		persistSessions: true,
+		sessionDir,
+	});
+	assert.ok(!args.includes("--no-session"), "persistent children must not pass --no-session");
+	assert.ok(!args.includes("--session-id"), "file-per-run: no deterministic shared id (two writers on one JSONL)");
+	assert.deepEqual(args.slice(args.indexOf("--session-dir")), ["--session-dir", sessionDir]);
+});
+
+test("buildChildSpawnArgs: persistent child without a parent session uses pi's default dir", () => {
+	const args = buildChildSpawnArgs({ extensions: [], excludeTools: [], persistSessions: true });
+	assert.ok(!args.includes("--session-dir"));
+	assert.ok(!args.includes("--no-session"));
+});
+
+test("buildChildSpawnArgs: model, thinking, and per-agent tools join the front", () => {
+	assert.deepEqual(
+		buildChildSpawnArgs({
+			model: TEST_MODEL,
+			thinkingLevel: "high",
+			tools: ["read", "grep"],
+			extensions: [],
+			excludeTools: [],
+		}),
+		["--mode", "rpc", "--model", TEST_MODEL, "--thinking", "high", "--tools", "read,grep", "--no-session"],
+	);
+});
+
+test("buildChildSpawnArgs: no model/thinking/tools omits their flags entirely", () => {
+	const args = buildChildSpawnArgs({ extensions: [], excludeTools: [] });
+	assert.ok(!args.includes("--model"));
+	assert.ok(!args.includes("--thinking"));
+	assert.ok(!args.includes("--tools"));
+});
+
+test("buildChildSpawnArgs: empty extensions ⇒ no extension flags (children inherit-all)", () => {
+	const args = buildChildSpawnArgs({ extensions: [], excludeTools: [] });
+	assert.ok(!args.includes("--no-extensions"));
+	assert.ok(!args.includes("-e"));
+});
+
+test("buildChildSpawnArgs: non-empty extensions ⇒ --no-extensions plus one -e pair per entry", () => {
+	const args = buildChildSpawnArgs({
+		extensions: ["./my-ext.ts", "npm:@foo/bar"],
+		excludeTools: [],
+	});
+	const start = args.indexOf("--no-extensions");
+	assert.deepEqual(args.slice(start, start + 5), [
+		"--no-extensions",
+		"-e",
+		"./my-ext.ts",
+		"-e",
+		"npm:@foo/bar",
+	]);
+});
+
+// ── Persistent sub-session spawn args (ADR-0011) ──────────────────────────
+
+test("buildChildSpawnArgs: excludeTools becomes one comma-joined --exclude-tools flag (pi docs: comma-separated denylist)", () => {
+	const args = buildChildSpawnArgs({ extensions: [], excludeTools: ["advisor", "history_cleanup"], persistSessions: false });
+	const i = args.indexOf("--exclude-tools");
+	assert.deepEqual(args.slice(i, i + 2), ["--exclude-tools", "advisor,history_cleanup"]);
+	assert.equal(args.filter((a) => a === "--exclude-tools").length, 1, "flag must not repeat");
+
+	// Empty list → flag omitted entirely (the interception gate handles it).
+	assert.ok(!buildChildSpawnArgs({ extensions: [], excludeTools: [] }).includes("--exclude-tools"));
+});
+
+// ── stable --session-id per (agent, model) ─────────────────────────────
+
+/** pi's assertValidSessionId contract (verified in the pi binary):
+ *  non-empty, only [A-Za-z0-9._-], starts and ends alphanumeric. */
+const SESSION_ID_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
+
+test("buildChildSpawnArgs: sessionId is emitted as the trailing --session-id pair", () => {
+	const args = buildChildSpawnArgs({ extensions: [], excludeTools: [], sessionId: "abc123" });
+	assert.deepEqual(args.slice(-2), ["--session-id", "abc123"]);
+	assert.equal(args.indexOf("--session-id"), args.length - 2, "pair must be last (after --exclude-tools)");
+});
+
+test("buildChildSpawnArgs: sessionId omitted ⇒ no --session-id flag", () => {
+	assert.ok(!buildChildSpawnArgs({ extensions: [], excludeTools: [] }).includes("--session-id"));
+});
+
+test("stableSessionId: deterministic across calls (same inputs → same output)", () => {
+	assert.equal(stableSessionId("scout", TEST_MODEL), stableSessionId("scout", TEST_MODEL));
+	assert.equal(stableSessionId("worker", undefined), stableSessionId("worker", undefined));
+});
+
+test("stableSessionId: differs per agent name and per model", () => {
+	assert.notEqual(stableSessionId("scout", TEST_MODEL), stableSessionId("worker", TEST_MODEL));
+	assert.notEqual(stableSessionId("scout", TEST_MODEL), stableSessionId("scout", TEST_MODEL_ALT));
+});
+
+test("stableSessionId: output matches pi's assertValidSessionId format", () => {
+	for (const id of [
+		stableSessionId("scout", TEST_MODEL),
+		stableSessionId("a-very_long.agent-name", undefined),
+	]) {
+		assert.match(id, SESSION_ID_RE);
+		assert.equal(id.length, 32, "first 16 bytes of sha1 hex = 32 chars");
+	}
+});
+
+// ── expandBlockedToolsToNames (ADR-0008) ──────────────────────────────────
+
+const tool = (name: string, sourceInfo?: unknown) => ({ name, sourceInfo });
+const nm = (pkg: string, rest: string) => ({ path: path.join(os.tmpdir(), "repo", "node_modules", pkg, rest) });
+
+test("expandBlockedToolsToNames: exact match (case-insensitive) resolves to the tool name", () => {
+	const tools = [tool("advisor", nm("@l/advisor", "i.js")), tool("todo", undefined)];
+	assert.deepEqual(expandBlockedToolsToNames(["advisor"], tools), ["advisor"]);
+	assert.deepEqual(expandBlockedToolsToNames(["ADVISOR"], tools), ["advisor"]);
+});
+
+test("expandBlockedToolsToNames: glob matcher expands to every matching tool name", () => {
+	const tools = [
+		tool("hindsight_recall", nm("@luxusai/pi-hindsight", "i.js")),
+		tool("hindsight_retain", nm("@luxusai/pi-hindsight", "i.js")),
+		tool("todo", undefined),
+	];
+	assert.deepEqual(expandBlockedToolsToNames(["hindsight_*"], tools), ["hindsight_recall", "hindsight_retain"]);
+});
+
+test("expandBlockedToolsToNames: ext:<id> matcher resolves via sourceInfo", () => {
+	const tools = [
+		tool("hindsight_recall", nm("@luxusai/pi-hindsight", "i.js")),
+		tool("other_tool", nm("plain-pkg", "i.js")),
+	];
+	assert.deepEqual(expandBlockedToolsToNames(["ext:@luxusai/pi-hindsight"], tools), ["hindsight_recall"]);
+});
+
+test("expandBlockedToolsToNames: dedupes names across overlapping matchers, first-seen order", () => {
+	const tools = [
+		tool("hindsight_recall", nm("@luxusai/pi-hindsight", "i.js")),
+		tool("hindsight_retain", nm("@luxusai/pi-hindsight", "i.js")),
+	];
+	// recall matches both the glob and the ext: matcher — collected once.
+	assert.deepEqual(expandBlockedToolsToNames(["hindsight_*", "ext:@luxusai/pi-hindsight"], tools), [
+		"hindsight_recall",
+		"hindsight_retain",
+	]);
+});
+
+test("expandBlockedToolsToNames: duplicate tool entries do not duplicate names", () => {
+	const tools = [tool("advisor", nm("x", "i.js")), tool("advisor", nm("x", "i.js"))];
+	assert.deepEqual(expandBlockedToolsToNames(["advisor"], tools), ["advisor"]);
+});
+
+test("expandBlockedToolsToNames: matchers that expand to nothing are skipped silently", () => {
+	const tools = [tool("todo", undefined)];
+	assert.deepEqual(expandBlockedToolsToNames(["nope", "missing_*", "ext:@gone/pkg"], tools), []);
+});
+
+test("expandBlockedToolsToNames: empty matchers ⇒ []", () => {
+	const tools = [tool("advisor", nm("x", "i.js")), tool("todo", undefined)];
+	assert.deepEqual(expandBlockedToolsToNames([], tools), []);
+});
+
+// ── passThroughMatchers / resolveChildExcludeTools (ADR-0017) ────────────────
+// pi >= 1.0.4 --exclude-tools semantics (verified in the 1.0.4 binary): exact
+// names via case-SENSITIVE Set membership, `*` as the only wildcard (? is
+// escaped literal), ext:<id> never matches (the flag sees tool names only).
+
+test("passThroughMatchers: exact and * glob pass through; ext: and ? matchers do not", () => {
+	assert.deepEqual(passThroughMatchers(["advisor", "hindsight_*", "ext:@luxusai/pi-hindsight", "what?_tool"]), [
+		"advisor",
+		"hindsight_*",
+	]);
+	assert.deepEqual(passThroughMatchers([]), []);
+});
+
+test("resolveChildExcludeTools: parent-visible exact matcher dedupes to the registry name", () => {
+	const tools = [tool("advisor", nm("@l/advisor", "i.js")), tool("todo", undefined)];
+	assert.deepEqual(resolveChildExcludeTools(["advisor"], tools), ["advisor"]);
+});
+
+test("resolveChildExcludeTools: case-mismatched exact matcher keeps both spellings (flag is case-sensitive; expansion fixes parent-visible case)", () => {
+	const tools = [tool("advisor", nm("@l/advisor", "i.js"))];
+	assert.deepEqual(resolveChildExcludeTools(["ADVISOR"], tools), ["ADVISOR", "advisor"]);
+});
+
+test("resolveChildExcludeTools: glob passes through AND expands to parent-visible names", () => {
+	const tools = [
+		tool("hindsight_recall", nm("@luxusai/pi-hindsight", "i.js")),
+		tool("hindsight_retain", nm("@luxusai/pi-hindsight", "i.js")),
+		tool("todo", undefined),
+	];
+	assert.deepEqual(resolveChildExcludeTools(["hindsight_*"], tools), ["hindsight_*", "hindsight_recall", "hindsight_retain"]);
+});
+
+test("resolveChildExcludeTools: ext:<id> matcher is expanded only, never passed through", () => {
+	const tools = [tool("hindsight_recall", nm("@luxusai/pi-hindsight", "i.js")), tool("other_tool", nm("plain-pkg", "i.js"))];
+	assert.deepEqual(resolveChildExcludeTools(["ext:@luxusai/pi-hindsight"], tools), ["hindsight_recall"]);
+});
+
+test("resolveChildExcludeTools: ? matcher is expanded only, never passed through", () => {
+	const tools = [tool("whats_tool", undefined)];
+	assert.deepEqual(resolveChildExcludeTools(["what?_tool"], tools), ["whats_tool"]);
+});
+
+test("resolveChildExcludeTools: matcher that expands to nothing still passes through (child-side coverage)", () => {
+	const tools = [tool("todo", undefined)];
+	assert.deepEqual(resolveChildExcludeTools(["missing_*", "gone_tool"], tools), ["missing_*", "gone_tool"]);
+});
+
+test("resolveChildExcludeTools: dedupes exact duplicates across pass-through and expansion (case variants stay — the flag is case-sensitive)", () => {
+	const tools = [tool("advisor", nm("@l/advisor", "i.js"))];
+	assert.deepEqual(resolveChildExcludeTools(["advisor", "ADVISOR", "Advisor"], tools), ["advisor", "ADVISOR", "Advisor"]);
+});
+
+test("resolveChildExcludeTools: empty matchers ⇒ []", () => {
+	assert.deepEqual(resolveChildExcludeTools([], [tool("todo", undefined)]), []);
+});
+
+// ── Fleet enum in the tool schema (first-turn agent-name mangle fix) ────────
+
+import { agentNameParam, buildDelegateParams, buildDelegatePromptGuidelines } from "../src/delegate.ts";
+
+const FLEET = ["planner", "reviewer", "scout", "worker"];
+
+function agentSchemaOf(params: any): any {
+	return params.properties.agent;
+}
+
+function taskItemAgentSchemaOf(params: any): any {
+	return params.properties.tasks.items.properties.agent;
+}
+
+function chainStepAgentSchemaOf(params: any): any {
+	return params.properties.chain.items.properties.agent;
+}
+
+test("buildDelegateParams: non-empty fleet publishes an enum on every agent-name field", () => {
+	const params = buildDelegateParams(FLEET);
+	for (const schema of [agentSchemaOf(params), taskItemAgentSchemaOf(params), chainStepAgentSchemaOf(params)]) {
+		assert.deepEqual(schema.enum, FLEET);
+		assert.ok((schema as any).description.includes("planner, reviewer, scout, worker"), (schema as any).description);
+	}
+});
+
+test("buildDelegateParams: empty fleet omits the enum (free-form, no empty-enum trap)", () => {
+	const params = buildDelegateParams([]);
+	for (const schema of [agentSchemaOf(params), taskItemAgentSchemaOf(params), chainStepAgentSchemaOf(params)]) {
+		assert.equal(schema.enum, undefined);
+	}
+});
+
+test("buildDelegateParams: discovery/control actions include explicit Result retry", () => {
+	const params = buildDelegateParams(FLEET);
+	assert.deepEqual((params.properties.action as any).enum, ["list", "sessions", "status", "cancel", "retry-delivery"]);
+});
+
+test("agentNameParam: description carries the valid names so models without enum support still see them", () => {
+	const schema = agentNameParam("Agent name (single mode)", FLEET);
+	assert.match((schema as any).description, /Valid names: planner, reviewer, scout, worker\./);
+});
+
+// ── The registered tool: schema + list action ───────────────────────────────
+
+const populatedDelegateTool: any = (() => {
+	let captured: any;
+	registerDelegateTool(
+		{ registerTool: (t: any) => (captured = t) } as any,
+		{
+			getAgents: () => [
+				{
+					name: "scout",
+					description: "Fast read-only codebase recon",
+					tools: ["read", "grep"],
+					source: "builtin",
+					systemPrompt: "Scout system prompt",
+					filePath: "builtin:scout",
+				},
+				{
+					name: "worker",
+					description: "General-purpose implementation agent",
+					source: "project",
+					model: TEST_MODEL,
+					maxTurns: 20,
+					systemPrompt: "Worker system prompt",
+					filePath: "project:worker",
+				},
+			],
+			getDispatchDefaults: () => ({}),
+			getCwd: () => process.cwd(),
+			getSignal: () => undefined,
+			onIdle: () => {},
+			getOrchestratorMode: () => "engaged",
+		},
+	);
+	return captured;
+})();
+
+async function executeDelegate(params: any): Promise<any> {
+	return await populatedDelegateTool.execute("call-1", params, undefined, undefined, {});
+}
+
+test("registered schema enumerates the live fleet on all agent-name fields", () => {
+	const params = populatedDelegateTool.parameters;
+	assert.deepEqual(agentSchemaOf(params).enum, ["scout", "worker"]);
+	assert.deepEqual(taskItemAgentSchemaOf(params).enum, ["scout", "worker"]);
+	assert.deepEqual(chainStepAgentSchemaOf(params).enum, ["scout", "worker"]);
+});
+
+test("description tells the model to use exact fleet names and how to discover them", () => {
+	assert.match(populatedDelegateTool.description, /exact fleet names/i);
+	// The action vocabulary lives in the parameter schema, not the description —
+	// but "list first" must still point the model at discovery when unsure.
+	assert.match(populatedDelegateTool.description, /list first/i);
+});
+
+test("list action returns the live fleet without spawning any subagent", async () => {
+	const out = await executeDelegate({ action: "list" });
+	const text = out.content[0].text as string;
+	assert.match(text, /Fleet \(agents available via delegate\)/);
+	assert.match(text, /- \*\*scout\*\* \(builtin, tools: read, grep\): Fast read-only codebase recon/);
+	assert.match(
+		text,
+		new RegExp(
+			`- \\*\\*worker\\*\\* \\(project, full tools, model: ${TEST_MODEL}, maxTurns: 20\\): General-purpose implementation agent`,
+		),
+	);
+	assert.equal(out.details.results.length, 0);
+});
+
+test("list action wins over stray dispatch params (no accidental spawn)", async () => {
+	const out = await executeDelegate({ action: "list", agent: "worker", task: "should be ignored" });
+	assert.match(out.content[0].text, /Fleet \(agents available via delegate\)/);
+});
+
+test("list action on an empty fleet reports an empty fleet", async () => {
+	let captured: any;
+	registerDelegateTool(
+		{ registerTool: (t: any) => (captured = t) } as any,
+		{
+			getAgents: () => [],
+			getDispatchDefaults: () => ({}),
+			getCwd: () => process.cwd(),
+			getSignal: () => undefined,
+			onIdle: () => {},
+			getOrchestratorMode: () => "engaged",
+		},
+	);
+	const out = await captured.execute("call-1", { action: "list" }, undefined, undefined, {});
+	assert.match(out.content[0].text, /fleet is empty/);
+});
+
+// ── Sub-session discovery (ADR-0011) ───────────────────────────────────────
+
+import { parseSessionHeader, readSessionHeader, scanSubSessions } from "../src/delegate.ts";
+
+test("parseSessionHeader: accepts the v3 session header, rejects everything else", () => {
+	const header = parseSessionHeader(
+		`{"type":"session","version":3,"id":"abc","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/p","parentSession":"/p/parent.jsonl"}`,
+	);
+	assert.equal(header?.parentSession, "/p/parent.jsonl");
+	assert.equal(header?.id, "abc");
+	assert.equal(parseSessionHeader(`{"type":"message","id":"x"}`), null, "non-session entry");
+	assert.equal(parseSessionHeader(`not json`), null);
+	assert.equal(parseSessionHeader(``), null);
+});
+
+test("readSessionHeader: reads only the first line, tolerant of long bodies and missing files", () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "orch-sess-"));
+	try {
+		const file = path.join(dir, "child.jsonl");
+		fs.writeFileSync(
+			file,
+			`{"type":"session","version":3,"id":"s1","cwd":"/w","parentSession":"PARENT"}\n` +
+				`{"type":"message","id":"m1","message":{"role":"user"}}\n`.repeat(200),
+		);
+		const header = readSessionHeader(file);
+		assert.equal(header?.parentSession, "PARENT");
+		assert.equal(readSessionHeader(path.join(dir, "missing.jsonl")), null);
+		const notSession = path.join(dir, "other.jsonl");
+		fs.writeFileSync(notSession, `{"type":"message"}\n`);
+		assert.equal(readSessionHeader(notSession), null);
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("scanSubSessions: returns only sessions whose header links the parent, newest first", () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "orch-scan-"));
+	const parent = path.join(dir, "parent.jsonl");
+	try {
+		const write = (name: string, parentSession?: string, timestamp?: string) =>
+			fs.writeFileSync(
+				path.join(dir, name),
+				JSON.stringify({ type: "session", version: 3, id: name, cwd: dir, timestamp, parentSession }) + "\n",
+			);
+		write("a-old.jsonl", parent, "2026-01-01T00:00:00.000Z");
+		write("b-new.jsonl", parent, "2026-01-02T00:00:00.000Z");
+		write("c-unlinked.jsonl", undefined, "2026-01-03T00:00:00.000Z"); // not ours
+		write("d-other-parent.jsonl", "/elsewhere/parent.jsonl", "2026-01-03T00:00:00.000Z");
+		fs.writeFileSync(path.join(dir, "notes.txt"), "not a session");
+		fs.mkdirSync(path.join(dir, "subdir.jsonl")); // directory with .jsonl name
+
+		const subs = scanSubSessions(dir, parent);
+		assert.deepEqual(
+			subs.map((s) => s.id),
+			["b-new.jsonl", "a-old.jsonl"],
+			"only linked sessions, newest first",
+		);
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("scanSubSessions: missing directory ⇒ []", () => {
+	assert.deepEqual(scanSubSessions(path.join(os.tmpdir(), "orch-nope-xyz"), "P"), []);
+});
+
+// ── The `sessions` action (ADR-0011) ─────────────────────────────────────
+
+const sessionsTool: any = (() => {
+	let captured: any;
+	registerDelegateTool(
+		{ registerTool: (t: any) => (captured = t) } as any,
+		{
+			getAgents: () => [],
+			getDispatchDefaults: () => ({}),
+			getCwd: () => process.cwd(),
+			getSignal: () => undefined,
+			onIdle: () => {},
+			getOrchestratorMode: () => "engaged",
+			getParentSessionFile: () => "PARENT",
+		},
+	);
+	return captured;
+})();
+
+test("sessions action lists the parent's linked child sessions", async () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "orch-sessions-action-"));
+	try {
+		// The parent session file must exist for path.dirname() to give the scan dir.
+		const parentFile = path.join(dir, "parent.jsonl");
+		fs.writeFileSync(parentFile, "{}\n");
+		const child = path.join(dir, "child.jsonl");
+		fs.writeFileSync(
+			child,
+			JSON.stringify({ type: "session", version: 3, id: "kid-1", timestamp: "2026-01-02T00:00:00.000Z", parentSession: parentFile }),
+		);
+		let captured: any;
+		registerDelegateTool(
+			{ registerTool: (t: any) => (captured = t) } as any,
+			{
+				getAgents: () => [],
+				getDispatchDefaults: () => ({}),
+				getCwd: () => process.cwd(),
+				getSignal: () => undefined,
+				onIdle: () => {},
+				getOrchestratorMode: () => "engaged",
+				getParentSessionFile: () => parentFile,
+			},
+		);
+		const out = await captured.execute("call-1", { action: "sessions" }, undefined, undefined, {});
+		const text = out.content[0].text as string;
+		assert.match(text, /Sub-sessions of this session/);
+		assert.match(text, /kid-1/);
+		assert.match(text, /child\.jsonl/);
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("sessions action with no parent session file degrades gracefully", async () => {
+	let captured: any;
+	registerDelegateTool(
+		{ registerTool: (t: any) => (captured = t) } as any,
+		{
+			getAgents: () => [],
+			getDispatchDefaults: () => ({}),
+			getCwd: () => process.cwd(),
+			getSignal: () => undefined,
+			onIdle: () => {},
+			getOrchestratorMode: () => "engaged",
+			getParentSessionFile: () => undefined,
+		},
+	);
+	const out = await captured.execute("call-1", { action: "sessions" }, undefined, undefined, {});
+	assert.match(out.content[0].text, /ephemeral/);
+});
+
+// ── taskStatus / runStatus: three-state fleet status contract ───────────────
+// Running reads yellow, finished-success green, finished-failure red, in every
+// dispatch mode. The parallel/chain branch used to read `completedNormally:
+// false` as failure on its own — which is also the shape of a live, still
+// running result — so a working fleet rendered red ✗ until it settled.
+
+const settledOk = (agent: string) =>
+	singleResult({
+		agent,
+		completedNormally: true,
+		messages: [{ role: "assistant", content: [{ type: "text", text: "ok" }] }],
+	});
+/** What placeholders and live partial emissions publish (see emitUpdate). */
+const liveTask = (agent: string) => singleResult({ agent, exitCode: -1 });
+const settledFail = (agent: string) => singleResult({ agent, stopReason: "error", errorMessage: "boom" });
+
+test("taskStatus: exitCode -1 sentinel is running even though the result is unsettled", () => {
+	assert.equal(taskStatus(liveTask("scout")), "running");
+});
+
+test("taskStatus: live partial without the sentinel is running, not failed", () => {
+	assert.equal(taskStatus(singleResult({ agent: "scout" }), true), "running");
+});
+
+test("taskStatus: a definitive failure outranks partial rendering", () => {
+	assert.equal(taskStatus(settledFail("scout"), true), "failed");
+	assert.equal(taskStatus(singleResult({ stopReason: "turn-budget-exhausted" }), true), "failed");
+	assert.equal(taskStatus(singleResult({ errorMessage: "spawn ENOENT" }), true), "failed");
+});
+
+test("taskStatus: finished-but-unsettled is failed once the call is no longer partial", () => {
+	assert.equal(taskStatus(singleResult({ agent: "scout" })), "failed");
+	assert.equal(taskStatus(settledOk("scout")), "success");
+});
+
+test("runStatus: running wins while any task is unsettled, even beside a failure", () => {
+	const status = runStatus([settledFail("scout"), liveTask("worker")]);
+	assert.equal(status.status, "running");
+	assert.equal(status.successCount, 0);
+});
+
+test("runStatus: finished run splits success and failure; an empty run is not a failure", () => {
+	assert.equal(runStatus([settledOk("a"), settledOk("b")]).status, "success");
+	assert.equal(runStatus([settledOk("a"), settledFail("b")]).status, "failed");
+	assert.equal(runStatus([]).status, "success");
+	assert.equal(runStatus([settledOk("a"), settledOk("b")]).successCount, 2);
+});
+
+// ── renderResult: parallel and chain icons ──────────────────────────────────
+
+function renderMultiCollapsed(mode: "parallel" | "chain", results: any[], options: Record<string, unknown> = {}): string {
+	const out = delegateTool.renderResult(
+		{ content: [], details: { mode, results } },
+		{ expanded: false, ...options },
+		passthroughTheme,
+		undefined,
+	);
+	return out.text as string;
+}
+
+test("renderResult parallel mid-run: running tasks ⏳, header ◐, nothing red or green", () => {
+	const text = renderMultiCollapsed("parallel", [liveTask("scout"), liveTask("worker")], { isPartial: true });
+	assert.equal((text.match(/⏳/g) || []).length, 2, text);
+	assert.ok(text.includes("◐"), `expected the in-progress header: ${text}`);
+	assert.ok(!text.includes("✗"), `running fleet must not show failure icons: ${text}`);
+	assert.ok(!text.includes("✓"), `running fleet must not claim success: ${text}`);
+	assert.match(text, /\(running\.\.\.\)/);
+});
+
+test("renderResult parallel mixed mid-run: finished task ✓, running task ⏳, no red", () => {
+	const text = renderMultiCollapsed("parallel", [settledOk("scout"), liveTask("worker")], { isPartial: true });
+	assert.ok(text.includes("✓"), `finished task should show success: ${text}`);
+	assert.ok(text.includes("⏳"), `running task should show in-progress: ${text}`);
+	assert.ok(!text.includes("✗"), text);
+});
+
+test("renderResult parallel all-success: header ✓ and 2/2", () => {
+	const text = renderMultiCollapsed("parallel", [settledOk("scout"), settledOk("worker")]);
+	assert.ok(text.includes("✓"), text);
+	assert.match(text, /2\/2/);
+	assert.ok(!text.includes("✗") && !text.includes("◐") && !text.includes("⏳"), text);
+});
+
+test("renderResult parallel finished with one failure: header is the failure icon, not in-progress ◐", () => {
+	const text = renderMultiCollapsed("parallel", [settledOk("scout"), settledFail("worker")]);
+	assert.ok(text.includes("✗"), `expected failure icons: ${text}`);
+	assert.ok(!text.includes("◐"), `a finished run must not use the in-progress header: ${text}`);
+	assert.match(text, /1\/2/);
+});
+
+test("renderResult chain mid-run: current step ⏳ rather than ✗, completed step ✓", () => {
+	const text = renderMultiCollapsed("chain", [{ ...settledOk("scout"), step: 1 }, liveTask("worker")], { isPartial: true });
+	assert.ok(text.includes("⏳"), text);
+	assert.ok(text.includes("✓"), text);
+	assert.ok(!text.includes("✗"), `chain mid-run must not read as failure: ${text}`);
+	assert.match(text, /Step 1/);
+});
+
+function acceptedChildrenText(details: any, expanded: boolean): string {
+	const out: any = delegateTool.renderResult(
+		{ content: [{ type: "text", text: "raw acceptance text" }], details },
+		{ expanded },
+		passthroughTheme,
+		undefined,
+	);
+	return out.children.map((c: any) => c.text ?? "").join("\n");
+}
+
+test("renderResult accepted collapsed: per-run headers, no task, no boilerplate", () => {
+	const text = acceptedChildrenText(
+		{ mode: "accepted", results: [], accepted: [{ runId: 7, agent: "scout", task: "the whole task text" }] },
+		false,
+	);
+	assert.ok(text.includes("Run 7 — scout"), text);
+	assert.ok(text.includes("accepted"), text);
+	assert.ok(!text.includes("the whole task text"), `collapsed must not show the task: ${text}`);
+	assert.ok(!text.includes("Results are delivered automatically"), `collapsed must not show the boilerplate: ${text}`);
+});
+
+test("renderResult accepted expanded: whole task, no boilerplate", () => {
+	const longTask = "do the thing ".repeat(30); // far past the old 40-char preview
+	const text = acceptedChildrenText(
+		{ mode: "accepted", results: [], accepted: [{ runId: 7, agent: "scout", task: longTask }] },
+		true,
+	);
+	assert.ok(text.includes(longTask), "expanded must show the task untruncated");
+	assert.ok(!text.includes("Results are delivered automatically"), "the no-poll note is model-facing only, never rendered");
+});
+
+test("renderResult expanded parallel mid-run: no failure icon while tasks are working", () => {
+	const out = delegateTool.renderResult(
+		{ content: [], details: { mode: "parallel", results: [liveTask("scout"), liveTask("worker")] } },
+		{ expanded: true, isPartial: true },
+		passthroughTheme,
+		undefined,
+	);
+	const flat = JSON.stringify(out);
+	assert.ok(!flat.includes("✗"), `expanded running view must not show failure icons: ${flat}`);
+	assert.ok((flat.match(/⏳/g) || []).length >= 2, `expected per-task in-progress icons: ${flat}`);
+});
+
+// ── parallelProgress: every slot is either done or running ──────────────────
+
+test("parallelProgress: fresh placeholders count as running (was: neither done nor running)", () => {
+	assert.equal(parallelProgress([liveTask("scout"), liveTask("worker")]), "Parallel: 0/2 done, 2 running...");
+});
+
+test("parallelProgress: mixed finished and running", () => {
+	assert.equal(parallelProgress([settledOk("scout"), liveTask("worker")]), "Parallel: 1/2 done, 1 running...");
+});
+
+test("parallelProgress: a settled failure is done, not running", () => {
+	assert.equal(parallelProgress([settledFail("scout"), liveTask("worker")]), "Parallel: 1/2 done, 1 running...");
+});
+
+test("parallelProgress: finished run reports no running tasks", () => {
+	assert.equal(parallelProgress([settledOk("a"), settledOk("b")]), "Parallel: 2/2 done, 0 running...");
+});
+
+// ── Async dispatch (ADR-0014): acceptance-first, delivery, cancel/status ────
+// The runner is injected (deps.runAgent) so tests drive dispatch without
+// spawning real pi processes. registerKill mirrors runSingleAgent's contract:
+// the runner registers its kill handle as soon as the child exists.
+
+type RecordedCall = {
+	agent: string;
+	task: string;
+	maxTurns: number;
+	blockedTools: string[];
+	killCount: number;
+};
+
+type DispatchHarness = {
+	calls: RecordedCall[];
+	sendCalls: Array<{ msg: any; opts: any }>;
+	renderers: Array<{ type: string; fn: any }>;
+	idleCalls(): number;
+	execute(params: any, signal?: AbortSignal): Promise<any>;
+	emit(event: string, payload?: any): Promise<any>;
+	ctx: any;
+	discover(sessionFile?: string): any;
+	transcript: any[];
+	widgets: string[][];
+	resolveRun(overrides?: Partial<SingleResult>): void;
+	drain(): Promise<void>;
+};
+
+function dispatchHarness(agents: any[] | null = null, depsOverride: Record<string, unknown> = {}, host: { holdDelivery?: boolean; sendMessage?: (msg: any) => void } = {}): DispatchHarness {
+	let captured: any;
+	const fleet =
+		agents ??
+		[
+			{
+				name: "scout",
+				description: "Fast read-only recon",
+				tools: ["read", "grep"],
+				source: "builtin",
+				systemPrompt: "Scout prompt",
+				filePath: "builtin:scout",
+			},
+			{
+				name: "worker",
+				description: "General implementation agent",
+				source: "project",
+				systemPrompt: "Worker prompt",
+				filePath: "project:worker",
+			},
+		];
+	const calls: RecordedCall[] = [];
+	const sendCalls: any[] = [];
+	const renderers: Array<{ type: string; fn: any }> = [];
+	const handlers: Record<string, Array<(event: any, ctx: any) => any>> = {};
+	const transcript: any[] = [];
+	const widgets: string[][] = [];
+	const bus: Record<string, (request: any) => void> = {};
+	const ctx = { isIdle: () => true, sessionManager: { getBranch: () => transcript, getSessionFile: () => "parent.jsonl" }, ui: { setWidget: (_id: string, lines: string[]) => widgets.push(lines) } };
+	let idle = 0;
+	const pending = new Map<number, (result: SingleResult) => void>();
+	let nextRunKey = 1;
+	const runAgent = (call: any) => {
+		const record: RecordedCall = { agent: call.agentName, task: call.task, maxTurns: call.maxTurns, blockedTools: call.blockedTools, killCount: 0 };
+		call.registerKill?.(() => record.killCount++);
+		calls.push(record);
+		const key = nextRunKey++;
+		return new Promise<SingleResult>((resolve) => {
+			pending.set(key, resolve);
+		});
+	};
+	registerDelegateTool(
+		{
+			events: { on: (name: string, handler: any) => { bus[name] = handler; } },
+			registerTool: (t: any) => (captured = t),
+			sendMessage: (msg: any, opts: any) => {
+				sendCalls.push({ msg, opts });
+				if (host.sendMessage) return host.sendMessage(msg);
+				if (!host.holdDelivery) transcript.push({ type: "custom_message", ...msg });
+			},
+			registerMessageRenderer: (type: string, fn: any) => renderers.push({ type, fn }),
+			on: (name: string, handler: any) => { (handlers[name] ??= []).push(handler); },
+			getAllTools: () => [],
+		} as any,
+		{
+			getAgents: () => fleet,
+			getDispatchDefaults: () => ({}),
+			getCwd: () => process.cwd(),
+			getSignal: () => undefined,
+			onIdle: () => idle++,
+			getOrchestratorMode: () => "engaged",
+			runAgent,
+			...depsOverride,
+		} as any,
+	);
+	const drain = () => new Promise<void>((resolve) => setImmediate(resolve));
+	return {
+		calls,
+		sendCalls,
+		renderers,
+		idleCalls: () => idle,
+		transcript,
+		widgets,
+		async execute(params: any, signal?: AbortSignal) {
+			return await captured.execute("call-1", params, signal, undefined, { ...ctx, isIdle: () => ctx.isIdle() });
+		},
+		ctx,
+		discover(sessionFile = "parent.jsonl") {
+			let provider: any;
+			bus["async-work:providers:v1"]?.({ sessionFile, add: (value: any) => { provider = value; } });
+			return provider;
+		},
+		async emit(event: string, payload: any = {}) {
+			let result;
+			for (const handler of handlers[event] ?? []) result = await handler(payload, { ...ctx, isIdle: () => ctx.isIdle() }) ?? result;
+			return result;
+		},
+		/** Resolve the oldest unsettled run (dispatch order). */
+		resolveRun(overrides: Partial<SingleResult> = {}) {
+			const key = pending.keys().next().value as number;
+			const resolve = pending.get(key)!;
+			pending.delete(key);
+			resolve({
+				agent: "scout",
+				agentSource: "builtin",
+				task: "recon auth",
+				exitCode: 0,
+				completedNormally: true,
+				messages: [{ role: "assistant", content: [{ type: "text", text: "recon done" }] }] as Message[],
+				stderr: "",
+				usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 1, toolTurns: 1 },
+				...overrides,
+			} as SingleResult);
+		},
+		drain,
+	};
+}
+
+const flushD = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+for (const mode of ["auto", "engaged"] as const) {
+	test(`child tool policy: ${mode} dispatch applies global blocks plus agent blocks`, async () => {
+		const h = dispatchHarness([{
+			name: "scout", description: "Recon", source: "builtin",
+			systemPrompt: "Scout prompt", filePath: "builtin:scout",
+			blockTools: ["agent_only", "shared"],
+		}], {
+			getOrchestratorMode: () => mode,
+			getChildBlockedTools: () => ["global_only", "shared"],
+		});
+		await h.execute({ agent: "scout", task: "check child policy" });
+		assert.equal(h.calls.length, 1);
+		assert.deepEqual(h.calls[0].blockedTools, ["global_only", "shared", "agent_only"],
+			"global blocks must stay active regardless of engagement; agents can only add blocks");
+		h.resolveRun();
+		await flushD();
+	});
+}
+
+test("Atelier fleet observer: projects queue, execution, retained/failed delivery and teardown without owning runs", async () => {
+	const panels: string[][] = [];
+	const panel = createFleetPanel({
+		on: () => () => {},
+		emit(_channel, data: any) {
+			if (data.type !== "register") return;
+			assert.equal("keyValues" in data.panel, false, "sidebar must not prefer label/value rendering");
+			panels.push(data.panel.rows.map((row: string | { text: string }) => typeof row === "string" ? row : row.text));
+		},
+	}, () => renderFleetPanel(fleetTasksSnapshot(), ["scout", "worker"], "engaged"));
+	const h = dispatchHarness(null, {
+		getMaxConcurrency: () => 1,
+		onFleetChange: () => panel.update(),
+	}, { sendMessage: () => { throw new Error("delivery failed"); } });
+	panel.start();
+	try {
+		h.ctx.isIdle = () => false;
+		await h.execute({ tasks: [{ agent: "scout", task: "first" }, { agent: "worker", task: "second" }] });
+		assert.match(panels.at(-1)![1], /1 running · 1 queued/);
+		assert.ok(panels.at(-1)!.includes("worker · queued"));
+		assert.equal(panels.at(-1)!.slice(0, 2).join(" · "), h.widgets.at(-1)![0], "shared state, separate header layout");
+		assert.ok(!panels.at(-1)!.some((row) => row.includes("first") || row.includes("second")), "sidebar omits task excerpts");
+		h.resolveRun();
+		await flushD();
+		assert.match(panels.at(-1)![1], /1 running · 1 delivery pending/);
+		assert.ok(panels.at(-1)!.includes("scout · result pending"));
+		h.resolveRun();
+		await flushD();
+		assert.match(panels.at(-1)![1], /0 running · 2 delivery pending/);
+		h.ctx.isIdle = () => true;
+		await h.emit("agent_settled");
+		await flushD();
+		assert.match(panels.at(-1)![1], /2 delivery failed/);
+		assert.ok(panels.at(-1)!.includes("worker · delivery failed"));
+		assert.equal(h.calls.length, 2, "display changes never rerun Workers");
+		await h.emit("session_shutdown");
+		assert.deepEqual(panels.at(-1), ["ENGAGED · idle", "• scout", "• worker"]);
+	} finally { panel.dispose(); await h.emit("session_shutdown"); }
+});
+
+test("fleet observer receives live Worker turn/context/token progress", async () => {
+	let progress: any;
+	let complete: any;
+	const projections: string[][] = [];
+	const h = dispatchHarness(null, {
+		runAgent: (options: any) => {
+			progress = options.onProgress;
+			return new Promise<SingleResult>((resolve) => { complete = resolve; });
+		},
+		onFleetChange: () => projections.push(renderFleetPanel(fleetTasksSnapshot(), ["scout"], "engaged").rows.map((row) => row.text)),
+	});
+	await h.execute({ agent: "scout", task: "live progress" });
+	progress({ turns: 4, toolTurns: 3, contextTokens: 512, inputTokens: 120, outputTokens: 30 });
+	assert.equal(projections.at(-1)![2], "scout · turn 3");
+	assert.equal(projections.at(-1)![3], "ctx 512 · ↑120 ↓30");
+	complete(singleResult({ completedNormally: true, exitCode: 0 }));
+	await flushD();
+	await h.emit("session_shutdown");
+});
+
+test("manual widget visibility never suppresses sidebar updates or Result delivery", async () => {
+	let visible = false;
+	const projections: string[][] = [];
+	const h = dispatchHarness(null, {
+		getShowFleetWidget: () => visible,
+		onFleetChange: () => projections.push(renderFleetPanel(fleetTasksSnapshot(), ["scout"], "auto").rows.map((row) => row.text)),
+	});
+	const accepted = await h.execute({ agent: "scout", task: "retained in transcript" });
+	assert.equal(accepted.details.mode, "accepted");
+	assert.ok(h.widgets.length > 0);
+	assert.equal(h.widgets.filter((lines) => lines !== undefined).length, 0, "running updates must not resurrect a disabled widget");
+	assert.equal(projections.at(-1)![0], "⏳ Fleet · single");
+	assert.equal(projections.at(-1)![1], "1 running");
+	h.resolveRun();
+	await flushD();
+	assert.equal(h.sendCalls.length, 1);
+	assert.equal(h.sendCalls[0].msg.display, true, "the transcript Result remains visible");
+	assert.equal(h.widgets.filter((lines) => lines !== undefined).length, 0, "delivery updates respect the same setting");
+	visible = true;
+	await h.execute({ agent: "scout", task: "detailed fallback" });
+	assert.match(h.widgets.at(-1)![0], /⏳ Fleet · single · 1 running/);
+	assert.ok(h.widgets.at(-1)!.some((row) => row.includes("detailed fallback")));
+	h.resolveRun();
+	await flushD();
+	await h.emit("session_shutdown");
+});
+
+test("throwing fleet observer cannot prevent widget updates or Result delivery", async () => {
+	const h = dispatchHarness(null, { onFleetChange: () => { throw new Error("optional UI failed"); } });
+	await h.execute({ agent: "scout", task: "recon auth" });
+	assert.match(h.widgets.at(-1)![0], /1 running/);
+	h.resolveRun();
+	await flushD();
+	assert.equal(h.sendCalls.length, 1);
+	await h.emit("session_shutdown");
+});
+
+test("async default: single dispatch returns an acceptance immediately (runner not awaited)", async () => {
+	const h = dispatchHarness();
+	const out = await h.execute({ agent: "scout", task: "recon auth" });
+	assert.match(out.content[0].text, /Accepted/i);
+	assert.match(out.content[0].text, /run \d+/i);
+	assert.match(out.content[0].text, /scout/);
+	assert.equal(out.details.mode, "accepted");
+	assert.equal(h.calls.length, 1, "runner started exactly once");
+	assert.equal(h.calls[0].agent, "scout");
+	assert.equal(h.sendCalls.length, 0, "nothing delivered before settle");
+	assert.equal(h.idleCalls(), 0, "fleet is live — no idle");
+
+	// Settle → delivery arrives; the acceptance already returned.
+	h.resolveRun();
+	await flushD();
+	assert.equal(h.sendCalls.length, 1, "settled result is pushed into the conversation");
+	assert.equal(h.idleCalls(), 1, "last run settled → idle");
+});
+
+test("async delivery: sendMessage carries a custom run-result message with display + details, triggerTurn on", async () => {
+	const h = dispatchHarness();
+	await h.execute({ agent: "scout", task: "recon auth" });
+	h.resolveRun({ stopReason: "end" });
+	await flushD();
+	const { msg, opts } = h.sendCalls[0];
+	assert.match(msg.customType, /run-result|orchestrator/i);
+	assert.equal(msg.display, true);
+	assert.equal(msg.details.mode, "single");
+	assert.equal(msg.details.results.length, 1);
+	assert.ok(msg.content[0].text.includes("recon done"), "output reaches the model");
+	assert.equal(opts.triggerTurn, true);
+	assert.equal(opts.deliverAs, "followUp");
+});
+
+test("a message renderer is registered for the run-result message type", async () => {
+	const h = dispatchHarness();
+	assert.equal(h.renderers.length, 1);
+	assert.match(h.renderers[0].type, /run-result|orchestrator/i);
+	// The renderer works on a delivered message's details (smoke).
+	const component: any = h.renderers[0].fn(
+		{ customType: h.renderers[0].type, content: [{ type: "text", text: "x" }], display: true, details: { mode: "single", results: [singleResult({ completedNormally: true, exitCode: 0 })] } },
+		{ expanded: false },
+		passthroughTheme,
+	);
+	assert.ok(component, "renderer returns a component");
+});
+
+test("async:false is the blocking escape hatch (final result, no push delivery)", async () => {
+	const h = dispatchHarness();
+	const outPromise = h.execute({ agent: "scout", task: "recon auth", async: false });
+	assert.equal(h.calls.length, 1);
+	h.resolveRun();
+	const out = await outPromise;
+	assert.match(out.content[0].text, /recon done/);
+	assert.equal(out.details.mode, "single");
+	assert.equal(out.details.results.length, 1);
+	assert.equal(h.sendCalls.length, 0, "blocking mode returns in the tool result, never pushes");
+});
+
+test("config async:false makes blocking the default; async:true overrides (ADR-0016)", async () => {
+	const h = dispatchHarness(null, { getAsyncDefault: () => false });
+	const outPromise = h.execute({ agent: "scout", task: "recon auth" });
+	assert.equal(h.calls.length, 1, "dispatch started immediately under the blocking default");
+	h.resolveRun();
+	const out = await outPromise;
+	assert.match(out.content[0].text, /recon done/, "tool call holds the final result");
+	assert.equal(out.details.mode, "single");
+	assert.equal(h.sendCalls.length, 0, "no push delivery for a blocking run");
+
+	// The per-call parameter overrides the config default.
+	const h2 = dispatchHarness(null, { getAsyncDefault: () => false });
+	const accepted = await h2.execute({ agent: "scout", task: "recon auth", async: true });
+	assert.match(accepted.content[0].text, /Accepted/i, "async: true fires and forgets despite the config");
+	assert.equal(h2.calls.length, 1);
+	h2.resolveRun();
+	await flushD();
+	assert.equal(h2.sendCalls.length, 1, "settled result pushed for the fire-and-forget run");
+});
+
+test("buildDelegateParams: async description reflects the configured default (ADR-0016)", () => {
+	const asyncSchema = (buildDelegateParams(["scout"], true).properties as any).async;
+	const blockingSchema = (buildDelegateParams(["scout"], false).properties as any).async;
+	assert.match(asyncSchema.description, /default true/);
+	assert.match(blockingSchema.description, /default false/);
+});
+
+test("promptGuidelines: mode-invariant, no config-derived or engaged-only text (ADR-0018)", () => {
+	const guidelines = buildDelegatePromptGuidelines();
+	assert.ok(guidelines.length > 0);
+	const text = guidelines.join("\n");
+	// Engaged-only concepts must never reach the always-on guidelines, or
+	// AUTO mode would be instructed as if it were an orchestrator.
+	assert.doesNotMatch(text, /orchestrator|allow-list|fleet/i);
+	// The dispatch default lives in the description and the `async` schema —
+	// the guidelines must not restate it or vary with the config (cache-prefix
+	// stability), so no `async` and no `by default` wording.
+	assert.doesNotMatch(text, /\basync\b|by default|default (true|false)/i);
+	assert.ok(guidelines.every((g) => g.length > 0 && g === g.trim()));
+	assert.equal(new Set(guidelines).size, guidelines.length, "no duplicate guidelines");
+	// Registration wiring: the definition pi receives carries the guidelines.
+	assert.deepEqual(delegateTool.promptGuidelines, guidelines);
+});
+
+test("chain + async:true is a validation error naming chain as always-blocking", async () => {
+	const h = dispatchHarness();
+	const out = await h.execute({ chain: [{ agent: "scout", task: "a" }], async: true });
+	assert.match(out.content[0].text, /chain/i);
+	assert.match(out.content[0].text, /blocking/i);
+	assert.equal(h.calls.length, 0, "no dispatch happened");
+});
+
+test("chain without async stays blocking (unchanged default for chains)", async () => {
+	const h = dispatchHarness();
+	const outPromise = h.execute({ chain: [{ agent: "scout", task: "step one" }, { agent: "worker", task: "then {previous}" }] });
+	h.resolveRun(); // step one settles
+	await flushD();
+	h.resolveRun(); // step two settles
+	const out = await outPromise;
+	assert.equal(h.calls.length, 2, "both steps ran in-process");
+	assert.equal(out.details.mode, "chain");
+	assert.equal(out.details.results.length, 2);
+	assert.equal(h.sendCalls.length, 0);
+});
+
+test("async parallel: acceptance lists every task with its own run id; each settle delivers", async () => {
+	const h = dispatchHarness();
+	const out = await h.execute({ tasks: [{ agent: "scout", task: "a" }, { agent: "worker", task: "b" }] });
+	assert.match(out.content[0].text, /Accepted/i);
+	const ids = [...out.content[0].text.matchAll(/run (\d+)/gi)].map((m) => m[1]);
+	assert.equal(ids.length, 2, "two run ids in the acceptance");
+	assert.equal(new Set(ids).size, 2, "run ids are unique per task");
+	assert.equal(h.calls.length, 2);
+	h.resolveRun();
+	h.resolveRun();
+	await flushD();
+	assert.equal(h.sendCalls.length, 2, "one delivery per task");
+});
+
+test("async parallel over the max still errors synchronously", async () => {
+	const h = dispatchHarness();
+	const tasks = Array.from({ length: 9 }, (_, i) => ({ agent: "scout", task: `t${i}` }));
+	const out = await h.execute({ tasks });
+	assert.match(out.content[0].text, /Max is 8/);
+	assert.equal(h.calls.length, 0);
+});
+
+test("async dispatch with an unknown agent is a synchronous validation error (never an acceptance)", async () => {
+	const h = dispatchHarness();
+	const out = await h.execute({ agent: "ghost", task: "boo" });
+	assert.match(out.content[0].text, /Unknown agent/i);
+	assert.equal(out.isError, true);
+	assert.equal(h.calls.length, 0, "no dispatch happened");
+	assert.equal(h.sendCalls.length, 0);
+});
+
+test("status action lists live runs (id, agent, task, elapsed); empty after settle", async () => {
+	const h = dispatchHarness();
+	await h.execute({ agent: "scout", task: "recon auth" });
+	const live = await h.execute({ action: "status" });
+	assert.match(live.content[0].text, /run \d+/);
+	assert.match(live.content[0].text, /scout/);
+	assert.match(live.content[0].text, /recon auth/);
+
+	h.resolveRun();
+	await flushD();
+	const empty = await h.execute({ action: "status" });
+	assert.match(empty.content[0].text, /no live runs/i);
+});
+
+test("cancel action: kills one live run; settle delivers cancelled=true", async () => {
+	const h = dispatchHarness();
+	const accepted = await h.execute({ agent: "scout", task: "recon auth" });
+	const runId = Number(/run (\d+)/i.exec(accepted.content[0].text)![1]);
+
+	const out = await h.execute({ action: "cancel", runId });
+	assert.equal(out.ok !== false, true);
+	assert.match(out.content[0].text, /cancel/i);
+	assert.equal(h.calls[0].killCount, 1, "the child received the kill");
+
+	h.resolveRun({ completedNormally: false, exitCode: 1 });
+	await flushD();
+	assert.equal(h.sendCalls.length, 1, "cancelled run still delivers its final state");
+	assert.match(h.sendCalls[0].msg.content[0].text, /cancel/i);
+});
+
+test("cancel with unknown run id errors informatively; missing runId errors informatively", async () => {
+	const h = dispatchHarness();
+	const unknown = await h.execute({ action: "cancel", runId: 424242 });
+	assert.match(unknown.content[0].text, /no live run/i);
+	const missing = await h.execute({ action: "cancel" });
+	assert.match(missing.content[0].text, /runId/i);
+});
+
+// ── resolveThinkingLevel (explicit beats inherited; two-tier pinning rule) ─
+
+test("resolveThinkingLevel: explicit thinking beats the parent level and crosses a pinned model", () => {
+	assert.equal(resolveThinkingLevel({ thinking: "low", model: "p/m" }, { thinkingLevel: "high" }), "low");
+	assert.equal(resolveThinkingLevel({ thinking: "off" }, { thinkingLevel: "high" }), "off");
+});
+
+test("resolveThinkingLevel: without explicit thinking, the parent level reaches only model-less agents", () => {
+	assert.equal(
+		resolveThinkingLevel({ thinking: undefined, model: "p/m" }, { thinkingLevel: "high" }),
+		undefined,
+		"pinned model: no inheritance (pi default applies)",
+	);
+	assert.equal(resolveThinkingLevel({ thinking: undefined }, { thinkingLevel: "high" }), "high", "model-less: inherits");
+	assert.equal(resolveThinkingLevel({ thinking: undefined }, {}), undefined, "no parent level: pi default");
+});
+
+// ── Shared-owner dispatch and delivery receipts ────────────────────────────
+
+test("async parallel starts four, queues four, and preserves FIFO across dispatch calls", async () => {
+	const h = dispatchHarness();
+	const accepted = await h.execute({ tasks: Array.from({ length: 8 }, (_, i) => ({ agent: "scout", task: `task ${i}` })) });
+	assert.equal(h.calls.length, 4);
+	assert.equal(accepted.details.accepted.filter((r: any) => r.state === "queued").length, 4);
+	await h.execute({ agent: "worker", task: "later dispatch" });
+	assert.equal(h.calls.length, 4);
+	for (let i = 0; i < 9; i++) { h.resolveRun(); await flushD(); }
+	assert.deepEqual(h.calls.map((r) => r.task), [...Array.from({ length: 8 }, (_, i) => `task ${i}`), "later dispatch"]);
+	assert.equal(h.sendCalls.length, 9);
+});
+
+test("configurable concurrency above four is honored, not hard-capped", async () => {
+	const h = dispatchHarness(null, { getMaxConcurrency: () => 6 });
+	await h.execute({ tasks: Array.from({ length: 8 }, (_, i) => ({ agent: "scout", task: String(i) })) });
+	assert.equal(h.calls.length, 6);
+	for (let i = 0; i < 8; i++) { h.resolveRun(); await flushD(); }
+});
+
+test("a parallel batch that exceeds shared remaining capacity is rejected without partial starts", async () => {
+	const h = dispatchHarness(null, { getMaxConcurrency: () => 1, getMaxQueuedRuns: () => 1 });
+	await h.execute({ agent: "scout", task: "already running" });
+	const rejected = await h.execute({ tasks: [{ agent: "scout", task: "a" }, { agent: "worker", task: "b" }] });
+	assert.equal(rejected.isError, true);
+	assert.match(rejected.content[0].text, /capacity exceeded/i);
+	assert.equal(h.calls.length, 1);
+	assert.equal(rejected.details.mode, "parallel");
+	h.resolveRun(); await flushD();
+});
+
+test("blocking dispatch shares async slots and returns its outcome without a second push", async () => {
+	const h = dispatchHarness(null, { getMaxConcurrency: () => 1 });
+	await h.execute({ agent: "scout", task: "async first" });
+	const blocking = h.execute({ agent: "worker", task: "blocking second", async: false });
+	assert.equal(h.calls.length, 1);
+	assert.match((await h.execute({ action: "status" })).content[0].text, /queued/);
+	h.resolveRun(); await flushD();
+	assert.equal(h.calls.length, 2);
+	h.resolveRun();
+	assert.match((await blocking).content[0].text, /recon done/);
+	assert.equal(h.sendCalls.length, 1);
+});
+
+test("chain steps use the shared pool and substitute only the preceding completed output", async () => {
+	const h = dispatchHarness(null, { getMaxConcurrency: () => 1 });
+	await h.execute({ agent: "scout", task: "occupy slot" });
+	const chain = h.execute({ chain: [{ agent: "scout", task: "first" }, { agent: "worker", task: "then {previous}" }] });
+	assert.equal(h.calls.length, 1);
+	h.resolveRun(); await flushD();
+	assert.equal(h.calls[1].task, "first");
+	h.resolveRun({ messages: [{ role: "assistant", content: [{ type: "text", text: "first step output" }] }] as Message[] });
+	await flushD();
+	assert.equal(h.calls[2].task, "then first step output");
+	h.resolveRun();
+	assert.equal((await chain).details.results.length, 2);
+	assert.equal(h.sendCalls.length, 1, "only the unrelated async run pushes");
+});
+
+test("unexpected rejection after Accepted pushes a failed Result with the same run id", async () => {
+	const h = dispatchHarness(null, { runAgent: async () => { throw new Error("prompt tempfile failed"); } });
+	const accepted = await h.execute({ agent: "scout", task: "boot failure" });
+	await flushD();
+	assert.equal(accepted.details.mode, "accepted");
+	assert.equal(h.sendCalls.length, 1);
+	assert.equal(h.sendCalls[0].msg.details.runId, accepted.details.accepted[0].runId);
+	assert.match(h.sendCalls[0].msg.content[0].text, /failed/);
+	assert.match(h.sendCalls[0].msg.content[0].text, /prompt tempfile failed/);
+});
+
+test("unconfirmed delivery stays visible; manual retry never reruns the Worker", async () => {
+	const h = dispatchHarness(null, {}, { holdDelivery: true });
+	const accepted = await h.execute({ agent: "scout", task: "retain outcome" });
+	const id = accepted.details.accepted[0].runId;
+	h.resolveRun(); await flushD();
+	assert.match((await h.execute({ action: "status" })).content[0].text, /delivery-pending/);
+	assert.match(h.widgets.at(-1)![0], /0 running.*delivery pending/);
+	await h.emit("message_end", { message: h.sendCalls[0].msg });
+	await flushD();
+	assert.match((await h.execute({ action: "status" })).content[0].text, /delivery-pending/, "message_end alone is not append confirmation");
+	assert.equal(h.sendCalls.length, 1, "no blind retry after host events");
+	const retry = await h.execute({ action: "retry-delivery", runId: id });
+	assert.equal(retry.isError, undefined);
+	assert.match(retry.content[0].text, /may also arrive/);
+	assert.equal(h.calls.length, 1);
+	assert.equal(h.sendCalls.length, 2);
+	assert.equal(h.sendCalls[0].msg.details.deliveryId, h.sendCalls[1].msg.details.deliveryId);
+	h.transcript.push({ type: "custom_message", ...h.sendCalls[0].msg });
+	await h.emit("agent_settled"); await flushD();
+	assert.match((await h.execute({ action: "status" })).content[0].text, /no live runs/i);
+	assert.equal((await h.execute({ action: "retry-delivery", runId: id })).isError, true);
+	assert.equal(h.sendCalls.length, 2, "confirmed outcomes are not resubmitted");
+});
+
+test("sender throw preserves a visible delivery error rather than dropping the Result", async () => {
+	const h = dispatchHarness(null, {}, { sendMessage: () => { throw new Error("host unavailable"); } });
+	const accepted = await h.execute({ agent: "scout", task: "retain failed push" });
+	h.resolveRun(); await flushD();
+	const status = (await h.execute({ action: "status" })).content[0].text;
+	assert.match(status, /delivery-failed/);
+	assert.match(status, /host unavailable/);
+	await flushD();
+	assert.equal(h.sendCalls.length, 1);
+	assert.equal((await h.execute({ action: "retry-delivery", runId: accepted.details.accepted[0].runId })).isError, undefined);
+	assert.equal(h.calls.length, 1);
+	assert.equal(h.sendCalls.length, 2);
+});
+
+test("queued Cancel delivers cancellation without a process start", async () => {
+	const h = dispatchHarness(null, { getMaxConcurrency: () => 1 });
+	await h.execute({ agent: "scout", task: "running" });
+	const queued = await h.execute({ agent: "worker", task: "queued" });
+	const id = queued.details.accepted[0].runId;
+	await h.execute({ action: "cancel", runId: id });
+	assert.equal(h.calls.length, 1);
+	assert.equal(h.sendCalls[0].msg.details.cancelled, true);
+	assert.equal(h.sendCalls[0].msg.details.runId, id);
+	h.resolveRun(); await flushD();
+	assert.equal(h.calls.length, 1);
+});
+
+test("session teardown suppresses queued/running and retained pushes into the replacement session", async () => {
+	const h = dispatchHarness(null, { getMaxConcurrency: () => 1 }, { holdDelivery: true });
+	await h.execute({ agent: "scout", task: "retained" });
+	h.resolveRun(); await flushD();
+	await h.execute({ agent: "scout", task: "running" });
+	await h.execute({ agent: "worker", task: "queued" });
+	await h.emit("session_shutdown");
+	assert.equal(h.calls[1].killCount, 1);
+	await h.emit("session_start");
+	h.resolveRun(); await flushD();
+	assert.equal(h.calls.length, 2, "queued old-session work never launches");
+	assert.equal(h.sendCalls.length, 1, "old running work cannot push after teardown");
+	assert.match((await h.execute({ action: "status" })).content[0].text, /no live runs/i);
+});
+
+test("blocking AbortSignal stops the same owner, prevents later chain steps, and suppresses pushes", async () => {
+	const h = dispatchHarness();
+	const controller = new AbortController();
+	const chain = h.execute({ chain: [{ agent: "scout", task: "first" }, { agent: "worker", task: "must not start" }] }, controller.signal);
+	controller.abort();
+	assert.equal(h.calls[0].killCount, 1);
+	h.resolveRun();
+	const result = await chain;
+	assert.equal(result.isError, true);
+	assert.equal(h.calls.length, 1);
+	assert.equal(h.sendCalls.length, 0);
+});
+
+test("actual prompt-file write failure after Accepted is delivered and its temporary directory is removed", { timeout: 5000 }, async (t) => {
+	let writtenPath = "";
+	t.mock.method(fs.promises, "writeFile", async (file: any) => {
+		writtenPath = String(file);
+		throw new Error("simulated prompt filesystem failure");
+	});
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "owner-write-failure-"));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+	let receive!: (message: any) => void;
+	const delivered = new Promise<any>((resolve) => { receive = resolve; });
+	const h = dispatchHarness(null, {
+		getCwd: () => directory,
+		runAgent: (options: any) => runSingleAgent({
+			...options,
+			invocation: { command: process.execPath, argsPrefix: [path.resolve("tests/fixtures/rpc-child.mjs"), "success", directory] },
+		}),
+	}, { sendMessage: (message) => { receive(message); } });
+	const accepted = await h.execute({ agent: "scout", task: "fail before process launch" });
+	assert.equal(accepted.details.mode, "accepted");
+	const message = await delivered;
+	assert.equal(message.details.runId, accepted.details.accepted[0].runId);
+	assert.match(message.content[0].text, /simulated prompt filesystem failure/);
+	assert.equal(message.details.results[0].completedNormally, false);
+	assert.ok(writtenPath);
+	assert.equal(fs.existsSync(path.dirname(writtenPath)), false, "failure cleanup removes the directory even before the runner receives its path");
+	assert.equal(fs.existsSync(path.join(directory, "audit.json")), false, "no child was launched");
+});
+
+test("chain admission failure preserves completed outcomes when another dispatch wins the next slot", async () => {
+	const h = dispatchHarness(null, { getMaxConcurrency: () => 1, getMaxQueuedRuns: () => 0 });
+	const chain = h.execute({ chain: [{ agent: "scout", task: "first" }, { agent: "worker", task: "second {previous}" }] });
+	h.resolveRun({ messages: [{ role: "assistant", content: [{ type: "text", text: "FIRST OUTCOME" }] }] as Message[] });
+	// Owner settlement runs first; this admission wins the slot before the
+	// chain's await continuation can admit its next step.
+	const competitor = Promise.resolve().then(() => h.execute({ agent: "worker", task: "competing run" }));
+	const result = await chain;
+	assert.equal(result.isError, true);
+	assert.match(result.content[0].text, /capacity exceeded/i);
+	assert.deepEqual(h.calls.map((call) => call.task), ["first", "competing run"]);
+	assert.equal(result.details.results.length, 1);
+	assert.equal(result.details.results[0].completedNormally, true);
+	assert.equal(result.details.results[0].messages[0].content[0].text, "FIRST OUTCOME");
+	await competitor;
+	h.resolveRun(); await flushD();
+});
+
+test("shared wait discovery and committed group handoff survive fresh hook contexts", async () => {
+	const h = dispatchHarness();
+	assert.equal(h.discover(), undefined);
+	await h.emit("session_start");
+	assert.equal(h.discover("other.jsonl"), undefined);
+	const provider = h.discover();
+	assert.equal(provider.source, "agent");
+	const accepted = await h.execute({ tasks: [{ agent: "scout", task: "one" }, { agent: "worker", task: "two" }] });
+	const ids = accepted.details.accepted.map((run: any) => run.runId);
+	const lease = provider.claim(ids, "wait:test");
+	h.resolveRun(); h.resolveRun({ exitCode: 1, completedNormally: false, errorMessage: "fixture failure" });
+	const results = await lease.result;
+	assert.deepEqual(results.map((result: any) => result.id), ids);
+	for (const result of results) {
+		assert.deepEqual(Object.keys(result).sort(), ["content", "details", "id", "source"]);
+		assert.equal(result.source, "agent");
+		assert.equal(typeof result.content, "string");
+		assert.equal(typeof result.details, "object");
+	}
+	assert.equal(results[1].details.results[0].completedNormally, false);
+	lease.commit(); lease.commit(); lease.release();
+	await h.drain();
+	assert.equal(h.sendCalls.length, 0);
+	assert.match((await h.execute({ action: "status" })).content[0].text, /no live runs/);
+});
+
+test("busy outcomes append to boundary entries despite false pre-draft canContinue and await a receipt", async () => {
+	const h = dispatchHarness();
+	h.ctx.isIdle = () => false;
+	await h.execute({ agent: "scout", task: "busy" });
+	h.resolveRun(); await h.drain();
+	assert.equal(h.sendCalls.length, 0);
+	const prior = { type: "custom", customType: "existing", data: {} };
+	const entries = [prior];
+	for (const outcome of ["aborted", "error"]) assert.equal(await h.emit("agent_before_settle", { outcome, entries }), undefined);
+	const boundary = await h.emit("agent_before_settle", { outcome: "completed", entries, context: { canContinue: false, pendingMessages: [{ role: "user", content: "queued" }] } });
+	assert.equal(boundary.continue, true);
+	assert.deepEqual(entries, [prior], "input entries and queued messages are not mutated");
+	assert.equal(boundary.entries[0], prior);
+	assert.equal(boundary.entries.length, 2);
+	assert.match((await h.execute({ action: "status" })).content[0].text, /Runs \(1\)/);
+	assert.throws(() => h.discover().claim([boundary.entries[1].details.runId], "late"), /submitted/);
+	h.transcript.push(boundary.entries[1]);
+	await h.emit("message_end"); await h.drain();
+	assert.match((await h.execute({ action: "status" })).content[0].text, /no live runs/);
+});
+
+test("settled one-shot flush restores replaced drafts but never retries ambiguous native sends", async () => {
+	const h = dispatchHarness(null, {}, { holdDelivery: true });
+	h.ctx.isIdle = () => false;
+	await h.execute({ agent: "scout", task: "missing draft" });
+	h.resolveRun(); await h.drain();
+	await h.emit("agent_before_settle", { outcome: "completed", entries: [] });
+	// A later handler replaces the draft; no receipt exists. Host becomes idle after its notification.
+	await h.emit("agent_settled");
+	h.ctx.isIdle = () => true;
+	await h.drain();
+	assert.equal(h.sendCalls.length, 1);
+	await h.emit("agent_settled"); await h.drain();
+	assert.equal(h.sendCalls.length, 1);
+	assert.match((await h.execute({ action: "status" })).content[0].text, /Runs \(1\)/);
+	h.transcript.push({ type: "custom_message", ...h.sendCalls[0].msg });
+	await h.emit("turn_end"); await h.drain();
+	assert.match((await h.execute({ action: "status" })).content[0].text, /no live runs/);
+});
+
+test("late busy completion after pre-settle flushes once when the host becomes idle", async () => {
+	const h = dispatchHarness();
+	h.ctx.isIdle = () => false;
+	await h.execute({ agent: "scout", task: "late" });
+	assert.equal(await h.emit("agent_before_settle", { outcome: "completed", entries: [] }), undefined);
+	h.resolveRun(); await h.drain();
+	await h.emit("agent_settled");
+	h.ctx.isIdle = () => true;
+	await h.drain(); await h.drain();
+	assert.equal(h.sendCalls.length, 1);
+	assert.match((await h.execute({ action: "status" })).content[0].text, /no live runs/);
+});
+
+test("shared wait timeout release does not kill workers or shield them from parent Escape", async () => {
+	const h = dispatchHarness();
+	const accepted = await h.execute({ agent: "scout", task: "timeout" });
+	const ids = accepted.details.accepted.map((run: any) => run.runId);
+	const lease = h.discover().claim(ids, "timeout");
+	const releasedResult = lease.result.catch(() => {});
+	lease.release(); lease.release(); lease.commit();
+	assert.equal(h.calls[0].killCount, 0);
+	const reclaimed = h.discover().claim(ids, "again");
+	const rejected = assert.rejects(reclaimed.result, /stale session/);
+	await h.emit("agent_end", { messages: [{ role: "assistant", stopReason: "aborted" }] });
+	assert.equal(h.calls[0].killCount, 1);
+	h.resolveRun(); await rejected; await releasedResult;
+	reclaimed.commit(); reclaimed.release();
+	assert.equal(h.sendCalls.length, 0);
+});
+
+for (const event of ["session_start", "session_shutdown"]) {
+	test(`shared wait ${event} invalidates providers, leases, and scheduled idle flush`, async () => {
+		const h = dispatchHarness();
+		h.ctx.isIdle = () => false;
+		const accepted = await h.execute({ agent: "scout", task: "old session" });
+		const ids = accepted.details.accepted.map((run: any) => run.runId);
+		const provider = h.discover();
+		const lease = provider.claim(ids, "stale");
+		const rejected = assert.rejects(lease.result, /stale session/);
+		await h.emit("agent_settled");
+		await h.emit(event);
+		h.ctx.isIdle = () => true;
+		assert.throws(() => provider.claim(ids, "old"), /stale session/);
+		assert.equal(h.calls[0].killCount, 1);
+		h.resolveRun(); await rejected; await h.drain();
+		assert.doesNotThrow(() => { lease.release(); lease.commit(); });
+		assert.equal(h.sendCalls.length, 0);
+	});
+}

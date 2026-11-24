@@ -82,6 +82,7 @@ Each directory under `packages/` is an independently loadable, independently pub
 | Package | Purpose | Preview |
 | --- | --- | --- |
 | [pi-bg-bash](packages/pi-bg-bash) | Add background execution to the built-in bash/powershell tools | <a href="packages/pi-bg-bash"><img src="packages/pi-bg-bash/screenshot.png" width="280" alt="pi-bg-bash screenshot"></a> |
+| [pi-orchestrator](packages/pi-orchestrator) | Orchestrator mode: main agent delegates to a subagent fleet via `delegate` | <a href="packages/pi-orchestrator"><img src="packages/pi-orchestrator/screenshot.png" width="280" alt="pi-orchestrator screenshot"></a> |
 | [pi-wait](packages/pi-wait) | Join background jobs (shell:/agent:) with lease-based delivery | <a href="packages/pi-wait"><img src="packages/pi-wait/screenshot.png" width="280" alt="pi-wait screenshot"></a> |
 | [pi-codegraph](packages/pi-codegraph) | CodeGraph CLI adapter: explore tool plus index auto-init/sync | <a href="packages/pi-codegraph"><img src="packages/pi-codegraph/screenshot.png" width="280" alt="pi-codegraph screenshot"></a> |
 | [pi-zvec](packages/pi-zvec) | Workspace search via the zg CLI: exact, lexical, semantic, hybrid | <a href="packages/pi-zvec"><img src="packages/pi-zvec/screenshot.png" width="280" alt="pi-zvec screenshot"></a> |
@@ -124,7 +125,6 @@ Configuration paths are unchanged by packaging: for example, many adapters read 
 
 | Component | Relationship to this collection |
 | --- | --- |
-| [`@saifymatteo/pi-orchestrator`](https://github.com/saifymatteo/pi-orchestrator) | Separate package/repository; async-work coordination is an integration contract, not vendored code |
 | [`@saifymatteo/pi-atelier`](https://github.com/saifymatteo/pi-atelier) (fork of [michaelmjhhhh/pi-atelier](https://github.com/michaelmjhhhh/pi-atelier)) | Separate package; competing UI patches (including codeblock rendering) need integration testing |
 | [`@saifymatteo/pi-agent-ask`](https://github.com/saifymatteo/pi-agent-ask) (fork of [alexshpunt/pi-agent-ask](https://github.com/alexshpunt/pi-agent-ask)) | Separate package, loaded independently |
 | [`@saifymatteo/pi-x-ide`](https://github.com/saifymatteo/pi-x-ide) (fork of [balaenis/pi-x-ide](https://github.com/balaenis/pi-x-ide)) | Separate package, loaded independently; UI patches can overlap collection patches |

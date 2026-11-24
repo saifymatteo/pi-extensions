@@ -1,0 +1,923 @@
+/**
+ * Unit tests for the pure config helpers (ADR-0004 consequence: "Tests must
+ * cover tool discovery"). Runs on Node's built-in test runner with type
+ * stripping; the pi package import is redirected to a stub via the resolve
+ * hook in ../resolve-stub-hook.mjs (see ../register-stubs.mjs).
+ *
+ * Run: npm test  (or: node --test --experimental-strip-types --import ./tests/register-stubs.mjs tests/)
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import * as jsonc from "jsonc-parser";
+
+import {
+	builtinThinkingOverrides,
+	discoverKeptTools,
+	effectiveKeepTools,
+	getConfigPath,
+	loadConfig,
+	parseThinkingLevel,
+	saveConfig,
+	toolIsKept,
+	toolMatchesAnyMatcher,
+	updateKeepToolOverrides,
+} from "../src/config.ts";
+
+const packageVersion = JSON.parse(fs.readFileSync("package.json", "utf8")).version;
+const expectedSchemaUrl = `https://cdn.jsdelivr.net/npm/@saifymatteo/pi-orchestrator@${packageVersion}/schemas/orchestrator.schema.json`;
+
+// ── loadConfig / maxTurns validation ────────────────────────────────────────
+
+function withConfigFile(body: Record<string, unknown> | null, fn: () => unknown): unknown {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-orch-config-"));
+	const prev = process.env.PI_ORCH_TEST_AGENT_DIR;
+	process.env.PI_ORCH_TEST_AGENT_DIR = dir;
+	try {
+		if (body !== null) fs.writeFileSync(path.join(dir, "orchestrator.json"), JSON.stringify(body), "utf-8");
+		return fn();
+	} finally {
+		if (prev === undefined) delete process.env.PI_ORCH_TEST_AGENT_DIR;
+		else process.env.PI_ORCH_TEST_AGENT_DIR = prev;
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+test("loadConfig: maxTurns rejects '30' (string), 0 and 12.5, falls back to default 50", () => {
+	for (const bad of ["30", 0, 12.5]) {
+		withConfigFile({ maxTurns: bad }, () => {
+			assert.equal(loadConfig().maxTurns, 50, `maxTurns=${JSON.stringify(bad)} must fall back to 50`);
+		});
+	}
+});
+
+test("loadConfig: maxTurns accepts a positive integer", () => {
+	withConfigFile({ maxTurns: 7 }, () => {
+		assert.equal(loadConfig().maxTurns, 7);
+	});
+});
+
+test("loadConfig: run limits default when omitted and reject invalid values without coercion", () => {
+	for (const [key, fallback] of [["maxConcurrency", 4], ["maxQueuedRuns", 32]] as const) {
+		withConfigFile({}, () => assert.equal(loadConfig()[key], fallback));
+		for (const bad of ["7", "", true, false, null, [], {}, -1, -0.5, 1.5, NaN, Infinity, -Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+			// JSON.stringify encodes NaN/Infinity as null; overflow literals below
+			// additionally exercise non-finite numbers produced by the JSONC parser.
+			withConfigFile({ enabled: false, [key]: bad }, () => {
+				const config = loadConfig();
+				assert.equal(config[key], fallback, `${key}=${String(bad)}`);
+				assert.equal(config.enabled, false, "invalid limits must not reset other settings");
+			});
+		}
+		for (const literal of ["1e400", "-1e400"]) {
+			withConfigFiles({ "orchestrator.jsonc": `{"enabled":false,"${key}":${literal}}` }, () => {
+				assert.equal(loadConfig()[key], fallback);
+				assert.equal(loadConfig().enabled, false);
+			});
+		}
+	}
+	withConfigFile({ maxConcurrency: 0 }, () => assert.equal(loadConfig().maxConcurrency, 4));
+});
+
+test("loadConfig: run limits accept safe integers up to MAX_SAFE_INTEGER and queue zero", () => {
+	for (const value of [1, 100_000, Number.MAX_SAFE_INTEGER]) {
+		withConfigFile({ maxConcurrency: value, maxQueuedRuns: value }, () => {
+			assert.equal(loadConfig().maxConcurrency, value);
+			assert.equal(loadConfig().maxQueuedRuns, value);
+		});
+	}
+	withConfigFile({ maxQueuedRuns: 0 }, () => assert.equal(loadConfig().maxQueuedRuns, 0));
+});
+
+test("saveConfig: run limits survive comment-preserving round trips, including a disabled queue", () => {
+	withConfigFiles({ "orchestrator.jsonc": '{\n// preserve this comment\n"maxTurns": 20\n}' }, () => {
+		for (const maxQueuedRuns of [0, 64, Number.MAX_SAFE_INTEGER]) {
+			const config = loadConfig();
+			config.maxConcurrency = Number.MAX_SAFE_INTEGER;
+			config.maxQueuedRuns = maxQueuedRuns;
+			saveConfig(config);
+			assert.deepEqual(loadConfig(), config);
+			const saved = fs.readFileSync(path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "orchestrator.jsonc"), "utf8");
+			assert.match(saved, /preserve this comment/);
+			assert.equal(jsonc.parse(saved).maxConcurrency, Number.MAX_SAFE_INTEGER);
+			assert.equal(jsonc.parse(saved).maxQueuedRuns, maxQueuedRuns);
+		}
+	});
+});
+
+test("loadConfig: stallTimeoutMs rejects '600' (string), -1 and 0, falls back to default 600000", () => {
+	for (const bad of ["600", -1, 0, Infinity, NaN]) {
+		withConfigFile({ stallTimeoutMs: bad }, () => {
+			assert.equal(loadConfig().stallTimeoutMs, 600000, `stallTimeoutMs=${String(bad)} must fall back to 600000`);
+		});
+	}
+});
+
+test("loadConfig: stallTimeoutMs accepts positive numbers including decimals (ms precision)", () => {
+	withConfigFile({ stallTimeoutMs: 600000 }, () => {
+		assert.equal(loadConfig().stallTimeoutMs, 600000);
+	});
+	withConfigFile({ stallTimeoutMs: 1234.5 }, () => {
+		assert.equal(loadConfig().stallTimeoutMs, 1234.5);
+	});
+});
+
+test("loadConfig: missing file yields full defaults", () => {
+	withConfigFile(null, () => {
+		const config = loadConfig();
+		assert.deepEqual(config, {
+			enabled: true,
+			showFleetWidget: true,
+			keepTools: ["delegate"],
+			keepToolOverrides: {},
+			childBlockedTools: [],
+			childExtensions: [],
+			forwardParentPrompt: true,
+			builtinFleet: true,
+			modelOverrides: {},
+			maxTurns: 50,
+			maxConcurrency: 4,
+			maxQueuedRuns: 32,
+			stallTimeoutMs: 600000,
+			childSessions: true,
+			async: true,
+		});
+	});
+});
+
+test("loadConfig: showFleetWidget defaults to true and accepts only booleans", () => {
+	for (const value of [undefined, null, "false", "true", "", 0, 1, [], {}]) {
+		withConfigFile({ enabled: false, showFleetWidget: value }, () => {
+			const config = loadConfig();
+			assert.equal(config.showFleetWidget, true, `showFleetWidget=${JSON.stringify(value)}`);
+			assert.equal(config.enabled, false, "invalid widget values must not reset other settings");
+		});
+	}
+	for (const showFleetWidget of [true, false]) {
+		withConfigFiles({ "orchestrator.jsonc": JSON.stringify({ showFleetWidget }) }, () => {
+			assert.equal(loadConfig().showFleetWidget, showFleetWidget);
+			saveConfig(loadConfig());
+			assert.equal(loadConfig().showFleetWidget, showFleetWidget, "widget preference survives saves");
+		});
+	}
+});
+
+test("loadConfig: normalizes exact override names and ignores invalid entries", () => {
+	withConfigFile({ keepToolOverrides: { FOO_A: "blocked", read: "allowed", "foo_*": "blocked", invalid: true, other: "allow", " ": "blocked" } }, () => {
+		assert.deepEqual(loadConfig().keepToolOverrides, { foo_a: "blocked", read: "allowed", "foo_*": "blocked" });
+		const config = loadConfig();
+		saveConfig(config);
+		assert.deepEqual(loadConfig().keepToolOverrides, config.keepToolOverrides);
+	});
+	for (const value of [undefined, null, [], "blocked", 42]) {
+		withConfigFile({ keepToolOverrides: value }, () => assert.deepEqual(loadConfig().keepToolOverrides, {}));
+	}
+	withConfigFile(null, () => {
+		loadConfig().keepToolOverrides.foo = "blocked";
+		assert.deepEqual(loadConfig().keepToolOverrides, {}, "default maps must not be shared");
+	});
+});
+
+test("exact override names survive save/load, including whitespace and __proto__", () => {
+	withConfigFile({ keepTools: ["*"], keepToolOverrides: JSON.parse('{"__proto__":"blocked"," foo":"blocked","FOO ":"allowed"}') }, () => {
+		const config = loadConfig();
+		assert.deepEqual(config.keepToolOverrides, JSON.parse('{"__proto__":"blocked"," foo":"blocked","foo ":"allowed"}'));
+		assert.equal(toolIsKept({ name: "__proto__" }, ["*"], config.keepToolOverrides), false);
+		assert.equal(toolIsKept({ name: " foo" }, ["*"], config.keepToolOverrides), false);
+		assert.equal(toolIsKept({ name: "foo" }, ["*"], config.keepToolOverrides), true);
+		saveConfig(config);
+		assert.deepEqual(loadConfig().keepToolOverrides, config.keepToolOverrides);
+	});
+});
+
+test("toolIsKept: exact overrides win matchers, never act as globs, and never block delegate", () => {
+	const overrides = { foo_a: "blocked", read: "allowed", "foo_*": "blocked", delegate: "blocked", constructor: "allowed" } as const;
+	assert.equal(toolIsKept({ name: "foo_a" }, ["foo_*"], overrides), false);
+	assert.equal(toolIsKept({ name: "FOO_A" }, ["foo_*"], overrides), false);
+	assert.equal(toolIsKept({ name: "foo_b" }, ["foo_*"], overrides), true);
+	assert.equal(toolIsKept({ name: "read" }, [], overrides), true);
+	assert.equal(toolIsKept({ name: "delegate" }, [], overrides), true);
+	assert.equal(toolIsKept({ name: "constructor" }, [], overrides), true);
+	assert.equal(toolIsKept({ name: "constructor" }, [], {}), false);
+	assert.equal(toolIsKept({ name: "__proto__" }, [], JSON.parse('{"__proto__":"allowed"}')), true);
+	const updated = updateKeepToolOverrides({ name: "__proto__" }, true, [], {});
+	assert.equal(toolIsKept({ name: "__proto__" }, [], updated), true);
+	assert.equal(Object.getPrototypeOf(updated), Object.prototype);
+});
+
+test("loadConfig: keepTools drops non-string/blank entries", () => {
+	withConfigFile({ keepTools: ["todo", "", 42, "  ", "hindsight_*"] }, () => {
+		assert.deepEqual(loadConfig().keepTools, ["todo", "hindsight_*"]);
+	});
+});
+
+test("loadConfig: childBlockedTools keeps valid matchers and drops non-string/blank entries", () => {
+	withConfigFile({ childBlockedTools: ["bash", "hindsight_*", "", 42, "  ", "ext:@l/p"] }, () => {
+		assert.deepEqual(loadConfig().childBlockedTools, ["bash", "hindsight_*", "ext:@l/p"]);
+	});
+});
+
+test("loadConfig: childBlockedTools missing or non-array falls back to []", () => {
+	withConfigFile(null, () => {
+		assert.deepEqual(loadConfig().childBlockedTools, []);
+	});
+	withConfigFile({ childBlockedTools: "bash" }, () => {
+		assert.deepEqual(loadConfig().childBlockedTools, []);
+	});
+});
+
+// ── ADR-0008 child spawn policy fields ─────────────────────────────────────
+
+test("loadConfig: childExtensions keeps valid strings and drops non-string/blank entries", () => {
+	withConfigFile({ childExtensions: ["./my-ext.ts", "", 42, "  ", "npm:@foo/bar"] }, () => {
+		assert.deepEqual(loadConfig().childExtensions, ["./my-ext.ts", "npm:@foo/bar"]);
+	});
+});
+
+test("loadConfig: childExtensions missing or non-array falls back to []", () => {
+	withConfigFile(null, () => {
+		assert.deepEqual(loadConfig().childExtensions, []);
+	});
+	withConfigFile({ childExtensions: "./my-ext.ts" }, () => {
+		assert.deepEqual(loadConfig().childExtensions, []);
+	});
+});
+
+// ── forwardParentPrompt (parent system prompt forwarding) ─────────────────
+
+test("loadConfig: forwardParentPrompt missing falls back to true", () => {
+	withConfigFile({}, () => {
+		assert.equal(loadConfig().forwardParentPrompt, true);
+	});
+	withConfigFile(null, () => {
+		assert.equal(loadConfig().forwardParentPrompt, true);
+	});
+});
+
+test("loadConfig: forwardParentPrompt explicit false is respected", () => {
+	withConfigFile({ forwardParentPrompt: false }, () => {
+		assert.equal(loadConfig().forwardParentPrompt, false);
+	});
+});
+
+test("loadConfig: forwardParentPrompt non-boolean ('yes') falls back to true", () => {
+	withConfigFile({ forwardParentPrompt: "yes" }, () => {
+		assert.equal(loadConfig().forwardParentPrompt, true);
+	});
+});
+
+// ── JSONC config (ADR-0015): comments, legacy fallback, migration ──────────
+
+/** Like withConfigFile but for explicit filename/content pairs. */
+function withConfigFiles(files: Record<string, string | null>, fn: () => unknown): unknown {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-orch-config-"));
+	const prev = process.env.PI_ORCH_TEST_AGENT_DIR;
+	process.env.PI_ORCH_TEST_AGENT_DIR = dir;
+	try {
+		for (const [name, body] of Object.entries(files)) {
+			if (body !== null) {
+				fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
+				fs.writeFileSync(path.join(dir, name), body, "utf-8");
+			}
+		}
+		return fn();
+	} finally {
+		if (prev === undefined) delete process.env.PI_ORCH_TEST_AGENT_DIR;
+		else process.env.PI_ORCH_TEST_AGENT_DIR = prev;
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+const JSONC_WITH_COMMENTS = `{
+	// Orchestrator configuration.
+	"enabled": true, // engaged by default
+	"maxTurns": 30, // per-subagent budget
+	"keepTools": [
+		"delegate", // always kept anyway
+		"todo",
+	],
+	"childBlockedTools": ["bash"],
+}`;
+
+const CONFIG_CANDIDATES = [
+	"project/.pi/extensions/orchestrator.jsonc",
+	"project/.pi/extensions/orchestrator.json",
+	"extensions/orchestrator.jsonc",
+	"extensions/orchestrator.json",
+	"orchestrator.jsonc",
+	"orchestrator.json",
+];
+
+test("config locations: directory precedence beats format, and JSONC wins within a directory", () => {
+	for (let i = 0; i < CONFIG_CANDIDATES.length; i++) {
+		for (let j = i + 1; j < CONFIG_CANDIDATES.length; j++) {
+			withConfigFiles({
+				[CONFIG_CANDIDATES[i]]: '{ "maxTurns": 7 }',
+				[CONFIG_CANDIDATES[j]]: '{ "maxTurns": 19, "enabled": false }',
+			}, () => {
+				const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
+				const cwd = path.join(dir, "project");
+				assert.equal(getConfigPath(cwd), path.join(dir, CONFIG_CANDIDATES[i].replace(/\.json$/, ".jsonc")));
+				const config = loadConfig(cwd);
+				assert.equal(config.maxTurns, 7, `${CONFIG_CANDIDATES[i]} must beat ${CONFIG_CANDIDATES[j]}`);
+				assert.equal(config.enabled, true, "lower-priority configs must not be merged");
+			});
+		}
+	}
+});
+
+test("config locations: extension configs load and save in place, migrating JSON only beside the source", () => {
+	for (const candidate of CONFIG_CANDIDATES.slice(0, 4)) {
+		const source = '{\n // keep this comment\n "maxTurns": 12, "myOwnNote": "keep me",\n}';
+		const fallback = '{ "maxTurns": 99 }';
+		withConfigFiles({ [candidate]: source, "orchestrator.json": fallback, "orchestrator.jsonc": fallback }, () => {
+			const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
+			const cwd = path.join(dir, "project");
+			assert.equal(loadConfig(cwd).maxTurns, 12);
+			saveConfig({ ...loadConfig(cwd), maxTurns: 21 }, cwd);
+			const preferred = path.join(dir, candidate.replace(/\.json$/, ".jsonc"));
+			const saved = fs.readFileSync(preferred, "utf8");
+			assert.match(saved, /keep this comment/);
+			assert.equal(jsonc.parse(saved).myOwnNote, "keep me");
+			assert.equal(jsonc.parse(saved).$schema, expectedSchemaUrl);
+			assert.equal(loadConfig(cwd).maxTurns, 21);
+			assert.equal(fs.existsSync(preferred.replace(/\.jsonc$/, ".json")), false);
+			for (const name of ["orchestrator.json", "orchestrator.jsonc"]) {
+				assert.equal(fs.readFileSync(path.join(dir, name), "utf8"), fallback, "unselected configs must be untouched");
+			}
+			saveConfig(loadConfig(cwd), cwd);
+			assert.equal(fs.readFileSync(preferred, "utf8"), saved, "subsequent saves stay in place and byte-stable");
+		});
+	}
+});
+
+test("config locations: empty extensions folders keep the original fresh-install destination", () => {
+	withConfigFiles({}, () => {
+		const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
+		const cwd = path.join(dir, "project");
+		for (const folder of [path.join(cwd, ".pi", "extensions"), path.join(dir, "extensions")]) {
+			fs.mkdirSync(folder, { recursive: true });
+		}
+		assert.equal(getConfigPath(cwd), path.join(dir, "orchestrator.jsonc"));
+		saveConfig({ ...loadConfig(cwd), maxTurns: 9 }, cwd);
+		assert.equal(loadConfig(cwd).maxTurns, 9);
+		assert.deepEqual(fs.readdirSync(path.join(dir, "extensions")), []);
+		assert.deepEqual(fs.readdirSync(path.join(cwd, ".pi", "extensions")), []);
+	});
+});
+
+test("config locations: malformed selected JSONC uses defaults, not lower-priority configs", () => {
+	withConfigFiles({
+		"project/.pi/extensions/orchestrator.jsonc": "{ broken",
+		"project/.pi/extensions/orchestrator.json": '{ "maxTurns": 10 }',
+		"extensions/orchestrator.jsonc": '{ "maxTurns": 20 }',
+		"orchestrator.jsonc": '{ "maxTurns": 30 }',
+	}, () => {
+		assert.equal(loadConfig(path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "project")).maxTurns, 50);
+	});
+});
+
+test("config locations: failed extension migration preserves both source and lower-priority config", () => {
+	for (const candidate of [CONFIG_CANDIDATES[1], CONFIG_CANDIDATES[3]]) {
+		const source = '{ "maxTurns": 12 }';
+		const fallback = '{ "maxTurns": 99 }';
+		withConfigFiles({ [candidate]: source, "orchestrator.json": fallback }, () => {
+			const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
+			const cwd = path.join(dir, "project");
+			fs.mkdirSync(path.join(dir, candidate.replace(/\.json$/, ".jsonc")));
+			assert.throws(() => saveConfig(loadConfig(cwd), cwd));
+			assert.equal(fs.readFileSync(path.join(dir, candidate), "utf8"), source);
+			assert.equal(fs.readFileSync(path.join(dir, "orchestrator.json"), "utf8"), fallback);
+		});
+	}
+});
+
+test("loadConfig: orchestrator.jsonc parses with comments and trailing commas (ADR-0015)", () => {
+	withConfigFiles({ "orchestrator.jsonc": JSONC_WITH_COMMENTS }, () => {
+		const config = loadConfig();
+		assert.equal(config.enabled, true);
+		assert.equal(config.maxTurns, 30);
+		assert.deepEqual(config.keepTools, ["delegate", "todo"]);
+		assert.deepEqual(config.childBlockedTools, ["bash"]);
+	});
+});
+
+test("loadConfig: async default is true when absent, honored when false (ADR-0016)", () => {
+	withConfigFiles({ "orchestrator.jsonc": JSON.stringify({ enabled: true }) }, () => {
+		assert.equal(loadConfig().async, true, "absent async falls back to the default");
+	});
+	withConfigFiles({ "orchestrator.jsonc": JSON.stringify({ async: false }) }, () => {
+		assert.equal(loadConfig().async, false, "explicit async: false is honored");
+	});
+	withConfigFiles({ "orchestrator.jsonc": JSON.stringify({ async: "no" }) }, () => {
+		assert.equal(loadConfig().async, true, "non-boolean async falls back to the default");
+	});
+});
+
+test("loadConfig: legacy orchestrator.json still works when no .jsonc exists (fallback)", () => {
+	withConfigFiles({ "orchestrator.json": JSON.stringify({ maxTurns: 12 }) }, () => {
+		assert.equal(loadConfig().maxTurns, 12);
+	});
+});
+
+test("loadConfig: orchestrator.jsonc wins over legacy orchestrator.json when both exist", () => {
+	withConfigFiles(
+		{
+			"orchestrator.json": JSON.stringify({ maxTurns: 12 }),
+			"orchestrator.jsonc": JSONC_WITH_COMMENTS,
+		},
+		() => {
+			assert.equal(loadConfig().maxTurns, 30);
+		},
+	);
+});
+
+test("loadConfig: malformed JSONC falls back to defaults without throwing", () => {
+	withConfigFiles({ "orchestrator.jsonc": "{ // comment with no closing brace" }, () => {
+		assert.equal(loadConfig().maxTurns, 50);
+		assert.equal(loadConfig().enabled, true);
+	});
+});
+
+test("saveConfig: comments survive a save that changes one key (round trip)", () => {
+	withConfigFiles({ "orchestrator.jsonc": JSONC_WITH_COMMENTS }, () => {
+		const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
+		const config = loadConfig();
+		config.maxTurns = 77;
+		saveConfig(config);
+
+		assert.equal(fs.existsSync(path.join(dir, "orchestrator.json")), false, "save must target .jsonc, not the legacy name");
+		const raw = fs.readFileSync(path.join(dir, "orchestrator.jsonc"), "utf-8");
+		assert.match(raw, /Orchestrator configuration/, "header comment must survive");
+		assert.match(raw, /engaged by default/, "inline comment must survive");
+		assert.match(raw, /always kept anyway/, "array element comment must survive");
+		assert.match(raw, /"maxTurns": 77/, "changed key must be persisted in the comment file itself");
+		assert.equal(loadConfig().maxTurns, 77);
+	});
+});
+
+test("saveConfig: legacy orchestrator.json migrates to orchestrator.jsonc on first save (removed only after write)", () => {
+	withConfigFiles({ "orchestrator.json": JSON.stringify({ maxTurns: 12 }) }, () => {
+		const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
+		const config = loadConfig();
+		config.maxTurns = 21;
+		saveConfig(config);
+
+		assert.equal(fs.existsSync(path.join(dir, "orchestrator.jsonc")), true, ".jsonc must be written");
+		assert.equal(fs.existsSync(path.join(dir, "orchestrator.json")), false, "legacy .json must be removed after successful write");
+		assert.equal(loadConfig().maxTurns, 21, "content carried over");
+	});
+});
+
+test("saveConfig: fresh install writes orchestrator.jsonc", () => {
+	withConfigFiles({}, () => {
+		const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
+		saveConfig({ ...loadConfig(), maxTurns: 9 });
+		assert.equal(fs.existsSync(path.join(dir, "orchestrator.jsonc")), true);
+		assert.equal(fs.existsSync(path.join(dir, "orchestrator.json")), false);
+		assert.equal(loadConfig().maxTurns, 9);
+	});
+});
+
+test("saveConfig: unknown extra keys in the user's file are preserved", () => {
+	withConfigFiles({ "orchestrator.jsonc": '{ "myOwnNote": "keep me", "maxTurns": 20 }' }, () => {
+		const config = loadConfig();
+		config.enabled = false;
+		saveConfig(config);
+		const raw = fs.readFileSync(path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "orchestrator.jsonc"), "utf-8");
+		assert.match(raw, /keep me/, "user's extra key must survive");
+		assert.equal(loadConfig().maxTurns, 20);
+		assert.equal(loadConfig().enabled, false);
+	});
+});
+
+test("saveConfig: fresh and legacy configs gain the installed version's editor schema on save", () => {
+	const scenarios: Array<Record<string, string | null>> = [{}, { "orchestrator.json": '{ "maxTurns": 12 }' }];
+	for (const files of scenarios) {
+		withConfigFiles(files, () => {
+			saveConfig(loadConfig());
+			const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
+			const document = jsonc.parse(fs.readFileSync(path.join(dir, "orchestrator.jsonc"), "utf8"));
+			assert.equal(document.$schema, expectedSchemaUrl);
+			assert.equal(fs.existsSync(path.join(dir, "orchestrator.json")), false);
+			assert.equal("$schema" in loadConfig(), false, "metadata is not a runtime setting");
+		});
+	}
+});
+
+test("saveConfig: refreshes only extension-owned schema URLs and preserves comments/custom references", () => {
+	const owned = "https://cdn.jsdelivr.net/npm/@saifymatteo/pi-orchestrator@0.1.0/schemas/orchestrator.schema.json";
+	const references = [
+		owned,
+		"https://cdn.jsdelivr.net/npm/@saifymatteo/pi-orchestrator@1.0.0-beta.1/schemas/orchestrator.schema.json",
+		expectedSchemaUrl,
+		"https://example.com/my.schema.json",
+		"./custom.schema.json",
+		`${owned}?custom=true`,
+		`${owned}.custom`,
+		owned.replace("pi-orchestrator@", "pi-orchestrator-extra@"),
+		owned.replace("cdn.jsdelivr.net", "example.com"),
+		null,
+	];
+	for (const [index, reference] of references.entries()) {
+		const source = `{\n  // Keep my reference annotation.\n  "$schema": ${JSON.stringify(reference)}, // Editor only.\n  "keepTools": ["delegate" /* Keep this too. */],\n  "myOwnNote": "keep me"\n}`;
+		withConfigFiles({ "orchestrator.jsonc": source }, () => {
+			const filename = path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "orchestrator.jsonc");
+			const config = loadConfig();
+			assert.equal(fs.readFileSync(filename, "utf8"), source, "loading must not rewrite the file");
+			assert.equal("$schema" in config, false);
+			saveConfig(config);
+			const text = fs.readFileSync(filename, "utf8");
+			const document = jsonc.parse(text);
+			assert.equal(document.$schema, index < 3 ? expectedSchemaUrl : reference);
+			assert.equal(document.myOwnNote, "keep me");
+			assert.match(text, /Keep my reference annotation/);
+			assert.match(text, /Editor only/);
+			assert.match(text, /Keep this too/);
+			saveConfig(loadConfig());
+			assert.equal(fs.readFileSync(filename, "utf8"), text, "a second save is byte-stable");
+		});
+	}
+});
+
+test("loadConfig: schema metadata neither changes normalization nor causes writes", () => {
+	withConfigFiles({}, () => {
+		loadConfig();
+		assert.deepEqual(fs.readdirSync(process.env.PI_ORCH_TEST_AGENT_DIR!), []);
+	});
+	const source = JSON.stringify({ $schema: "https://example.invalid/custom.json", maxTurn: 7, maxTurns: 0, async: false, keepTools: ["todo", 42, " "] });
+	withConfigFiles({ "orchestrator.jsonc": source }, () => {
+		const config = loadConfig();
+		assert.equal(config.maxTurns, 50);
+		assert.equal(config.async, false);
+		assert.deepEqual(config.keepTools, ["todo"]);
+		assert.equal("$schema" in config, false);
+		assert.equal("maxTurn" in config, false);
+		assert.equal(fs.readFileSync(path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "orchestrator.jsonc"), "utf8"), source);
+	});
+});
+
+test("saveConfig: failed JSONC write retains the original legacy file and its schema reference", () => {
+	const source = '{ "$schema": "./custom.schema.json", "maxTurns": 12 }';
+	withConfigFiles({ "orchestrator.json": source }, () => {
+		const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
+		fs.mkdirSync(path.join(dir, "orchestrator.jsonc")); // Force the destination write to fail.
+		assert.throws(() => saveConfig(loadConfig()));
+		assert.equal(fs.readFileSync(path.join(dir, "orchestrator.json"), "utf8"), source);
+	});
+});
+
+test("saveConfig: legacy cleanup failure warns without disguising a committed write as a failed save", () => {
+	withConfigFiles({ "orchestrator.jsonc": '{"keepTools":[]}' }, () => {
+		fs.mkdirSync(path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "orchestrator.json"));
+		const config = loadConfig();
+		config.keepToolOverrides = { foo_a: "blocked" };
+		const warnings = captureWarnings(() => saveConfig(config));
+		assert.deepEqual(loadConfig().keepToolOverrides, { foo_a: "blocked" });
+		assert.equal(warnings.length, 1);
+		assert.match(warnings[0], /saved.*legacy/i);
+	});
+});
+
+// ── thinking levels (builtinFleet object form; parseThinkingLevel) ─────────
+
+/** Capture console.error for warning assertions. */
+function captureWarnings(fn: () => void): string[] {
+	const lines: string[] = [];
+	const orig = console.error;
+	console.error = (...args: unknown[]) => lines.push(args.join(" "));
+	try {
+		fn();
+	} finally {
+		console.error = orig;
+	}
+	return lines;
+}
+
+const ALL_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+test("parseThinkingLevel: accepts all seven pi levels, undefined passes through as inherit", () => {
+	for (const level of ALL_LEVELS) {
+		assert.equal(parseThinkingLevel(level, "ctx"), level);
+	}
+	assert.equal(parseThinkingLevel(undefined, "ctx"), undefined);
+});
+
+test("parseThinkingLevel: invalid value warns once per context and returns undefined (inherit)", () => {
+	const errors = captureWarnings(() => {
+		assert.equal(parseThinkingLevel("loud", "file-a"), undefined);
+		assert.equal(parseThinkingLevel("loud", "ctx"), undefined);
+		assert.equal(parseThinkingLevel(3, "ctx"), undefined, "same context: no second warning");
+		assert.equal(parseThinkingLevel("high", "ctx"), "high", "valid value after a warning still parses");
+	});
+	assert.equal(errors.length, 2, JSON.stringify(errors));
+	assert.match(errors[0], /file-a.*"loud"/);
+	assert.match(errors[1], /ctx.*"loud"/, "the 3 must be deduped into the ctx warning");
+});
+
+test("loadConfig: builtinFleet object form parses per-builtin thinking and hidden entries", () => {
+	withConfigFile(
+		{
+			builtinFleet: {
+				scout: { thinking: "low" },
+				worker: { hidden: true },
+				planner: { thinking: "high", hidden: false },
+			},
+		},
+		() => {
+			assert.deepEqual(loadConfig().builtinFleet, {
+				scout: { thinking: "low" },
+				worker: { hidden: true },
+				planner: { thinking: "high", hidden: false },
+			});
+		},
+	);
+});
+
+test("loadConfig: builtinFleet object form drops invalid entries/fields with a warning, keeps the rest", () => {
+	const errors = captureWarnings(() => {
+		withConfigFile(
+			{ builtinFleet: { scout: { thinking: "loud" }, worker: 42, planner: { hidden: "yes" }, reviewer: {} } },
+			() => {
+				assert.deepEqual(loadConfig().builtinFleet, {
+					scout: {}, // invalid thinking dropped, entry survives as on+inherit
+					planner: {}, // invalid hidden dropped
+					reviewer: {},
+					// worker: 42 is not an object — entry dropped entirely
+				});
+			},
+		);
+	});
+	assert.equal(errors.length, 3, JSON.stringify(errors));
+	const all = errors.join("\n");
+	assert.match(all, /builtinFleet\.scout\.thinking/);
+	assert.match(all, /builtinFleet\.worker/);
+	assert.match(all, /builtinFleet\.planner\.hidden/);
+});
+
+test("loadConfig: builtinFleet non-boolean, non-object value warns and falls back to true", () => {
+	const errors = captureWarnings(() => {
+		withConfigFile({ builtinFleet: "yes" }, () => {
+			assert.equal(loadConfig().builtinFleet, true);
+		});
+	});
+	assert.match(errors.join("\n"), /builtinFleet/);
+});
+
+test("loadConfig: builtinFleet boolean forms keep working (true, false)", () => {
+	withConfigFile({ builtinFleet: false }, () => {
+		assert.equal(loadConfig().builtinFleet, false);
+	});
+	withConfigFile({ builtinFleet: true }, () => {
+		assert.equal(loadConfig().builtinFleet, true);
+	});
+});
+
+test("builtinThinkingOverrides: empty for boolean forms, name→level for object entries with thinking", () => {
+	assert.deepEqual(builtinThinkingOverrides(true), {});
+	assert.deepEqual(builtinThinkingOverrides(false), {});
+	assert.deepEqual(
+		builtinThinkingOverrides({ scout: { thinking: "low" }, worker: { hidden: true }, reviewer: {} }),
+		{ scout: "low" },
+	);
+});
+
+test("saveConfig: builtinFleet object form survives a comment-preserving round trip", () => {
+	withConfigFiles({ "orchestrator.jsonc": '{ "maxTurns": 20 }' }, () => {
+		const config = loadConfig();
+		config.builtinFleet = { worker: { hidden: true, thinking: "xhigh" } };
+		saveConfig(config);
+		assert.deepEqual(loadConfig().builtinFleet, { worker: { hidden: true, thinking: "xhigh" } });
+	});
+});
+
+// ── toolMatchesAnyMatcher ───────────────────────────────────────────────────
+
+test("toolMatchesAnyMatcher: exact matcher (case-insensitive)", () => {
+	const t = tool("todo", nm("some-pkg", "i.js"));
+	assert.equal(toolMatchesAnyMatcher(t, ["todo"]), "todo");
+	assert.equal(toolMatchesAnyMatcher(t, ["TODO"]), "TODO");
+	assert.equal(toolMatchesAnyMatcher(t, ["todo2"]), undefined);
+	assert.equal(toolMatchesAnyMatcher(t, []), undefined);
+});
+
+test("toolMatchesAnyMatcher: glob matcher on tool name", () => {
+	const t = tool("hindsight_recall", nm("@l/pi-hindsight", "i.js"));
+	assert.equal(toolMatchesAnyMatcher(t, ["hindsight_*"]), "hindsight_*");
+	assert.equal(toolMatchesAnyMatcher(t, ["hindsight_?ecall"]), "hindsight_?ecall");
+	assert.equal(toolMatchesAnyMatcher(t, ["hindsight_*_retain"]), undefined);
+});
+
+test("toolMatchesAnyMatcher: ext:<id> matcher matches whole owning package", () => {
+	const t = tool("hindsight_recall", nm("@l/pi-hindsight", "i.js"));
+	assert.equal(toolMatchesAnyMatcher(t, ["ext:@l/pi-hindsight"]), "ext:@l/pi-hindsight");
+	assert.equal(toolMatchesAnyMatcher(t, ["ext:@l/pi-hindsight2"]), undefined);
+	assert.equal(toolMatchesAnyMatcher(t, ["ext:pi-hindsight"]), undefined);
+});
+
+test("toolMatchesAnyMatcher: returns the first matching matcher", () => {
+	const t = tool("hindsight_recall", nm("@l/pi-hindsight", "i.js"));
+	assert.equal(toolMatchesAnyMatcher(t, ["nope", "hindsight_*", "ext:@l/pi-hindsight"]), "hindsight_*");
+	assert.equal(toolMatchesAnyMatcher(t, ["nope", "HINDSIGHT_RECALL", "hindsight_*"]), "HINDSIGHT_RECALL");
+});
+
+// ── discoverKeptTools ───────────────────────────────────────────────────────
+
+const tool = (name: string, sourceInfo?: { path?: string; source?: string }): { name: string; sourceInfo?: { path?: string; source?: string } } => ({ name, sourceInfo });
+// Synthetic extension paths rooted at the OS temp dir — the derivation only
+// reads the node_modules segment structure and the file basename.
+const nm = (pkg: string, rest: string) => ({ path: path.join(os.tmpdir(), "repo", "node_modules", pkg, rest) });
+const extPath = (file: string) => path.join(os.tmpdir(), "ext", file);
+
+test("discoverKeptTools: skips builtin, delegate, and unknown (no sourceInfo) tools", () => {
+	const discovered = discoverKeptTools(
+		[
+			tool("read", { path: "<builtin:core-tools>" }),
+			tool("bash", { path: "<builtin:bash>" }),
+			tool("delegate", nm("some-pkg", "index.js")),
+			tool("mystery"), // no sourceInfo → extensionId "unknown" → not auto-kept
+			tool("mystery2", {}), // empty sourceInfo → same
+		],
+		[],
+	);
+	assert.deepEqual(discovered, []);
+});
+
+test("discoverKeptTools: groups tools by extensionId and dedupes names", () => {
+	const discovered = discoverKeptTools(
+		[
+			tool("hindsight_recall", nm("@luxusai/pi-hindsight", "dist/index.js")),
+			tool("hindsight_retain", nm("@luxusai/pi-hindsight", "dist/retain.js")),
+			tool("hindsight_recall", nm("@luxusai/pi-hindsight", "dist/index.js")), // duplicate name
+			tool("foo_tool", nm("plain-pkg", "out/main.mjs")),
+		],
+		[],
+	);
+	assert.deepEqual(discovered, [
+		{ extensionId: "@luxusai/pi-hindsight", names: ["hindsight_recall", "hindsight_retain"], partial: false },
+		{ extensionId: "plain-pkg", names: ["foo_tool"], partial: false },
+	]);
+});
+
+test("discoverKeptTools: unscoped single-segment paths become their own extension", () => {
+	const discovered = discoverKeptTools([tool("x", { path: extPath("my-ext.ts") })], []);
+	assert.deepEqual(discovered, [{ extensionId: "my-ext", names: ["x"], partial: false }]);
+});
+
+test("discoverKeptTools: extension tool shadowing a builtin name is excluded (registerTool strips <builtin:> sourceInfo)", () => {
+	const discovered = discoverKeptTools(
+		[tool("bash", { path: extPath("compact-tools.ts") }), tool("my_custom_thing", { path: extPath("compact-tools.ts") })],
+		[],
+	);
+	// "bash" is skipped; only the non-colliding tool survives, under its own
+	// extension — and the group is marked partial (mixed-extension leak fix).
+	assert.deepEqual(discovered, [{ extensionId: "compact-tools", names: ["my_custom_thing"], partial: true }]);
+});
+
+test("discoverKeptTools: ext:<id> in configKeepTools re-enables a builtin-shadowing extension", () => {
+	const tools = [tool("bash", nm("@ff-labs/pi-fff", "dist/index.js")), tool("find", nm("@ff-labs/pi-fff", "dist/index.js"))];
+	assert.deepEqual(discoverKeptTools(tools, []), []);
+	assert.deepEqual(discoverKeptTools(tools, ["ext:@ff-labs/pi-fff"]), [
+		{ extensionId: "@ff-labs/pi-fff", names: ["bash", "find"], partial: false },
+	]);
+});
+
+test("discoverKeptTools: non-colliding extension tools are still auto-kept", () => {
+	const discovered = discoverKeptTools(
+		[tool("codegraph_search", nm("some-pkg", "index.js")), tool("hindsight_recall", nm("other-pkg", "index.js"))],
+		[],
+	);
+	assert.deepEqual(discovered, [
+		{ extensionId: "some-pkg", names: ["codegraph_search"], partial: false },
+		{ extensionId: "other-pkg", names: ["hindsight_recall"], partial: false },
+	]);
+});
+
+test("discoverKeptTools: builtin-shaped tools stay excluded even with ext: config matcher", () => {
+	// Overridden builtins lose their <builtin:> sourceInfo, but untouched builtins keep it:
+	// the "builtin" extension id is filtered before the config matcher could ever rescue them.
+	const discovered = discoverKeptTools([tool("read", { path: "<builtin:read>" })], ["ext:builtin"]);
+	assert.deepEqual(discovered, []);
+});
+
+test("discoverKeptTools: builtin-shadow exclusion is case-insensitive on tool name", () => {
+	const discovered = discoverKeptTools([tool("Bash", { path: extPath("compact-tools.ts") })], []);
+	assert.deepEqual(discovered, []);
+});
+
+// ── effectiveKeepTools (empty keepTools = auto-keep; non-empty = keep-list-only) ─
+
+test("effectiveKeepTools: non-empty keepTools is keep-list-only — discovered extensions are filtered out", () => {
+	const config = ["delegate", " ext:@s/p ", "todo"];
+	const discovered = [
+		{ extensionId: "@s/p", names: ["a"], partial: false },
+		{ extensionId: "q", names: ["b"], partial: false },
+	];
+	// Only the config matchers survive; @s/p stays via its explicit ext: matcher,
+	// q (discovered, not in keepTools) is NOT kept.
+	assert.deepEqual(effectiveKeepTools(config, discovered), ["delegate", "ext:@s/p", "todo"]);
+	// never mutates the config array
+	assert.deepEqual(config, ["delegate", " ext:@s/p ", "todo"]);
+});
+
+test("effectiveKeepTools: empty keepTools auto-keeps every discovered extension (ADR-0004)", () => {
+	const discovered = [
+		{ extensionId: "@s/p", names: ["a"], partial: false },
+		{ extensionId: "q", names: ["b"], partial: false },
+	];
+	assert.deepEqual(effectiveKeepTools([], discovered), ["ext:@s/p", "ext:q"]);
+	assert.deepEqual(effectiveKeepTools([], []), []);
+});
+
+test("effectiveKeepTools: ext: matcher keeps explicitly-listed extensions under keep-list-only", () => {
+	const config = ["ext:@l/p"];
+	const discovered = [
+		{ extensionId: "@l/p", names: ["x"], partial: false },
+		{ extensionId: "other", names: ["y"], partial: false },
+	];
+	const effective = effectiveKeepTools(config, discovered);
+	assert.deepEqual(effective, ["ext:@l/p"]);
+	assert.equal(toolIsKept(tool("x", nm("@l/p", "i.js")), effective), true);
+	assert.equal(toolIsKept(tool("y", nm("other", "i.js")), effective), false);
+});
+
+// ── partial extension groups (mixed-extension leak fix) ───────────────────
+
+const FFF = "@ff-labs/pi-fff";
+
+function fffTools() {
+	// Real case: pi-fff registers builtin-shadowing grep/find plus non-colliding
+	// siblings — here just grep + ffgrep for brevity.
+	return [tool("grep", nm(FFF, "src/index.ts")), tool("ffgrep", nm(FFF, "src/index.ts"))];
+}
+
+test("effectiveKeepTools: empty keepTools emits per-name matchers for partial groups, not ext:<id>", () => {
+	// "grep" is shadow-skipped; only "ffgrep" survives in the group → partial.
+	const discovered = discoverKeptTools(fffTools(), []);
+	assert.deepEqual(discovered, [{ extensionId: FFF, names: ["ffgrep"], partial: true }]);
+
+	// Empty keepTools (auto-keep): sibling kept by exact name, shadowed builtin not re-kept.
+	const effective = effectiveKeepTools([], discovered);
+	assert.ok(effective.includes("ffgrep"), "sibling must be kept by exact name");
+	assert.ok(!effective.includes(`ext:${FFF}`), "ext:<id> must NOT be emitted (would re-keep grep)");
+	assert.ok(!effective.includes("grep"), "shadowed builtin name must not be re-kept");
+});
+
+test("effectiveKeepTools: explicit ext:<id> config entry keeps the whole partial extension", () => {
+	const config = [`ext:${FFF}`];
+	// With the ext: opt-in, "grep" is not shadow-skipped at discovery time.
+	const discovered = discoverKeptTools(fffTools(), config);
+	assert.deepEqual(discovered, [{ extensionId: FFF, names: ["grep", "ffgrep"], partial: false }]);
+
+	const effective = effectiveKeepTools(config, discovered);
+	assert.ok(effective.includes(`ext:${FFF}`), "whole extension kept via ext:<id>");
+});
+
+test("effectiveKeepTools: keep-list-only filters clean extensions; empty keepTools emits ext:<id>", () => {
+	const discovered = discoverKeptTools([tool("hindsight_recall", nm("@l/pi-hindsight", "i.js"))], []);
+	assert.deepEqual(discovered, [{ extensionId: "@l/pi-hindsight", names: ["hindsight_recall"], partial: false }]);
+	assert.deepEqual(effectiveKeepTools(["delegate"], discovered), ["delegate"], "keep-list-only: nothing added");
+	assert.deepEqual(effectiveKeepTools([], discovered), ["ext:@l/pi-hindsight"]);
+});
+
+test("partial group end-to-end (keep-list-only): both grep and ffgrep blocked without a matching matcher", () => {
+	const effective = effectiveKeepTools(["delegate"], discoverKeptTools(fffTools(), []));
+	assert.equal(toolIsKept(tool("grep", nm(FFF, "src/index.ts")), effective), false, "shadowed grep blocked");
+	assert.equal(toolIsKept(tool("ffgrep", nm(FFF, "src/index.ts")), effective), false, "sibling not kept without a matcher");
+});
+
+test("partial group end-to-end (empty keepTools auto-keep): toolIsKept blocks shadowed grep, allows ffgrep", () => {
+	const effective = effectiveKeepTools([], discoverKeptTools(fffTools(), []));
+	assert.equal(toolIsKept(tool("grep", nm(FFF, "src/index.ts")), effective), false, "shadowed grep blocked");
+	assert.equal(toolIsKept(tool("ffgrep", nm(FFF, "src/index.ts")), effective), true, "sibling ffgrep kept");
+});
+
+// ── matcher semantics (toolIsKept) ──────────────────────────────────────────
+
+test("toolIsKept: delegate is unconditionally kept", () => {
+	assert.equal(toolIsKept(tool("delegate", nm("x", "i.js")), []), true);
+});
+
+test("toolIsKept: exact matcher (case-insensitive)", () => {
+	const t = tool("todo", nm("some-pkg", "i.js"));
+	assert.equal(toolIsKept(t, ["todo"]), true);
+	assert.equal(toolIsKept(t, ["TODO"]), true);
+	assert.equal(toolIsKept(t, ["todo2"]), false);
+	assert.equal(toolIsKept(t, []), false);
+});
+
+test("toolIsKept: glob matcher on tool name", () => {
+	const t = tool("hindsight_recall", nm("@l/pi-hindsight", "i.js"));
+	assert.equal(toolIsKept(t, ["hindsight_*"]), true);
+	assert.equal(toolIsKept(t, ["hindsight_?ecall"]), true);
+	assert.equal(toolIsKept(t, ["hindsight_*_retain"]), false);
+});
+
+test("toolIsKept: ext: matcher matches whole owning package", () => {
+	const t = tool("hindsight_recall", nm("@l/pi-hindsight", "i.js"));
+	assert.equal(toolIsKept(t, ["ext:@l/pi-hindsight"]), true);
+	assert.equal(toolIsKept(t, ["ext:@l/pi-hindsight2"]), false);
+	assert.equal(toolIsKept(t, ["ext:pi-hindsight"]), false);
+});

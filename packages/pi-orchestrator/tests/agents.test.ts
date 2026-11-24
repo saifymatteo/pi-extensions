@@ -1,0 +1,233 @@
+/**
+ * Unit tests for fleet discovery pure surfaces: projectAgentDirs walking,
+ * frontmatter maxTurns strict parsing, and merge precedence (project >
+ * user > builtin; .pi/agents before .agents/agents per level).
+ *
+ * Runs on Node's built-in test runner with type stripping; the pi package
+ * import is redirected to a stub via ../resolve-stub-hook.mjs.
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+
+import { discoverAgents, projectAgentDirs } from "../src/agents.ts";
+
+function tempRoot(label: string) {
+	return fs.mkdtempSync(path.join(os.tmpdir(), `pi-orch-agents-${label}-`));
+}
+
+function writeAgent(dir: string, file: string, frontmatter: Record<string, unknown>, body = "Body.") {
+	fs.mkdirSync(dir, { recursive: true });
+	const lines = Object.entries(frontmatter)
+		.map(([k, v]) => `${k}: ${v}`)
+		.join("\n");
+	fs.writeFileSync(path.join(dir, file), `---\n${lines}\n---\n${body}\n`, "utf-8");
+}
+
+/** Points the stub getAgentDir() at a temp "user" dir for the test duration. */
+function withUserDir<T>(userRoot: string, fn: () => T): T {
+	const prev = process.env.PI_ORCH_TEST_AGENT_DIR;
+	process.env.PI_ORCH_TEST_AGENT_DIR = userRoot;
+	try {
+		return fn();
+	} finally {
+		if (prev === undefined) delete process.env.PI_ORCH_TEST_AGENT_DIR;
+		else process.env.PI_ORCH_TEST_AGENT_DIR = prev;
+	}
+}
+
+const baseConfig: import("../src/config.ts").OrchestratorConfig = { enabled: true, showFleetWidget: true, keepTools: ["delegate"], keepToolOverrides: {}, childBlockedTools: [], childExtensions: [], forwardParentPrompt: true, builtinFleet: false, modelOverrides: {}, maxTurns: 50, maxConcurrency: 4, maxQueuedRuns: 32, stallTimeoutMs: 600_000, childSessions: true, async: true };
+
+// ── projectAgentDirs ────────────────────────────────────────────────────────
+
+test("projectAgentDirs: nearest-first, .pi/agents before .agents/agents, stops after .git ancestor", () => {
+	const root = tempRoot("git");
+	fs.mkdirSync(path.join(root, "a", "b"), { recursive: true });
+	fs.writeFileSync(path.join(root, ".git"), "", "utf-8"); // .git may be a file
+
+	const dirs = projectAgentDirs(path.join(root, "a", "b"));
+	assert.deepEqual(dirs, [
+		path.join(root, "a", "b", ".pi", "agents"),
+		path.join(root, "a", "b", ".agents", "agents"),
+		path.join(root, "a", ".pi", "agents"),
+		path.join(root, "a", ".agents", "agents"),
+		path.join(root, ".pi", "agents"),
+		path.join(root, ".agents", "agents"),
+	]);
+});
+
+test("projectAgentDirs: without a .git marker the walk continues past temp root toward the filesystem root", () => {
+	const root = tempRoot("nogit");
+	const dirs = projectAgentDirs(path.join(root, "sub"));
+	// Starts at the cwd itself, nearest-first, .pi before .agents per level...
+	assert.equal(dirs[0], path.join(root, "sub", ".pi", "agents"));
+	assert.equal(dirs[1], path.join(root, "sub", ".agents", "agents"));
+	// ...and reaches the filesystem root, where it terminates (last entry is
+	// <fsRoot>/.agents/agents, and the walk stops there).
+	const last = dirs[dirs.length - 1];
+	const fsRoot = path.dirname(path.dirname(last)); // strip ".agents" then "agents"
+	assert.equal(path.dirname(fsRoot), fsRoot); // dirname of the fs root is itself
+	assert.equal(last, path.join(fsRoot, ".agents", "agents"));
+});
+
+// ── frontmatter maxTurns strict parsing + merge precedence (via discoverAgents) ──
+
+test("discoverAgents: maxTurns accepts 7 and rejects 'seven', 0, 1.5 (no coercion)", () => {
+	const user = tempRoot("turns");
+	const agentsDir = path.join(user, "agents");
+	writeAgent(agentsDir, "a.md", { name: "a", description: "ok", maxTurns: 7 });
+	writeAgent(agentsDir, "b.md", { name: "b", description: "string", maxTurns: "seven" });
+	writeAgent(agentsDir, "c.md", { name: "c", description: "zero", maxTurns: 0 });
+	writeAgent(agentsDir, "d.md", { name: "d", description: "float", maxTurns: 1.5 });
+
+	const byName = new Map(withUserDir(user, () => discoverAgents(baseConfig, user)).map((a) => [a.name, a]));
+	const a1 = byName.get("a");
+	if (!a1) throw new Error("agent a missing");
+	assert.equal(a1.maxTurns, 7);
+	const b1 = byName.get("b");
+	if (!b1) throw new Error("agent b missing");
+	assert.equal(b1.maxTurns, undefined);
+	const c1 = byName.get("c");
+	if (!c1) throw new Error("agent c missing");
+	assert.equal(c1.maxTurns, undefined);
+	const d1 = byName.get("d");
+	if (!d1) throw new Error("agent d missing");
+	assert.equal(d1.maxTurns, undefined);
+	fs.rmSync(user, { recursive: true, force: true });
+});
+
+test("discoverAgents: blockTools parses arrays and comma strings, absent means undefined", () => {
+	const user = tempRoot("blocks");
+	const agentsDir = path.join(user, "agents");
+	writeAgent(agentsDir, "a.md", { name: "a", description: "array", blockTools: ["bash", "grep"] });
+	writeAgent(agentsDir, "b.md", { name: "b", description: "comma string", blockTools: "bash, grep" });
+	writeAgent(agentsDir, "c.md", { name: "c", description: "absent" });
+
+	const byName = new Map(withUserDir(user, () => discoverAgents(baseConfig, user)).map((a) => [a.name, a]));
+	const a2 = byName.get("a");
+	if (!a2) throw new Error("agent a missing");
+	assert.deepEqual(a2.blockTools, ["bash", "grep"]);
+	const b2 = byName.get("b");
+	if (!b2) throw new Error("agent b missing");
+	assert.deepEqual(b2.blockTools, ["bash", "grep"]);
+	const c2 = byName.get("c");
+	if (!c2) throw new Error("agent c missing");
+	assert.equal(c2.blockTools, undefined);
+	fs.rmSync(user, { recursive: true, force: true });
+});
+
+test("discoverAgents: project beats user, and .pi/agents beats .agents/agents at the same level", () => {
+	const user = tempRoot("user");
+	const project = tempRoot("proj");
+	fs.writeFileSync(path.join(project, ".git"), "", "utf-8");
+
+	writeAgent(path.join(user, "agents"), "dup.md", { name: "dup", description: "user version", blockTools: "bash" });
+	writeAgent(path.join(project, ".agents", "agents"), "dup.md", { name: "dup", description: "project .agents", blockTools: "bash,grep" });
+	writeAgent(path.join(project, ".pi", "agents"), "dup.md", { name: "dup", description: "project .pi", blockTools: ["grep"] });
+	writeAgent(path.join(user, "agents"), "only-user.md", { name: "only-user", description: "user only" });
+
+	const agents = withUserDir(user, () => discoverAgents(baseConfig, project));
+	const dup = agents.find((a) => a.name === "dup");
+	if (!dup) throw new Error("dup agent missing");
+	assert.equal(dup.source, "project");
+	assert.equal(dup.description, "project .pi"); // .pi/agents wins over .agents/agents
+	// Merge precedence applies to blockTools too: the project copy replaces the user copy wholesale.
+	assert.deepEqual(dup.blockTools, ["grep"]);
+	assert.ok(agents.some((a) => a.name === "only-user" && a.source === "user"));
+
+	fs.rmSync(user, { recursive: true, force: true });
+	fs.rmSync(project, { recursive: true, force: true });
+});
+
+test("discoverAgents: thinking frontmatter accepts valid levels, rejects invalid ones (no coercion)", () => {
+	const user = tempRoot("thinking");
+	const agentsDir = path.join(user, "agents");
+	writeAgent(agentsDir, "a.md", { name: "a", description: "valid", thinking: "high" });
+	writeAgent(agentsDir, "b.md", { name: "b", description: "invalid", thinking: "loud" });
+	writeAgent(agentsDir, "c.md", { name: "c", description: "absent" });
+
+	const byName = new Map(withUserDir(user, () => discoverAgents(baseConfig, user)).map((a) => [a.name, a]));
+	assert.equal(byName.get("a")?.thinking, "high");
+	assert.equal(byName.get("b")?.thinking, undefined);
+	assert.equal(byName.get("c")?.thinking, undefined);
+	fs.rmSync(user, { recursive: true, force: true });
+});
+
+test("discoverAgents: invalid thinking frontmatter warns once per file across repeated discovery", () => {
+	const user = tempRoot("thinkwarn");
+	const agentsDir = path.join(user, "agents");
+	writeAgent(agentsDir, "b.md", { name: "b", description: "invalid", thinking: "loud" });
+	const errors: string[] = [];
+	const orig = console.error;
+	console.error = (...args: unknown[]) => errors.push(args.join(" "));
+	try {
+		withUserDir(user, () => {
+			discoverAgents(baseConfig, user);
+			discoverAgents(baseConfig, user);
+		});
+	} finally {
+		console.error = orig;
+	}
+	assert.equal(errors.length, 1, JSON.stringify(errors));
+	assert.match(errors[0], /thinking/);
+	fs.rmSync(user, { recursive: true, force: true });
+});
+
+test("discoverAgents: builtinFleet object form hides named builtins pre-merge; others stay", () => {
+	const user = tempRoot("fleetmap");
+	const agents = withUserDir(user, () =>
+		discoverAgents({ ...baseConfig, builtinFleet: { worker: { hidden: true }, scout: { thinking: "low" } } }, user),
+	);
+	const names = agents.map((a) => a.name);
+	assert.ok(!names.includes("worker"), "hidden builtin must be excluded");
+	assert.ok(names.includes("scout"), "non-hidden builtins stay");
+	assert.ok(names.includes("planner"), "unlisted builtins stay");
+	fs.rmSync(user, { recursive: true, force: true });
+});
+
+test("discoverAgents: hiding a builtin does not block a user agent of the same name (shadowing intact)", () => {
+	const user = tempRoot("shadow");
+	writeAgent(path.join(user, "agents"), "worker.md", { name: "worker", description: "my own worker" });
+	const agents = withUserDir(user, () =>
+		discoverAgents({ ...baseConfig, builtinFleet: { worker: { hidden: true } } }, user),
+	);
+	const worker = agents.find((a) => a.name === "worker");
+	assert.ok(worker, "user worker must survive the hidden builtin");
+	assert.equal(worker.source, "user");
+	fs.rmSync(user, { recursive: true, force: true });
+});
+
+test("discoverAgents: builtinFleet thinking stamps builtin agents; a same-name user agent keeps its own", () => {
+	const user = tempRoot("stamp");
+	writeAgent(path.join(user, "agents"), "scout.md", { name: "scout", description: "my scout", thinking: "low" });
+	const agents = withUserDir(user, () =>
+		discoverAgents({ ...baseConfig, builtinFleet: { scout: { thinking: "xhigh" }, worker: { thinking: "high" } } }, user),
+	);
+	const myScout = agents.find((a) => a.name === "scout");
+	assert.ok(myScout);
+	assert.equal(myScout.source, "user");
+	assert.equal(myScout.thinking, "low", "config thinking is builtins-only: the user scout keeps its frontmatter");
+	const worker = agents.find((a) => a.name === "worker");
+	assert.ok(worker);
+	assert.equal(worker.source, "builtin");
+	assert.equal(worker.thinking, "high", "builtin worker gets the config level stamped");
+	fs.rmSync(user, { recursive: true, force: true });
+});
+
+test("discoverAgents: builtinFleet false excludes the shipped fleet; modelOverrides apply", () => {
+	const user = tempRoot("fleet");
+	const agents = withUserDir(user, () => discoverAgents(baseConfig, user));
+	assert.equal(agents.length, 0); // no user/project agents, builtin skipped
+
+	const withFleet = withUserDir(user, () =>
+		discoverAgents({ ...baseConfig, builtinFleet: true, modelOverrides: { scout: "test/test-model" } }, user),
+	);
+	const scout = withFleet.find((a) => a.name === "scout");
+	assert.ok(scout, "builtin fleet should include scout when builtinFleet is true");
+	assert.equal(scout.source, "builtin");
+	assert.equal(scout.model, "test/test-model"); // config override beats frontmatter
+
+	fs.rmSync(user, { recursive: true, force: true });
+});

@@ -4,6 +4,10 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Added
+
+- pi-orchestrator: agent orchestration (`delegate` tool, fleet panel) joins the collection. If you also installed `npm:@saifymatteo/pi-orchestrator`, remove one of them.
+
 ## [0.1.19]
 
 ### Added

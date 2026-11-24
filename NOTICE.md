@@ -11,7 +11,7 @@ Upstream code keeps its own license and attribution; AGPL-3.0-only applies to th
 
 ## Not bundled
 
-`@saifymatteo/pi-orchestrator`, `@saifymatteo/pi-atelier`, `@saifymatteo/pi-agent-ask`, and `@saifymatteo/pi-x-ide` are not part of this collection. Credentials and personal endpoint/configuration values are not part of this repository.
+`@saifymatteo/pi-atelier`, `@saifymatteo/pi-agent-ask`, and `@saifymatteo/pi-x-ide` are not part of this collection. Credentials and personal endpoint/configuration values are not part of this repository.
 
 ## Before publishing
 

@@ -1,0 +1,660 @@
+/**
+ * pi-orchestrator — forces the main agent to delegate work to a subagent fleet.
+ *
+ * See CONTEXT.md (glossary) and docs/adr/ (decisions).
+ *
+ * Engagement (default ON, persistent toggle via /orchestrator):
+ *   1. Tools outside the keep-list are removed from the active set
+ *      (re-applied every turn to catch dynamically registered tools).
+ *   2. A delegation policy is appended to the system prompt every turn —
+ *      cached between engagement boundaries and explicit permission edits (ADR-0013).
+ *   3. A hard gate blocks any non-keep-list tool call with guidance to delegate.
+ *
+ * Child mode (PI_ORCHESTRATOR_CHILD=1): the extension self-disables and only
+ * installs the orphan watchdog, the ADR-0007 tool gate when the parent
+ * set PI_ORCHESTRATOR_BLOCKED_TOOLS (gate-only child mode), and the
+ * parent-prompt forwarding hook when the parent set
+ * PI_ORCHESTRATOR_PARENT_PROMPT_FILE (config forwardParentPrompt).
+ */
+
+import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
+import { Container, type SettingItem, SettingsList } from "@earendil-works/pi-tui";
+import { discoverAgents } from "./agents.ts";
+import {
+	discoverKeptTools,
+	effectiveKeepTools,
+	toolIsKept,
+	updateKeepToolOverrides,
+	toolMatchesAnyMatcher,
+	getConfigPath,
+	loadConfig,
+	saveConfig,
+	BUILTIN_TOOL_NAMES,
+	type DiscoveredTool,
+	type OrchestratorConfig,
+} from "./config.ts";
+import * as fs from "node:fs";
+import { abortActiveRuns, clearFleetWidget, fleetTasksSnapshot, hasRunningTasks, idleFleetWidgetLines, registerDelegateTool, type DelegateDeps } from "./delegate.ts";
+import { createFleetPanel, renderFleetPanel } from "./fleet-panel.ts";
+import { buildPolicy } from "./policy.ts";
+import { truncateToWidth } from "./width.ts";
+import type { AgentConfig } from "./agents.ts";
+
+/**
+ * pi's defaultTools default (docs/settings.md): the built-in tools active in
+ * every fresh session unless the user overrides defaultTools. Used by the
+ * toggle-off restore so disengaging never force-enables optional builtins
+ * (powershell/grep/find/ls) the user never opted into. Hardcoded because pi
+ * exposes no settings accessor to extensions.
+ */
+const CORE_DEFAULT_TOOLS: ReadonlySet<string> = new Set(["read", "bash", "edit", "write"]);
+
+// ── Child mode: orphan watchdog + ADR-0007 tool gate ───────────────────────────────
+
+/**
+ * Parse PI_ORCHESTRATOR_BLOCKED_TOOLS into a matcher list. Comma-separated,
+ * same matcher syntax as keepTools (exact name, glob, ext:<id>); segments
+ * are trimmed and empty ones dropped. Exact strings are preserved (matching
+ * is case-insensitive downstream); dedupe is not required.
+ */
+export function parseBlockedToolsEnv(value: string): string[] {
+	return value
+		.split(",")
+		.map((m) => m.trim())
+		.filter((m) => m.length > 0);
+}
+
+/**
+ * Child-side tool gate (ADR-0007): block tools matching
+ * PI_ORCHESTRATOR_BLOCKED_TOOLS with a visible reason, so a subagent that
+ * inherits global extensions still honors the orchestrator's tool policy.
+ * Backstop complement to the parent-side --exclude-tools expansion (ADR-0008):
+ * also enforces matchers whose tools the parent's registry could not see,
+ * with a visible reason.
+ * Fail-soft: with an absent/empty env var no handler is installed at all.
+ */
+export function installChildToolGate(pi: any): void {
+	const matchers = parseBlockedToolsEnv(process.env.PI_ORCHESTRATOR_BLOCKED_TOOLS ?? "");
+	if (matchers.length === 0) return;
+
+	pi.on("tool_call", async (event: any) => {
+		if (event.toolName === "delegate") return;
+		const tool = pi.getAllTools().find((t: any) => t.name === event.toolName);
+		const matched = toolMatchesAnyMatcher({ name: event.toolName, sourceInfo: tool?.sourceInfo }, matchers);
+		if (!matched) return;
+		return {
+			block: true,
+			reason:
+				`Blocked by orchestrator policy: tool "${event.toolName}" matches blocked matcher "${matched}". ` +
+				`It will not execute. Use the remaining tools to complete the task.`,
+		};
+	});
+}
+
+/**
+ * Pure transformation: append the (already delta-stripped) parent prompt at
+ * the END of the child's system prompt (after pi base, agent body,
+ * project_context, skills, and cwd). Exported for unit tests
+ * (tests/index.test.ts).
+ */
+export function withParentPrompt(systemPrompt: string | undefined, parentPrompt: string): string {
+	// Empty-result guard: if delta-stripping removed everything (parent prompt
+	// fully duplicated in the child), append nothing — returning the child's
+	// prompt unchanged avoids a dangling trailing blank line and any
+	// forwarding artifacts.
+	if (!parentPrompt) return systemPrompt ?? "";
+	return systemPrompt ? `${systemPrompt}\n\n${parentPrompt}` : parentPrompt;
+}
+
+/**
+ * Delta-forwarding: strip segments of the parent's forwarded prompt that the
+ * child ALREADY receives verbatim through its own system-prompt assembly.
+ *
+ * Why: the child runs in the same cwd with the same extension set, so pi's
+ * normal assembly injects the identical <project_context> block (AGENTS.md
+ * content) and the identical "Current working directory:" line into the
+ * child's own prompt. Forwarding a second verbatim copy costs ~tokens with
+ * zero informational value (measured on a captured session locally). Only
+ * these two segments are stripped;
+ * everything else in the forwarded prompt is the actual informational
+ * payload and stays: the base-prompt body (NOT duplicated — the child
+ * embeds its own tool list, so the bytes diverge), the Toolbelt notice and
+ * the CodeGraph/extension guidance (both differ from the child's own
+ * copies). The skills section is conditionally stripped — only when the
+ * parent's entire slice appears verbatim in the child's prompt (see the
+ * Segment 3 comment below).
+ *
+ * Safety guard: a segment is only removed when the child's own system prompt
+ * (`childPrompt`, the pre-append event.systemPrompt) contains that exact
+ * byte sequence. This covers the per-task `cwd` override case (delegate tool):
+ * when the child runs in a DIFFERENT directory its project_context/cwd differ
+ * from the parent's, the membership check fails, and nothing is stripped.
+ * The check also makes the strip self-validating against future pi assembly
+ * changes — worst case we under-strip (harmless), never over-strip.
+ *
+ * Determinism (cache-prefix stability): pure function of (childPrompt,
+ * parentPrompt) — same inputs always produce the same output bytes. The join
+ * point is normalized to exactly one blank line, matching the surrounding
+ * prompt's paragraph separator.
+ *
+ * Exported for unit tests (tests/index.test.ts).
+ */
+export function stripDuplicatedParentSegments(childPrompt: string | undefined, parentPrompt: string): string {
+	if (!childPrompt) return parentPrompt;
+	let result = parentPrompt;
+
+	/** Remove `segment` from `result` plus ONE following blank-line separator
+	 *  (so the text before and after the removal stays single-blank-line
+	 *  separated) — but only when the child's own prompt contains the segment
+	 *  verbatim; otherwise leave it untouched. */
+	const removeIfDuplicated = (segment: string): void => {
+		if (!segment || !childPrompt.includes(segment)) return;
+		const start = result.indexOf(segment);
+		if (start === -1) return; // defensive; segment came from `result` itself
+		const end = start + segment.length;
+		const after = result.startsWith("\n\n", end) ? end + 2 : end;
+		result = result.slice(0, start) + result.slice(after);
+	};
+
+	// Segment 1: the <project_context> block (first occurrence — pi injects
+	// exactly one; a non-greedy match keeps the boundary tight).
+	const ctx = /<project_context>[\s\S]*?<\/project_context>/.exec(result);
+	if (ctx) removeIfDuplicated(ctx[0]);
+
+	// Segment 2: the cwd line (start-of-line anchored, single line).
+	const cwd = /^Current working directory: .*$/m.exec(result);
+	if (cwd) removeIfDuplicated(cwd[0]);
+
+	// Segment 3: the skills injection section ("## Agent skills" up to the
+	// "---" separator). This one is frequently only PARTIALLY duplicated —
+	// the parent's and child's skill lists can diverge — so unlike segments
+	// 1 and 2 it is gated purely by the verbatim-membership check: it is
+	// stripped only when the parent's ENTIRE slice is a contiguous verbatim
+	// substring of the child's own prompt, i.e. every byte already exists in
+	// the child's copy. A partial match (child has extra/different skills)
+	// leaves the parent's section fully intact.
+	const skillsStart = result.indexOf("## Agent skills");
+	if (skillsStart !== -1) {
+		const sepIdx = result.indexOf("\n---\n", skillsStart);
+		const skills = sepIdx === -1 ? result.slice(skillsStart) : result.slice(skillsStart, sepIdx);
+		removeIfDuplicated(skills);
+	}
+
+	return result;
+}
+
+/**
+ * Child-side parent-prompt forwarding (config `forwardParentPrompt`): the
+ * parent writes its pre-policy system prompt to a temp file and passes the
+ * path via PI_ORCHESTRATOR_PARENT_PROMPT_FILE; this hook appends it at the
+ * END of the child's system prompt (after project_context/skills/cwd) so the
+ * stable shared prefix — pi base, agent body, context, skills, cwd — is
+ * maximized for provider prompt-cache hits. Before appending, the copy is
+ * delta-stripped (stripDuplicatedParentSegments): segments the child already
+ * receives verbatim (project_context, cwd) are dropped. Deterministic — the
+ * same (child prompt, parent prompt) pair always yields the same bytes, so
+ * the cache prefix stays stable across spawns. Fail-soft: with the env var
+ * unset nothing is installed; a failed file read is a silent pass-through so
+ * the child works without the forwarding.
+ */
+export function installChildParentPrompt(pi: any): void {
+	const promptFile = process.env.PI_ORCHESTRATOR_PARENT_PROMPT_FILE;
+	if (!promptFile) return;
+
+	pi.on("before_agent_start", async (event: any) => {
+		let parentPrompt: string;
+		try {
+			parentPrompt = await fs.promises.readFile(promptFile, "utf-8");
+		} catch {
+			return undefined;
+		}
+		const finalPrompt = withParentPrompt(event.systemPrompt, stripDuplicatedParentSegments(event.systemPrompt, parentPrompt));
+		return { systemPrompt: finalPrompt };
+	});
+}
+
+function installChildWatchdog(): void {
+	const parentPid = process.ppid;
+	const die = (reason: string) => {
+		try {
+			process.stderr.write(`[pi-orchestrator] child exiting: ${reason}\n`);
+		} catch {
+			/* ignore */
+		}
+		// Hard exit: the print-mode child must never linger
+		process.exit(2);
+	};
+
+	// Heartbeat: if the parent PID disappears, exit. (Parent death, even
+	// SIGKILL, is caught within 5s. Children are spawned with all three
+	// stdio pipes (RPC mode), so stdin never closes and cannot serve as a
+	// liveness signal — detection is heartbeat-based.)
+	const heartbeat = setInterval(() => {
+		try {
+			process.kill(parentPid, 0);
+		} catch {
+			die(`parent pid ${parentPid} no longer exists`);
+		}
+	}, 5000);
+	heartbeat.unref?.();
+}
+
+// ── Parent mode ─────────────────────────────────────────────────────────────
+
+/**
+ * The orchestrator parent's pre-policy system prompt, captured each turn by
+ * the before_agent_start hook. Forwarded to subagents (when
+ * config.forwardParentPrompt is on) so installed extensions' promptGuidelines
+ * (e.g. CodeGraph usage) reach the children too.
+ */
+let parentSystemPrompt: string | undefined;
+
+/**
+ * Policy text cache (ADR-0013): pi rebuilds the system prompt every turn, so
+ * the policy append itself must happen per turn — but rebuilding the TEXT
+ * each turn bought nothing (byte-identical output unless the fleet or
+ * keep-list changed) and silently invalidated the provider prompt-cache
+ * prefix on mid-session fleet changes. The text is therefore computed lazily
+ * on the first engaged turn (so tool discovery is complete) and reused
+ * verbatim until an episode boundary or explicit permission edit. Exported for unit tests
+ * (tests/index.test.ts).
+ */
+export function createPolicyTextCache(
+	compute: () => string,
+): { get: () => string; invalidate: () => void } {
+	let cached: string | undefined;
+	return {
+		get: () => (cached ??= compute()),
+		invalidate: () => {
+			cached = undefined;
+		},
+	};
+}
+
+/**
+ * Deps for the delegate tool. Takes a live config getter (session_start
+ * reassigns `config` from disk) so every dep reads the current values, never
+ * a stale copy. Exported for unit tests (tests/index.test.ts).
+ */
+export function buildDelegateDeps(getConfig: () => OrchestratorConfig, onIdle: () => void, onFleetChange?: () => void): DelegateDeps {
+	return {
+		getAgents: () => discoverAgents(getConfig()),
+		getDispatchDefaults: (ctx: any) => ({
+			model: ctx?.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
+			thinkingLevel: ctx?.thinkingLevel,
+		}),
+		getCwd: () => process.cwd(),
+		getSignal: () => undefined,
+		getMaxTurns: () => getConfig().maxTurns,
+		getMaxConcurrency: () => getConfig().maxConcurrency,
+		getMaxQueuedRuns: () => getConfig().maxQueuedRuns,
+		getStallTimeoutMs: () => getConfig().stallTimeoutMs,
+		// Global child-side block list (ADR-0007); unioned with per-agent
+		// blockTools inside delegate.ts resolveBlockedTools.
+		getChildBlockedTools: () => getConfig().childBlockedTools,
+		// Child extension loading (ADR-0008): empty = inherit-all, non-empty =
+		// --no-extensions + one -e per entry (derived inside delegate.ts).
+		getChildExtensions: () => getConfig().childExtensions,
+		// Forward the parent's captured pre-policy system prompt to subagents
+		// (config forwardParentPrompt); parentSystemPrompt is captured per turn
+		// by the before_agent_start hook below.
+		getForwardParentPrompt: () => getConfig().forwardParentPrompt,
+		getParentPrompt: () => parentSystemPrompt,
+		// Persistent sub-sessions (ADR-0011): the parent's own session file is
+		// recorded in each child's session header (RPC new_session parentSession)
+		// and child sessions are placed in the parent's session dir, so all
+		// sub-sessions of a session live together and delegate({action:
+		// "sessions"}) can list them. Undefined when the parent runs ephemeral.
+		getChildSessions: () => getConfig().childSessions,
+		// Default dispatch mode (orchestrator.jsonc `async`, ADR-0016):
+		// true = fire-and-forget acceptance, false = block for the final result.
+		getAsyncDefault: () => getConfig().async,
+		// Widget label source of truth: index keeps `config.enabled` in sync with
+		// its `engaged` flag (setEngaged writes both, session_start reloads).
+		getOrchestratorMode: () => (getConfig().enabled ? "engaged" : "auto"),
+		getParentSessionFile: (ctx: any) => {
+			try {
+				return ctx?.sessionManager?.getSessionFile?.() ?? undefined;
+			} catch {
+				return undefined;
+			}
+		},
+		onIdle,
+		onFleetChange,
+		getShowFleetWidget: () => getConfig().showFleetWidget,
+	};
+}
+
+export default function (pi: any) {
+	if (process.env.PI_ORCHESTRATOR_CHILD === "1") {
+		installChildWatchdog();
+		installChildToolGate(pi);
+		installChildParentPrompt(pi);
+		return;
+	}
+
+	let configCwd = process.cwd();
+	let config: OrchestratorConfig = loadConfig(configCwd);
+	let engaged = config.enabled;
+	let lastUi: any;
+	const fleetPanel = createFleetPanel(pi.events, () => renderFleetPanel(
+		fleetTasksSnapshot(), discoverAgents(config).map((a) => a.name), engaged ? "engaged" : "auto",
+	));
+	// AUTO (enabled:false) NEVER touches the active tool set. Which built-in
+	// tools are active is pi's concern (its `defaultTools` setting,
+	// docs/settings.md), and extension tools belong to the extensions that
+	// registered them (phase gating etc.). The only AUTO tool-set action is
+	// the toggle-off restore in applyReduction()'s disengaged branch, which
+	// undoes a previous engagement without force-enabling optional builtins.
+	// Non-builtin tools discovered at runtime (ADR-0004); refreshed on every
+	// applyReduction() so late-registered tools are picked up.
+	let discovered: DiscoveredTool[] = [];
+
+	// Policy text for the current engagement episode (ADR-0013). Computed
+	// lazily on the first engaged turn — applyReduction() has just refreshed
+	// `discovered`, so tool discovery is complete — then reused until a toggle,
+	// session start, or explicit tool-permission edit (ADR-0013 refinement).
+	function computePolicyText(): string {
+		const agents: AgentConfig[] = discoverAgents(config);
+		// Advertise the same permissions the Gate enforces, including explicit
+		// overrides for builtins and tools excluded from automatic discovery.
+		const effective = effectiveKeepTools(config.keepTools, discovered);
+		const keptNames = pi.getAllTools()
+			.filter((tool: any) => tool.name !== "delegate" && toolIsKept(tool, effective, config.keepToolOverrides))
+			.map((tool: any) => tool.name);
+		return buildPolicy(agents, keptNames);
+	}
+
+	const policyCache = createPolicyTextCache(computePolicyText);
+
+	function updateIdleWidget(): void {
+		fleetPanel.update();
+		if (!lastUi?.setWidget) return;
+		if (!config.showFleetWidget) {
+			clearFleetWidget(lastUi);
+			return;
+		}
+		// Clobber guard: never repaint the (idle) fleet widget while a subagent
+		// or an unresolved Result is visible. The lifecycle owner guards this, so idle is
+		// never wrongly suppressed — this only defuses stale/extra callers.
+		if (hasRunningTasks()) return;
+		try {
+			// When enabled, always replace finished-run details with idle state;
+			// AUTO is not a reason to hide the widget. The sidebar is independent.
+			lastUi.setWidget(
+				"orchestrator-fleet",
+				idleFleetWidgetLines(
+					discoverAgents(config).map((a) => a.name),
+					engaged ? "engaged" : "auto",
+				),
+			);
+		} catch {
+			/* not in TUI */
+		}
+	}
+
+	function applyReduction(): void {
+		try {
+			const all: any[] = pi.getAllTools();
+			discovered = discoverKeptTools(all, config.keepTools);
+			if (engaged) {
+				const effective = effectiveKeepTools(config.keepTools, discovered);
+				const kept = all.filter((t) => toolIsKept(t, effective, config.keepToolOverrides)).map((t) => t.name);
+				// Disengaging later runs the branch below; keep delegate so the
+				// fleet stays dispatchable while engaged.
+				pi.setActiveTools(Array.from(new Set([...kept, "delegate"])));
+			} else {
+				// Toggle-off restore: undo the keep-list reduction without
+				// force-enabling optional builtins. pi activates only the
+				// `defaultTools` set at launch (default read/bash/edit/write —
+				// docs/settings.md); powershell/grep/find/ls stay inactive unless
+				// the user opted in, and force-enabling them here would fight
+				// pi's own recomputation at the next launch. Restore every
+				// extension tool (their extensions own their availability), keep
+				// whatever builtins are currently active, and re-add the four
+				// core builtins engagement may have removed. Hardcoded because
+				// pi exposes no settings accessor to extensions; if pi ever
+				// changes its defaultTools default, update this set.
+				const active = new Set(pi.getActiveTools().map((n: string) => n.toLowerCase()));
+				pi.setActiveTools(
+					all
+						.filter(
+							(t) =>
+								!BUILTIN_TOOL_NAMES.has(t.name.toLowerCase()) ||
+								active.has(t.name.toLowerCase()) ||
+								CORE_DEFAULT_TOOLS.has(t.name.toLowerCase()),
+						)
+						.map((t) => t.name),
+				);
+			}
+		} catch (err) {
+			// Can race during startup; re-applied on every before_agent_start.
+			console.error("[pi-orchestrator] applyReduction failed:", err);
+		}
+	}
+
+	function setEngaged(next: boolean, ctx?: any, opts?: { persist?: boolean; quiet?: boolean }): void {
+		engaged = next;
+		// Episode boundary (ADR-0013): policy text is recomputed lazily on the
+		// next engaged turn — fresh fleet list when re-engaging.
+		policyCache.invalidate();
+		config.enabled = next;
+		if (opts?.persist !== false) {
+			try {
+				saveConfig(config, configCwd);
+			} catch (err) {
+				console.error("[pi-orchestrator] failed to save config:", err);
+			}
+		}
+		applyReduction();
+		updateIdleWidget();
+		if (!opts?.quiet && ctx?.ui?.notify) {
+			ctx.ui.notify(
+				// AUTO is an intentional state, not a problem (ADR-0003): info severity.
+				next
+					? `Orchestrator ENGAGED · fleet: ${discoverAgents(config).map((a) => a.name).join(", ") || "(empty)"}`
+					: "Orchestrator: AUTO — toolset returned to pi, delegate always available (persisted to orchestrator.jsonc)",
+				"info",
+			);
+		}
+	}
+
+	// ── Session lifecycle ───────────────────────────────────────────────────
+
+	pi.on("session_start", async (_event: any, ctx: any) => {
+		fleetPanel.dispose();
+		configCwd = ctx?.cwd ?? process.cwd();
+		config = loadConfig(configCwd);
+		parentSystemPrompt = undefined; // Defensive: don't forward a stale prompt across sessions
+		policyCache.invalidate(); // Fresh policy text for the new session's episode (ADR-0013)
+		engaged = config.enabled;
+		if (ctx?.ui) lastUi = ctx.ui;
+
+		// AUTO stays hands-off (see the AUTO contract note at the top of this
+		// file): pi's own defaultTools recomputation is the intended AUTO state.
+		if (engaged) applyReduction();
+		// State line in both states — `engaged` when the gate forces delegation,
+		// `auto` when it does not (ADR-0003).
+		updateIdleWidget();
+		if (!engaged && ctx?.ui?.notify) {
+			// Defuse the "why isn't it forcing?" surprise (ADR-0003). AUTO is an
+			// intentional state, not a problem: info severity, not warning.
+			ctx.ui.notify(
+				"Orchestrator: AUTO (enabled:false) — toolset left to pi and other extensions; delegate always available. Run /orchestrator to engage.",
+				"info",
+			);
+		}
+	});
+
+	pi.on("session_shutdown", async () => {
+		fleetPanel.dispose();
+		// User requirement: never leave fleet agents running in the background.
+		// Mark first so dying runs skip result delivery (no pushes during teardown).
+		abortActiveRuns();
+		try {
+			if (lastUi) clearFleetWidget(lastUi);
+			lastUi = undefined;
+		} catch {
+			/* ignore */
+		}
+	});
+
+	// ── Policy injection + tool-repair each turn ───────────────────────────
+	// The append must stay per-turn (pi rebuilds the system prompt per turn;
+	// a one-time append would disappear from the next turn), but the policy
+	// TEXT is cached per engagement episode (ADR-0013): identical text every
+	// turn keeps the provider prompt-cache prefix stable.
+
+	pi.on("before_agent_start", async (event: any, ctx: any) => {
+		// Capture the current pre-policy prompt in both AUTO and engaged mode
+		// for Worker forwarding (forwardParentPrompt); this changes no tools.
+		parentSystemPrompt = event.systemPrompt;
+		if (!engaged) {
+			// AUTO: hands-off — pi's defaultTools recomputation and other
+			// extensions' phase gating own the active set in this mode.
+			return;
+		}
+		if (ctx?.ui) lastUi = ctx.ui;
+
+		// Re-apply the reduction: catches tools registered after session_start
+		// (e.g. by other extensions) and any re-enablement that happened.
+		applyReduction();
+
+		return { systemPrompt: `${event.systemPrompt}
+
+${policyCache.get()}` };
+	});
+
+	// ── Hard gate (ADR-0001) ────────────────────────────────────────────────
+
+	pi.on("tool_call", async (event: any) => {
+		if (!engaged) return;
+		if (event.toolName === "delegate") return;
+
+		const tool = pi.getAllTools().find((t: any) => t.name === event.toolName);
+		const effective = effectiveKeepTools(config.keepTools, discovered);
+		const allowed = toolIsKept({ name: event.toolName, sourceInfo: tool?.sourceInfo }, effective, config.keepToolOverrides);
+		if (allowed) return;
+
+		const fleetNames = discoverAgents(config).map((a) => a.name).join(", ");
+		return {
+			block: true,
+			reason:
+				`Blocked: you are an ORCHESTRATOR. "${event.toolName}" is not on your allow-list. ` +
+				`Delegate this work instead: delegate({ agent: "...", task: "..." }). ` +
+				`Available agents: ${fleetNames || "(none)"}. ` +
+				`Task prompts must be self-contained (subagents cannot see this conversation).`,
+		};
+	});
+
+	// ── The delegate tool ───────────────────────────────────────────────────
+
+	registerDelegateTool(pi, buildDelegateDeps(() => config, () => updateIdleWidget(), () => fleetPanel.update()));
+	// Run after the owner's session_start hook so discovery sees the cleared
+	// session, never the previous fleet. No terminal UI in RPC/print.
+	pi.on("session_start", (_event: any, ctx: any) => {
+		if (ctx?.mode === "tui") fleetPanel.start();
+	});
+
+	// ── Commands ────────────────────────────────────────────────────────────
+
+	pi.registerCommand("orchestrator", {
+		description: "Toggle orchestrator mode (persisted to orchestrator.jsonc)",
+		handler: async (_args: string, ctx: any) => {
+			if (ctx?.ui) lastUi = ctx.ui;
+			setEngaged(!engaged, ctx);
+		},
+	});
+
+	pi.registerCommand("orchestrator-tools", {
+		description: "Edit the orchestrator keep-list (checkbox UI)",
+		handler: async (_args: string, ctx: any) => {
+			if (ctx?.ui) lastUi = ctx.ui;
+			if (ctx?.mode !== "tui") {
+				ctx?.ui?.notify(`/orchestrator-tools requires TUI mode — edit ${getConfigPath(configCwd)} instead`, "warning");
+				return;
+			}
+
+			const allTools: any[] = pi.getAllTools();
+			discovered = discoverKeptTools(allTools, config.keepTools);
+			const effective = effectiveKeepTools(config.keepTools, discovered);
+			const items: SettingItem[] = allTools.map((tool) => ({
+				id: tool.name,
+				label: tool.name,
+				currentValue: toolIsKept(tool, effective, config.keepToolOverrides) ? "allowed" : "blocked",
+				values: tool.name === "delegate" ? undefined : ["allowed", "blocked"],
+			}));
+
+			await ctx.ui.custom((tui: any, theme: any, _kb: any, done: any) => {
+				const container = new Container();
+				const MAX_NAMES = 6;
+				const nameSummary = (names: string[]) =>
+					names.length > MAX_NAMES
+						? `${names.slice(0, MAX_NAMES).join(", ")} +${names.length - MAX_NAMES} more`
+						: names.join(", ");
+				const discoveredHeader = config.keepTools.length === 0
+					? "discovered extensions (auto-kept — keepTools is empty)"
+					: "discovered extensions (kept only if matched by keepTools)";
+				container.addChild(
+					new (class {
+						render(width: number) {
+							// Truncate PLAIN text to the rendered width BEFORE styling —
+							// theme.fg() adds ANSI escapes that would break width
+							// measurement and crash pi on lines wider than the terminal.
+							const w = Number.isFinite(width) && width > 0 ? width : 80;
+							const fit = (s: string) => truncateToWidth(s, w);
+							return [
+								theme.fg("accent", theme.bold(fit("Orchestrator keep-list"))),
+								...config.keepTools.map((m) => theme.fg("dim", fit(`  · ${m}`))),
+								...Object.entries(config.keepToolOverrides).map(([name, access]) => theme.fg("dim", fit(`  · ${name}: ${access} (override)`))),
+								...(discovered.length > 0 ? ["", theme.fg("accent", fit(discoveredHeader))] : []),
+								...discovered.map((d) => theme.fg("dim", fit(`  - ext:${d.extensionId} (${nameSummary(d.names)})`))),
+								"",
+							];
+						}
+						invalidate() {}
+					})(),
+				);
+
+				const settingsList = new SettingsList(
+					items,
+					Math.min(items.length + 2, 20),
+					getSettingsListTheme(),
+					(id: string, newValue: string) => {
+						const tool = allTools.find((t) => t.name === id);
+						if (!tool || id === "delegate") return; // delegate is always kept
+						const next = {
+							...config,
+							keepToolOverrides: updateKeepToolOverrides(tool, newValue === "allowed", effective, config.keepToolOverrides),
+						};
+						try {
+							saveConfig(next, configCwd);
+						} catch (err) {
+							settingsList.updateValue(id, toolIsKept(tool, effective, config.keepToolOverrides) ? "allowed" : "blocked");
+							ctx.ui.notify?.(`Could not save tool access: ${err}`, "error");
+							return;
+						}
+						config = next;
+						policyCache.invalidate(); // Explicit permission edits refresh the advertised allow-list.
+						if (engaged) applyReduction();
+					},
+					() => done(undefined),
+				);
+				container.addChild(settingsList);
+
+				return {
+					render(width: number) {
+						return container.render(width);
+					},
+					invalidate() {
+						container.invalidate();
+					},
+					handleInput(data: string) {
+						settingsList.handleInput?.(data);
+						tui.requestRender();
+					},
+				};
+			});
+		},
+	});
+}

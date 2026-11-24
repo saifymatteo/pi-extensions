@@ -10,13 +10,16 @@
 	"scripts": {
 		"check": "node scripts/check-packages.mjs",
 		"typecheck": "tsc -p tsconfig.json",
-		"test": "node --test test/*.test.mjs packages/*/test/*.test.mjs",
+		"test": "node --test test/*.test.mjs packages/*/test/*.test.mjs && npm test -w packages/pi-orchestrator",
 		"pack:check": "node scripts/check-pack.mjs",
 		"dev": "node scripts/dev.mjs",
 		"smoke": "node scripts/smoke.mjs",
 		"context": "node scripts/context-audit.mjs",
 		"screenshots": "node scripts/screenshots/shots.mjs",
 		"demo": "node scripts/screenshots/demo.mjs"
+	},
+	"dependencies": {
+		"jsonc-parser": "^3.3.1"
 	},
 	"devDependencies": {
 		"@earendil-works/pi-coding-agent": "1.4.0",
@@ -43,6 +46,7 @@
 			"./packages/pi-decisions/src/index.ts",
 			"./packages/pi-draft/src/index.ts",
 			"./packages/pi-model-go/src/index.ts",
+			"./packages/pi-orchestrator/src/index.ts",
 			"./packages/pi-prestart-working/src/index.ts",
 			"./packages/pi-root-guard/src/index.ts",
 			"./packages/pi-session-finder/src/index.ts",
