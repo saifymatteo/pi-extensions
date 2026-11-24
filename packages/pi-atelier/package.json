@@ -1,6 +1,6 @@
 {
   "name": "@saifymatteo/pi-atelier",
-  "version": "0.20.2",
+  "version": "0.20.3",
   "license": "AGPL-3.0-only",
   "type": "module",
   "description": "A responsive status rail and live activity sidebar for Pi",
