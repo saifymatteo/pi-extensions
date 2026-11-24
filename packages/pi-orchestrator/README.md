@@ -1,5 +1,7 @@
 # pi-orchestrator
 
+![/orchestrator-tools keep-list: every tool blocked except delegate while orchestrator mode is engaged](screenshot.png)
+
 A pi extension that turns the main agent into an orchestrator. While engaged, the parent keeps a configurable tool allow-list and delegates work to subagents with isolated contexts. You describe the task; the orchestrator picks agents, dispatches work, and receives their results.
 
 ## Disclaimer

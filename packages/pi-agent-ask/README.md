@@ -1,5 +1,7 @@
 # pi-agent-ask
 
+![An ask_user form: the agent asks where login sessions should live, with Redis recommended](screenshot.png)
+
 A trimmed fork of the Pi ask extension, published as `@saifymatteo/pi-agent-ask`. An agent asks you a structured question and keeps working while you answer; `wait_for_answers` is the explicit blocking gate.
 
 ## Upstream
