@@ -24,9 +24,9 @@ const rootParsed = JSON.parse(rootPack.stdout);
 const rootPackage = Array.isArray(rootParsed) ? rootParsed[0] : Object.values(rootParsed)[0];
 assert.equal(rootPackage.name, '@saifymatteo/pi-extensions');
 const rootPaths = rootPackage.files.map(file => file.path);
-for (const required of ['package.json', 'README.md', 'CHANGELOG.md', 'NOTICE.md', 'LICENSE', 'inventory.json']) assert.ok(rootPaths.includes(required), `root: missing ${required}`);
+for (const required of ['package.json', 'README.md', 'CHANGELOG.md', 'NOTICE.md', 'LICENSE', 'inventory.json', 'collection/gate.ts', 'schemas/pi-extensions.schema.json']) assert.ok(rootPaths.includes(required), `root: missing ${required}`);
 for (const entry of inventory.extensions) {
-  for (const required of [`packages/${entry.directory}/src/index.ts`, `packages/${entry.directory}/package.json`, `packages/${entry.directory}/CHANGELOG.md`]) {
+  for (const required of [`collection/${entry.directory}.ts`, `packages/${entry.directory}/src/index.ts`, `packages/${entry.directory}/package.json`, `packages/${entry.directory}/CHANGELOG.md`]) {
     assert.ok(rootPaths.includes(required), `root: collection tarball missing ${required}`);
   }
 }

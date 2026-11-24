@@ -121,6 +121,17 @@ pi install npm:@saifymatteo/pi-extensions   # after the first root release
 
 The root manifest explicitly lists every package, matching the monorepo collection pattern. **Loading the root enables all listed resources**, including shell overrides, guardrails, UI patches, logging, and session housekeeping. It is not the recommended first test. Impact is small and measured: loading everything adds about 1.7k tokens to the first-turn context window on stock Pi; only bg-bash, zvec, codegraph, wait, and vision contribute — the rest register hooks, commands, or UI patches that cost nothing until used. Pi's package resource filters can select only particular root entrypoints. Prefer one package at a time while evaluating compatibility, and do not combine the root collection with individually installed packages from this repository: they are different package identities, so commands and hooks can duplicate.
 
+To turn off individual packages in the collection, create `<agent-dir>/extensions/pi-extensions.json` (`~/.pi/agent/extensions/pi-extensions.json` by default) and `/reload`:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/schemas/pi-extensions.schema.json",
+  "disabled": ["pi-tts", "pi-atelier"]
+}
+```
+
+Names are package directories from the table above. A missing or unparsable file loads everything. Standalone installs ignore this file.
+
 Configuration paths are unchanged by packaging: for example, many adapters read `<agent-dir>/extensions/<name>.json`, not a config next to the package source. Examples are inert files for manual review, never automatically installed settings. Loading the dotenv extension before service adapters matters when config references environment variables; the root manifest places it first.
 
 ## External components stay external

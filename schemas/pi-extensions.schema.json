@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "pi-extensions collection settings",
+  "description": "Read from <agent-dir>/extensions/pi-extensions.json when the root collection (@saifymatteo/pi-extensions) is loaded. Standalone packages ignore it. Changes apply on /reload or restart.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Editor JSON Schema reference; not a runtime setting."
+    },
+    "disabled": {
+      "type": "array",
+      "uniqueItems": true,
+      "default": [],
+      "description": "Packages to skip at load. Omitted or [] loads every package.",
+      "items": {
+        "enum": [
+          "pi-9router",
+          "pi-agent-ask",
+          "pi-atelier",
+          "pi-bg-bash",
+          "pi-claude-usage",
+          "pi-clipboard-image",
+          "pi-codeblock-borders",
+          "pi-codegraph",
+          "pi-compact-tools",
+          "pi-decisions",
+          "pi-draft",
+          "pi-load-pi-dotenv",
+          "pi-model-go",
+          "pi-orchestrator",
+          "pi-prestart-working",
+          "pi-root-guard",
+          "pi-session-finder",
+          "pi-session-id",
+          "pi-session-nav",
+          "pi-session-rename",
+          "pi-session-retention",
+          "pi-skill-usage-log",
+          "pi-tool-usage-log",
+          "pi-tts",
+          "pi-user-image-previews",
+          "pi-vision",
+          "pi-wait",
+          "pi-zvec"
+        ]
+      }
+    }
+  }
+}

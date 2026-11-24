@@ -33,8 +33,12 @@ assert.equal(manifest.private, undefined, 'Root must stay publishable');
 assert.equal(manifest.license, 'AGPL-3.0-only');
 assert.deepEqual(manifest.publishConfig, { access: 'public' });
 assert.ok(manifest.files.includes('packages'), 'Root tarball must bundle the packages');
-assert.deepEqual([...manifest.pi.extensions].sort(), inventory.extensions.map(e => `./packages/${e.directory}/src/index.ts`).sort());
-assert.equal(manifest.pi.extensions[0], './packages/pi-load-pi-dotenv/src/index.ts', 'Load environment before configured services');
+assert.deepEqual([...manifest.pi.extensions].sort(), inventory.extensions.map(e => `./collection/${e.directory}.ts`).sort());
+assert.equal(manifest.pi.extensions[0], './collection/pi-load-pi-dotenv.ts', 'Load environment before configured services');
+for (const { directory } of inventory.extensions) {
+  assert.equal(readFileSync(resolve(root, 'collection', `${directory}.ts`), 'utf8'), `import extension from "../packages/${directory}/src/index.ts";\nimport { gate } from "./gate.ts";\n\nexport default gate("${directory}", extension);\n`, `collection/${directory}.ts: wrapper drift`);
+}
+assert.deepEqual(json(resolve(root, 'schemas/pi-extensions.schema.json')).properties.disabled.items.enum, inventory.extensions.map(e => e.directory), 'Collection schema drift');
 for (const skillPath of manifest.pi.skills ?? []) {
   assert.ok(existsSync(resolve(root, skillPath)), `root: skill path not found: ${skillPath}`);
 }

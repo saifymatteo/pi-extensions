@@ -4,6 +4,10 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Added
+
+- Disable individual packages with `disabled` in `<agent-dir>/extensions/pi-extensions.json`. A JSON Schema ships at `schemas/pi-extensions.schema.json`. Without the file, every package loads.
+
 ## [0.1.22]
 
 ### Added
