@@ -1,0 +1,198 @@
+// ABOUTME: Interactive TUI settings dialog for pi-x-ide configuration.
+// ABOUTME: Multi-row SettingsList with Space cycling; Ctrl+S/P save global/project config.
+import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
+import {
+  Container,
+  Key,
+  matchesKey,
+  setKeybindings,
+  SettingsList,
+  Text,
+  type SettingItem,
+  type SettingsListTheme,
+} from "@earendil-works/pi-tui";
+import {
+  resolveIdeConfigSettings,
+  writePiConfigSettings,
+  type ConfigScope,
+  type IdeConfigSettings,
+} from "../shared/config.ts";
+import { DEFAULT_STATUS_DISPLAY, STATUS_DISPLAY_VALUES, type StatusDisplay } from "../shared/config-options.ts";
+import { logExtensionError } from "../shared/errors.ts";
+import type { PiIdeRuntime } from "./state.ts";
+import { updateIdeUi } from "./ui.ts";
+
+const DISPLAY_SETTING_ID = "display";
+const AUTO_INSTALL_SETTING_ID = "autoInstall";
+const BOOLEAN_SETTING_VALUES = ["true", "false"] as const;
+const BORDER_CHAR = "\u2500";
+const SETTINGS_LIST_MAX_VISIBLE_ROWS = 10;
+const SETTINGS_LIST_EXTRA_ROWS = 2;
+
+type ConfigDialogResult = { action: "save"; settings: IdeConfigSettings; scope: ConfigScope } | { action: "cancel" };
+
+/** @deprecated Prefer showIdeSettings. */
+export async function showStatusDisplayConfig(
+  runtime: PiIdeRuntime,
+  ctx: ExtensionCommandContext,
+  options: { home?: string } = {},
+): Promise<void> {
+  return showIdeSettings(runtime, ctx, options);
+}
+
+/** @deprecated Prefer showIdeSettings. */
+export async function showIdeConfig(
+  runtime: PiIdeRuntime,
+  ctx: ExtensionCommandContext,
+  options: { home?: string } = {},
+): Promise<void> {
+  return showIdeSettings(runtime, ctx, options);
+}
+
+export async function showIdeSettings(
+  runtime: PiIdeRuntime,
+  ctx: ExtensionCommandContext,
+  options: { home?: string } = {},
+): Promise<void> {
+  const resolved = resolveIdeConfigSettings({ projectDir: ctx.cwd, home: options.home });
+  const result = await ctx.ui.custom<ConfigDialogResult>((tui, theme, keybindings, done) => {
+    // SettingsList reads a module-local manager; seed it with the host manager so
+    // remapped keys apply even if this pi-tui copy differs from the host's.
+    setKeybindings(keybindings);
+
+    const draft: IdeConfigSettings = {
+      display: resolved.settings.display ?? DEFAULT_STATUS_DISPLAY,
+      autoInstall: resolved.settings.autoInstall,
+    };
+
+    const items: SettingItem[] = [
+      {
+        id: DISPLAY_SETTING_ID,
+        label: "Display",
+        description: "IDE status placement: widget (above editor) or statusline (footer)",
+        currentValue: draft.display,
+        values: [...STATUS_DISPLAY_VALUES],
+      },
+      {
+        id: AUTO_INSTALL_SETTING_ID,
+        label: "AutoInstall",
+        description: "Auto-install VS Code-family extension on Pi startup (PI_X_IDE_AUTO_INSTALL)",
+        currentValue: draft.autoInstall ? "true" : "false",
+        values: [...BOOLEAN_SETTING_VALUES],
+      },
+    ];
+
+    const settingsList = new SettingsList(
+      items,
+      Math.min(items.length + SETTINGS_LIST_EXTRA_ROWS, SETTINGS_LIST_MAX_VISIBLE_ROWS),
+      createSettingsListTheme(theme),
+      (id, newValue) => {
+        if (id === DISPLAY_SETTING_ID && isStatusDisplayValue(newValue)) {
+          draft.display = newValue;
+          return;
+        }
+        if (id === AUTO_INSTALL_SETTING_ID && isBooleanSettingValue(newValue)) {
+          draft.autoInstall = newValue === "true";
+        }
+      },
+      () => done({ action: "cancel" }),
+      { enableSearch: false },
+    );
+
+    const title = theme.fg("accent", theme.bold("Settings:"));
+    const help = theme.fg("dim", "↑↓ navigate · space cycle · ctrl+s save global · ctrl+p save project · esc cancel");
+
+    const container = new Container();
+    // Local border avoids a coding-agent value import (host package runtime edge).
+    container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+    container.addChild(new Text(title, 1, 0));
+    container.addChild(settingsList);
+    container.addChild(new Text(help, 1, 0));
+    container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+
+    const saveCurrent = (scope: ConfigScope): void => {
+      done({
+        action: "save",
+        settings: { display: draft.display, autoInstall: draft.autoInstall },
+        scope,
+      });
+    };
+
+    return {
+      render: (width) => container.render(width),
+      invalidate: () => container.invalidate(),
+      handleInput: (data) => {
+        if (matchesKey(data, Key.ctrl("s"))) {
+          saveCurrent("global");
+          return;
+        }
+        if (matchesKey(data, Key.ctrl("p"))) {
+          saveCurrent("project");
+          return;
+        }
+        settingsList.handleInput(data);
+        tui.requestRender();
+      },
+    };
+  });
+
+  if (!result || result.action === "cancel") return;
+
+  try {
+    const saved = writePiConfigSettings(result.settings, {
+      scope: result.scope,
+      projectDir: ctx.cwd,
+      home: options.home,
+    });
+    updateIdeUi(runtime, ctx, result.settings.display);
+    ctx.ui.notify(
+      [
+        `Saved to ${saved.scope}: ${saved.path}`,
+        `Display=${result.settings.display}`,
+        `AutoInstall=${result.settings.autoInstall}`,
+      ].join("\n"),
+      "info",
+    );
+  } catch (error) {
+    // logExtensionError routes through pi ui.notify via the installed reporter.
+    logExtensionError("save ide settings", error);
+  }
+}
+
+function isStatusDisplayValue(value: string): value is StatusDisplay {
+  return (STATUS_DISPLAY_VALUES as readonly string[]).includes(value);
+}
+
+function isBooleanSettingValue(value: string): value is (typeof BOOLEAN_SETTING_VALUES)[number] {
+  return (BOOLEAN_SETTING_VALUES as readonly string[]).includes(value);
+}
+
+function createSettingsListTheme(theme: Theme): SettingsListTheme {
+  return {
+    label: (text, selected) => (selected ? theme.fg("accent", text) : text),
+    value: (text, selected) => (selected ? theme.fg("accent", text) : theme.fg("muted", text)),
+    description: (text) => theme.fg("dim", text),
+    cursor: theme.fg("accent", "→ "),
+    hint: (text) => theme.fg("dim", text),
+  };
+}
+
+/**
+ * Width-adaptive horizontal border for settings dialogs.
+ * Local copy of Pi's DynamicBorder so config-ui never value-imports coding-agent.
+ */
+export class DynamicBorder {
+  private readonly color: (text: string) => string;
+
+  constructor(color: (text: string) => string) {
+    this.color = color;
+  }
+
+  invalidate(): void {
+    // No cached state.
+  }
+
+  render(width: number): string[] {
+    return [this.color(BORDER_CHAR.repeat(Math.max(0, width)))];
+  }
+}

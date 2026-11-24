@@ -4,6 +4,14 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Added
+
+- pi-x-ide: the file and lines open in VS Code, JetBrains, Neovim, or Zed reach the agent as an IDE Context message; Zed works from any terminal. If you also installed `npm:@saifymatteo/pi-x-ide`, remove one of them.
+
+### Changed
+
+- `pi-x-ide` is forked from balaenis/pi-x-ide (Apache-2.0). The upstream license is retained in `packages/pi-x-ide/LICENSE.APACHE` and still covers the upstream portions; saifymatteo's changes from 1.22.0 onward are AGPL-3.0-only.
+
 ## [0.1.23]
 
 ### Added

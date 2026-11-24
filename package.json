@@ -9,8 +9,8 @@
 	],
 	"scripts": {
 		"check": "node scripts/check-packages.mjs",
-		"typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.agent-ask.json && tsc -p tsconfig.atelier.json",
-		"test": "node --test test/*.test.mjs packages/*/test/*.test.mjs && npm test -w packages/pi-orchestrator -w packages/pi-agent-ask -w packages/pi-atelier",
+		"typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.agent-ask.json && tsc -p tsconfig.atelier.json && tsc -p tsconfig.x-ide.json",
+		"test": "node --test test/*.test.mjs packages/*/test/*.test.mjs && npm test -w packages/pi-orchestrator -w packages/pi-agent-ask -w packages/pi-atelier -w packages/pi-x-ide",
 		"pack:check": "node scripts/check-pack.mjs",
 		"dev": "node scripts/dev.mjs",
 		"smoke": "node scripts/smoke.mjs",
@@ -62,6 +62,7 @@
 			"./collection/pi-user-image-previews.ts",
 			"./collection/pi-vision.ts",
 			"./collection/pi-wait.ts",
+			"./collection/pi-x-ide.ts",
 			"./collection/pi-zvec.ts"
 		],
 		"skills": [

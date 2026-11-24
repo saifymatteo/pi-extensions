@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-x-ide/schemas/pi-x-ide.schema.json",
+  "title": "Pi config.json",
+  "description": "Schema for Pi-side configuration read from ~/.pi/pi-x-ide/config.json.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "fixPrompt": {
+      "type": "string",
+      "description": "Custom prompt prefix when requesting a fix for IDE diagnostics. Use {DIAGNOSTIC} as a placeholder for the diagnostic context. If the placeholder is omitted, the diagnostic context is appended after your prompt.",
+      "default": "Analyze the errors and warnings at the following location, and try to fix them:\n{DIAGNOSTIC}"
+    },
+    "status_display": {
+      "type": "string",
+      "description": "Where to show IDE connection status. Use \"widget\" for the above-editor widget (default), or \"statusline\" for the default footer status line.",
+      "default": "widget",
+      "enum": [
+        "widget",
+        "statusline"
+      ]
+    },
+    "env": {
+      "type": "object",
+      "description": "Pi-side environment variables. Real environment variables override these values.",
+      "additionalProperties": {
+        "type": [
+          "string",
+          "number",
+          "boolean"
+        ]
+      },
+      "properties": {
+        "PI_X_IDE_AUTO_INSTALL": {
+          "type": [
+            "string",
+            "number",
+            "boolean"
+          ],
+          "description": "Controls VS Code extension auto-install. Values 0, false, and off disable it."
+        },
+        "PI_X_IDE_ATTACH_SHORTCUT": {
+          "type": "string",
+          "description": "Pi TUI shortcut for attaching the latest IDE selection. Set to off, none, false, or 0 to disable."
+        },
+        "PI_X_IDE_HOST_OVERRIDE": {
+          "type": "string",
+          "description": "Override the host Pi uses to connect to IDE WebSocket lock files. Useful for WSL2 or custom networking."
+        },
+        "PI_X_IDE_ZED_DB": {
+          "type": "string",
+          "description": "Override path to Zed's SQLite database."
+        },
+        "PI_X_IDE_ZED_POLL_INTERVAL_MS": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "description": "Polling interval in milliseconds when checking Zed's SQLite database for selection changes."
+        }
+      },
+      "patternProperties": {}
+    }
+  },
+  "examples": [
+    {
+      "fixPrompt": "Analyze the errors and warnings at the following location, and try to fix them:\n{DIAGNOSTIC}",
+      "status_display": "widget",
+      "env": {
+        "PI_X_IDE_AUTO_INSTALL": "0",
+        "PI_X_IDE_ATTACH_SHORTCUT": "ctrl+alt+k",
+        "PI_X_IDE_ZED_DB": "/home/user/.local/share/zed/db/0-stable/db.sqlite",
+        "PI_X_IDE_ZED_POLL_INTERVAL_MS": 1000
+      }
+    }
+  ]
+}

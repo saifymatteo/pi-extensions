@@ -1,0 +1,64 @@
+{
+  "name": "@saifymatteo/pi-x-ide",
+  "version": "1.21.0",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "IDE selection context for Pi: VS Code, JetBrains, Neovim, and Zed",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi",
+    "ide",
+    "vscode",
+    "zed",
+    "neovim",
+    "jetbrains"
+  ],
+  "files": [
+    "src",
+    "schemas",
+    "docs",
+    "examples",
+    "README.md",
+    "CHANGELOG.md",
+    "NOTICE.md",
+    "LICENSE",
+    "LICENSE.APACHE"
+  ],
+  "pi": {
+    "image": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-x-ide/screenshot.png",
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "dependencies": {
+    "effect": "^3.22.0",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
+  },
+  "scripts": {
+    "test": "node scripts/generate-config-schema.cjs --check && node --test --experimental-strip-types tests/*.test.ts",
+    "schema:generate": "node scripts/generate-config-schema.cjs"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://github.com/saifymatteo/pi-extensions/tree/main/packages/pi-x-ide#readme",
+  "bugs": {
+    "url": "https://github.com/saifymatteo/pi-extensions/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saifymatteo/pi-extensions.git",
+    "directory": "packages/pi-x-ide"
+  }
+}

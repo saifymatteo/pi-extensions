@@ -84,6 +84,7 @@ Each directory under `packages/` is an independently loadable, independently pub
 | --- | --- | --- |
 | [pi-bg-bash](packages/pi-bg-bash) | Add background execution to the built-in bash/powershell tools | <a href="packages/pi-bg-bash"><img src="packages/pi-bg-bash/screenshot.png" width="280" alt="pi-bg-bash screenshot"></a> |
 | [pi-agent-ask](packages/pi-agent-ask) | `ask_user` forms: the agent asks structured questions and keeps working while you answer | <a href="packages/pi-agent-ask"><img src="packages/pi-agent-ask/screenshot.png" width="280" alt="pi-agent-ask screenshot"></a> |
+| [pi-x-ide](packages/pi-x-ide) | Give the agent the file and lines open in VS Code, JetBrains, Neovim, or Zed | <a href="packages/pi-x-ide"><img src="packages/pi-x-ide/screenshot.png" width="280" alt="pi-x-ide screenshot"></a> |
 | [pi-orchestrator](packages/pi-orchestrator) | Orchestrator mode: main agent delegates to a subagent fleet via `delegate` | <a href="packages/pi-orchestrator"><img src="packages/pi-orchestrator/screenshot.png" width="280" alt="pi-orchestrator screenshot"></a> |
 | [pi-wait](packages/pi-wait) | Join background jobs (shell:/agent:) with lease-based delivery | <a href="packages/pi-wait"><img src="packages/pi-wait/screenshot.png" width="280" alt="pi-wait screenshot"></a> |
 | [pi-codegraph](packages/pi-codegraph) | CodeGraph CLI adapter: explore tool plus index auto-init/sync | <a href="packages/pi-codegraph"><img src="packages/pi-codegraph/screenshot.png" width="280" alt="pi-codegraph screenshot"></a> |
@@ -138,7 +139,7 @@ Configuration paths are unchanged by packaging: for example, many adapters read 
 
 | Component | Relationship to this collection |
 | --- | --- |
-| [`@saifymatteo/pi-x-ide`](https://github.com/saifymatteo/pi-x-ide) (fork of [balaenis/pi-x-ide](https://github.com/balaenis/pi-x-ide)) | Separate package, loaded independently; UI patches can overlap collection patches |
+| Editor plugins for pi-x-ide (VS Code, JetBrains, Neovim) | Upstream [balaenis/pi-x-ide](https://github.com/balaenis/pi-x-ide) releases; `packages/pi-x-ide` is the Pi side only |
 | [`@saifymatteo/Pi-Bolt`](https://github.com/saifymatteo/Pi-Bolt) (fork of [opensec-git/Pi-Bolt](https://github.com/opensec-git/Pi-Bolt)) | Host fork; one of the compatible `pi` executables that can load these packages. UI patches are host-version-sensitive |
 | External CLIs and provider dependencies | Install independently where needed; package documentation lists prerequisites |
 

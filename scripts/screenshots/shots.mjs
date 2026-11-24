@@ -3,6 +3,7 @@
 import { join, dirname } from 'node:path';
 import { mkdirSync, writeFileSync, readFileSync, utimesSync, realpathSync } from 'node:fs';
 import { randomUUID, createHash } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
 import { session, KEY, ROOT, HERE, sleep } from './lib.mjs';
 import { rows, page, capture, closeBrowser, lineText } from './render.mjs';
 
@@ -474,6 +475,38 @@ export const SHOTS = {
     const withExt = await run({ extensions: ['pi-codeblock-borders'], cols: 84, rows: 50, turns: [{ text: reply }] }, go);
     const tail = snap => { const L = snap.lines; const i = L.findLastIndex(l => /kill %1/.test(lineText(l))); return rows(snap, { from: /add a \/health route/, to: i + 1 }); };
     return { panels: [before(tail(stock)), after('pi-codeblock-borders', tail(withExt))] };
+  },
+  'pi-x-ide': async () => {
+    // A fake Zed state DB: router.ts open in ~/acme-api with lines 3-6 selected.
+    // ZED_TERM skips the live-Zed probe; PI_X_IDE_ZED_DB points Pi at the fake DB.
+    const router = "import type { RequestListener } from 'node:http';\n\n// TODO: add /health\nexport const router: RequestListener = (req, res) => {\n  res.writeHead(404).end();\n};\n";
+    const setup = ({ home, project }) => {
+      const dbPath = join(home, 'zed', 'db.sqlite');
+      mkdirSync(dirname(dbPath), { recursive: true });
+      const db = new DatabaseSync(dbPath);
+      db.exec(`CREATE TABLE kv_store (key TEXT PRIMARY KEY, value TEXT);
+        CREATE TABLE workspaces (workspace_id INTEGER PRIMARY KEY, paths TEXT, timestamp INTEGER, session_id TEXT);
+        CREATE TABLE panes (pane_id INTEGER, workspace_id INTEGER, active INTEGER);
+        CREATE TABLE items (item_id INTEGER, workspace_id INTEGER, pane_id INTEGER, kind TEXT, active INTEGER);
+        CREATE TABLE editors (item_id INTEGER, workspace_id INTEGER, buffer_path TEXT, contents TEXT);
+        CREATE TABLE editor_selections (editor_id INTEGER, workspace_id INTEGER, start INTEGER, end INTEGER);
+        INSERT INTO kv_store VALUES ('session_id', 's1');
+        INSERT INTO panes VALUES (1, 1, 1);
+        INSERT INTO items VALUES (1, 1, 1, 'Editor', 1);`);
+      db.prepare('INSERT INTO workspaces VALUES (1, ?, 1, ?)').run(JSON.stringify([project]), 's1');
+      db.prepare('INSERT INTO editors VALUES (1, 1, ?, ?)').run(join(project, 'src', 'router.ts'), router);
+      const start = Buffer.byteLength(router.slice(0, router.indexOf('// TODO')));
+      db.prepare('INSERT INTO editor_selections VALUES (1, 1, ?, ?)').run(start, Buffer.byteLength(router) - 1);
+      db.close();
+    };
+    const env = { ZED_TERM: 'true', PI_X_IDE_ZED_DB: '/tmp/demo/zed/db.sqlite', PI_X_IDE_ZED_POLL_INTERVAL_MS: '200', PI_X_IDE_AUTO_INSTALL: '0' };
+    const turns = [{ text: 'Lines 3-6 of `src/router.ts`: the router answers 404 for everything, so `/health` still needs a route.' }];
+    const snap = await run({ extensions: ['pi-x-ide'], cols: 100, rows: 22, setup, env, turns }, async s => {
+      await s.waitFor('router.ts', 15000); await s.settle(400);
+      await prompt(s, 'what is still missing here?', 'needs a route');
+    });
+    return { panels: [solo(rows(snap, { from: /what is still missing/, footer: 6 }), { highlight: [/IDE Context|router\.ts#L/] })],
+      caption: 'Zed has src/router.ts open with lines 3-6 selected. Pi shows it in the widget and sends an IDE Context message (file and lines, not the text) with the prompt.' };
   },
   'pi-compact-tools': async () => {
     const turns = () => [

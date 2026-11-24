@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "strict": true, "types": ["node"] },
+  "include": ["packages/pi-x-ide/src/**/*.ts", "packages/pi-x-ide/tests/**/*.ts"],
+  "exclude": []
+}

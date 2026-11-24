@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { HERE } from './lib.mjs';
 
-const FONT_DIR = `${process.env.HOME}/Library/Fonts`;
+const FONT_DIR = process.platform === 'linux' ? `${process.env.HOME}/.local/share/fonts/CaskaydiaCoveNerdFont` : `${process.env.HOME}/Library/Fonts`;
 const BG = '#11141a';
 const FG = '#d4d7dd';
 // One Dark-ish 16-color palette for indexed colors; 256-color cube computed.

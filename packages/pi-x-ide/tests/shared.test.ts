@@ -1,0 +1,1099 @@
+// ABOUTME: Exercises shared protocol, config, path, and runtime selection helper behavior.
+// ABOUTME: Covers regression cases for stale pi extension context handling.
+import assert from "node:assert/strict";
+import { access, mkdir, mkdtemp, readFile, utimes, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import test from "node:test";
+import {
+  CONFIG_DIR_NAME,
+  EXT_CONFIG_NAME,
+  readPiConfigEnv,
+  readPiConfigFixPrompt,
+  readPiConfigStatusDisplay,
+  resolvePiConfigEnv,
+  resolveIdeConfigSettings,
+  resolvePiConfigAutoInstall,
+  resolvePiConfigStatusDisplay,
+  resolvePiProjectConfigPath,
+  writePiConfigSettings,
+  writePiConfigStatusDisplay,
+} from "../src/shared/config.ts";
+import { visibleWidth } from "../src/shared/display-width.ts";
+import {
+  formatEditorContext,
+  formatEditorContextMessage,
+  formatRangeMention,
+  parseRangeMention,
+} from "../src/shared/format.ts";
+import {
+  hasDirectWorkspaceMatch,
+  relationshipMatchLength,
+  resolveLockDir,
+  resolveLockDirs,
+} from "../src/shared/paths.ts";
+import {
+  isWsl,
+  normalizeEditorSelectionSnapshotForHost,
+  normalizePathForHost,
+  windowsUserProfileDirs,
+} from "../src/shared/platform.ts";
+import { type EditorSelectionSnapshot, type IdeLockFile } from "../src/shared/protocol.ts";
+import {
+  parseLockFileContent,
+  isSelectionClearedParams,
+  isEditorSelectionSnapshot,
+  isIdeLockFile,
+} from "../src/shared/schema.ts";
+import { LockFileParseError } from "../src/shared/effect-errors.ts";
+import { formatExtensionError, logExtensionError, setExtensionErrorReporter } from "../src/shared/errors.ts";
+import { discoverIdeCandidates } from "../src/pi/discovery.ts";
+import { clearLatestSelection, setLatestSelection } from "../src/pi/context.ts";
+import { bindPiUiContext, flushPendingPiErrors, installPiErrorReporter, notifyPiError } from "../src/pi/safety.ts";
+import { createRuntime } from "../src/pi/state.ts";
+import { updateIdeUi } from "../src/pi/ui.ts";
+
+const snapshot: EditorSelectionSnapshot = {
+  source: "vscode",
+  filePath: "/repo/src/main.ts",
+  workspaceFolder: "/repo",
+  ranges: [
+    {
+      text: "const x = 1;",
+      selection: {
+        start: { line: 9, character: 0 },
+        end: { line: 19, character: 12 },
+      },
+    },
+  ],
+};
+
+function captureExtensionErrors(action: () => void): string[] {
+  const messages: string[] = [];
+  setExtensionErrorReporter((scope, error) => {
+    messages.push(formatExtensionError(scope, error));
+  });
+  try {
+    action();
+  } finally {
+    setExtensionErrorReporter(undefined);
+  }
+  return messages;
+}
+
+async function captureExtensionErrorsAsync(action: () => Promise<void>): Promise<string[]> {
+  const messages: string[] = [];
+  setExtensionErrorReporter((scope, error) => {
+    messages.push(formatExtensionError(scope, error));
+  });
+  try {
+    await action();
+  } finally {
+    setExtensionErrorReporter(undefined);
+  }
+  return messages;
+}
+
+void test("formats and parses range mentions", () => {
+  assert.equal(formatRangeMention(snapshot), "@src/main.ts#L10-L20");
+  assert.deepEqual(parseRangeMention("@src/main.ts#L10-L20"), {
+    path: "src/main.ts",
+    startLine: 10,
+    endLine: 20,
+  });
+  assert.deepEqual(parseRangeMention("@src/main.ts#L10"), {
+    path: "src/main.ts",
+    startLine: 10,
+    endLine: 10,
+  });
+  // The legacy comma separator is no longer a range; it stays part of the path.
+  assert.deepEqual(parseRangeMention("@src/main.ts#L10,20"), {
+    path: "src/main.ts#L10,20",
+    startLine: undefined,
+    endLine: undefined,
+  });
+});
+
+void test("formats bounded editor context", () => {
+  const context = formatEditorContext(snapshot, { maxChars: 6 });
+  assert.match(context, /src\/main\.ts/);
+  assert.match(context, /L10-L20/);
+  assert.match(context, /truncated/i);
+});
+
+void test("formats concise IDE context metadata and omits selection when no range is available", () => {
+  assert.equal(
+    formatEditorContextMessage(snapshot),
+    "### IDE Context\n- **IDE**: vscode\n- **File**: `src/main.ts`\n- **Selection**: L10-L20",
+  );
+  assert.equal(
+    formatEditorContextMessage({ ...snapshot, ranges: [] }),
+    "### IDE Context\n- **IDE**: vscode\n- **File**: `src/main.ts`",
+  );
+  assert.doesNotMatch(formatEditorContextMessage(snapshot), /selected source text/);
+});
+
+void test("validates selection cleared params", () => {
+  assert.equal(isSelectionClearedParams({ source: "vscode", reason: "no-active-editor" }), true);
+  assert.equal(isSelectionClearedParams({ source: "vscode", reason: "no-active-editor", receivedAt: 123 }), true);
+  assert.equal(isSelectionClearedParams({ source: "vscode", reason: "unknown" }), false);
+  assert.equal(isSelectionClearedParams({ source: "vscode" }), false);
+  assert.equal(isSelectionClearedParams({ source: "vscode", reason: "closed" }), false);
+});
+
+void test("clears stale editor selection state", () => {
+  const runtime = createRuntime();
+  setLatestSelection(runtime, snapshot);
+
+  assert.equal(runtime.latestSelection, snapshot);
+  assert.equal(runtime.attachState, "pending");
+
+  clearLatestSelection(runtime);
+
+  assert.equal(runtime.latestSelection, undefined);
+  assert.equal(runtime.latestSelectionKey, undefined);
+  assert.equal(runtime.turnSelection, undefined);
+  assert.equal(runtime.attachState, "idle");
+});
+
+void test("ignores stale extension ctx while updating selection UI", () => {
+  const runtime = createRuntime();
+  runtime.ctx = {
+    get hasUI(): boolean {
+      throw new Error("This extension ctx is stale after session replacement or reload.");
+    },
+  } as NonNullable<typeof runtime.ctx>;
+
+  const errors = captureExtensionErrors(() => {
+    assert.doesNotThrow(() => setLatestSelection(runtime, snapshot));
+  });
+  assert.equal(runtime.latestSelection, snapshot);
+  assert.equal(runtime.attachState, "pending");
+  assert.equal(errors.length, 0);
+});
+
+void test("notifyPiError uses pi ui.notify and skips stale ctx", () => {
+  const notifications: Array<{ message: string; type?: string }> = [];
+  const ctx = {
+    hasUI: true,
+    ui: {
+      notify: (message: string, type?: string) => {
+        notifications.push({ message, type });
+      },
+    },
+  } as unknown as NonNullable<ReturnType<typeof createRuntime>["ctx"]>;
+
+  notifyPiError("demo scope", new Error("boom"), ctx);
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0]?.type, "error");
+  assert.match(notifications[0]?.message ?? "", /\[pi-x-ide\] demo scope: boom/);
+
+  notifyPiError("stale scope", new Error("This extension ctx is stale after session replacement or reload."), ctx);
+  assert.equal(notifications.length, 1, "stale ctx errors must not notify");
+});
+
+void test("installPiErrorReporter queues until bindPiUiContext can notify", () => {
+  const notifications: Array<{ message: string; type?: string }> = [];
+  const runtime = createRuntime();
+  installPiErrorReporter(runtime);
+
+  try {
+    logExtensionError("preload scope", new Error("preload-boom"));
+    assert.equal(notifications.length, 0);
+    assert.equal(runtime.pendingExtensionErrors.length, 1);
+    assert.equal(runtime.pendingExtensionErrors[0]?.scope, "preload scope");
+
+    // Stale errors must never enter the deferred queue.
+    logExtensionError("stale scope", new Error("This extension ctx is stale after session replacement or reload."));
+    assert.equal(runtime.pendingExtensionErrors.length, 1);
+
+    const ctx = {
+      hasUI: true,
+      ui: {
+        notify: (message: string, type?: string) => {
+          notifications.push({ message, type });
+        },
+      },
+    } as unknown as NonNullable<typeof runtime.ctx>;
+
+    bindPiUiContext(runtime, ctx);
+    assert.equal(runtime.pendingExtensionErrors.length, 0);
+    assert.equal(notifications.length, 1);
+    assert.equal(notifications[0]?.type, "error");
+    assert.match(notifications[0]?.message ?? "", /\[pi-x-ide\] preload scope: preload-boom/);
+
+    // With ctx bound, subsequent reports deliver immediately.
+    logExtensionError("live scope", new Error("live-boom"));
+    assert.equal(notifications.length, 2);
+    assert.match(notifications[1]?.message ?? "", /\[pi-x-ide\] live scope: live-boom/);
+    assert.equal(runtime.pendingExtensionErrors.length, 0);
+
+    // Manual flush is a no-op when the queue is empty.
+    flushPendingPiErrors(runtime);
+    assert.equal(notifications.length, 2);
+  } finally {
+    setExtensionErrorReporter(undefined);
+  }
+});
+
+void test("logExtensionError is silent when no reporter is installed", () => {
+  setExtensionErrorReporter(undefined);
+  assert.doesNotThrow(() => logExtensionError("no-reporter", new Error("ignored")));
+});
+
+void test("logs non-stale extension ctx errors while updating selection UI", () => {
+  const runtime = createRuntime();
+  runtime.ctx = {
+    get hasUI(): boolean {
+      throw new Error("unexpected UI failure");
+    },
+  } as NonNullable<typeof runtime.ctx>;
+
+  const errors = captureExtensionErrors(() => {
+    assert.doesNotThrow(() => setLatestSelection(runtime, snapshot));
+  });
+  assert.equal(runtime.latestSelection, snapshot);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0] ?? "", /read active Pi UI context: unexpected UI failure/);
+});
+
+void test("logs IDE widget render errors without throwing", () => {
+  const runtime = createRuntime();
+  runtime.connectionStatus = "connected";
+  let widgetFactory:
+    | ((
+        tui: { requestRender: () => void },
+        theme: { fg: (color: string, text: string) => string },
+      ) => { render: (width: number) => string[]; invalidate: () => void; dispose: () => void })
+    | undefined;
+  const ctx = {
+    cwd: "/repo",
+    hasUI: true,
+    ui: {
+      setWidget: (_id: string, factory: typeof widgetFactory) => {
+        widgetFactory = factory;
+      },
+      setStatus: () => {},
+    },
+  } as unknown as NonNullable<typeof runtime.ctx>;
+
+  updateIdeUi(runtime, ctx, "widget");
+  if (!widgetFactory) assert.fail("widget factory was not registered");
+  const widget = widgetFactory(
+    { requestRender: () => undefined },
+    {
+      fg: () => {
+        throw new Error("theme failure");
+      },
+    },
+  );
+
+  const errors = captureExtensionErrors(() => {
+    assert.deepEqual(widget.render(10), []);
+  });
+  assert.equal(errors.length, 1);
+  assert.match(errors[0] ?? "", /render IDE UI widget: theme failure/);
+});
+
+void test("truncates IDE widget output by terminal cell width", () => {
+  const runtime = createRuntime();
+  runtime.connectionStatus = "connected";
+  setLatestSelection(runtime, {
+    ...snapshot,
+    filePath: `/repo/${"한글".repeat(80)}.ts`,
+    ranges: [],
+  });
+
+  let widgetFactory:
+    | ((
+        tui: { requestRender: () => void },
+        theme: { fg: (color: string, text: string) => string },
+      ) => { render: (width: number) => string[]; invalidate: () => void; dispose: () => void })
+    | undefined;
+  const ctx = {
+    cwd: "/repo",
+    hasUI: true,
+    ui: {
+      setWidget: (_id: string, factory: typeof widgetFactory) => {
+        widgetFactory = factory;
+      },
+      setStatus: () => {},
+    },
+  } as unknown as NonNullable<typeof runtime.ctx>;
+
+  updateIdeUi(runtime, ctx, "widget");
+  if (!widgetFactory) assert.fail("widget factory was not registered");
+  const widget = widgetFactory({ requestRender: () => undefined }, { fg: (_color, text) => text });
+  const [line] = widget.render(106);
+
+  assert.ok(line);
+  assert.ok(visibleWidth(`${"한글".repeat(80)}.ts`) > 106);
+  assert.ok(visibleWidth(line) <= 106, `${visibleWidth(line)} > 106`);
+
+  setLatestSelection(runtime, {
+    ...snapshot,
+    filePath: `/repo/${"한글".repeat(80)}.ts`,
+  });
+  const [lineWithRange] = widget.render(106);
+
+  assert.ok(lineWithRange);
+  assert.ok(lineWithRange.includes("..."));
+  assert.ok(lineWithRange.includes("#L10-L20"));
+  assert.ok(lineWithRange.indexOf("...") < lineWithRange.indexOf("#L10-L20"));
+  assert.ok(visibleWidth(lineWithRange) <= 106, `${visibleWidth(lineWithRange)} > 106`);
+});
+
+void test("resolves default lock directory under .pi subdirectory", () => {
+  assert.equal(resolveLockDir(), resolve(homedir(), CONFIG_DIR_NAME, EXT_CONFIG_NAME, "lock"));
+});
+
+void test("loads environment overrides from pi config", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pi-x-ide-config-"));
+  const configDir = join(home, CONFIG_DIR_NAME);
+  const configPath = join(configDir, "config.json");
+  await mkdir(configDir, { recursive: true });
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      env: {
+        PI_X_IDE_AUTO_INSTALL: "0",
+        IGNORED_NULL: null,
+      },
+    }),
+  );
+
+  const configEnv = readPiConfigEnv(configPath);
+  assert.equal(configEnv.PI_X_IDE_AUTO_INSTALL, "0");
+  assert.equal(configEnv.IGNORED_NULL, undefined);
+
+  const mergedEnv = resolvePiConfigEnv({ PI_X_IDE_AUTO_INSTALL: "1" }, { configPath });
+  assert.equal(mergedEnv.PI_X_IDE_AUTO_INSTALL, "1");
+});
+
+void test("reads fixPrompt from pi config", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pi-x-ide-config-"));
+  const configDir = join(home, CONFIG_DIR_NAME);
+  const configPath = join(configDir, "config.json");
+  await mkdir(configDir, { recursive: true });
+
+  // Not set
+  const absent = readPiConfigFixPrompt(configPath);
+  assert.equal(absent, undefined);
+
+  // With placeholder
+  await writeFile(configPath, JSON.stringify({ fixPrompt: "Fix it: {DIAGNOSTIC}" }));
+  const withPlaceholder = readPiConfigFixPrompt(configPath);
+  assert.equal(withPlaceholder, "Fix it: {DIAGNOSTIC}");
+
+  // Without placeholder
+  await writeFile(configPath, JSON.stringify({ fixPrompt: "Just fix it." }));
+  const withoutPlaceholder = readPiConfigFixPrompt(configPath);
+  assert.equal(withoutPlaceholder, "Just fix it.");
+
+  // Not a string
+  await writeFile(configPath, JSON.stringify({ fixPrompt: 42 }));
+  const notString = readPiConfigFixPrompt(configPath);
+  assert.equal(notString, undefined);
+});
+
+void test("reads status_display from pi config", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pi-x-ide-config-"));
+  const configDir = join(home, CONFIG_DIR_NAME);
+  const configPath = join(configDir, "config.json");
+  await mkdir(configDir, { recursive: true });
+
+  assert.equal(readPiConfigStatusDisplay(configPath), "widget");
+
+  await writeFile(configPath, JSON.stringify({ status_display: "statusline" }));
+  assert.equal(readPiConfigStatusDisplay(configPath), "statusline");
+
+  await writeFile(configPath, JSON.stringify({ status_display: "widget" }));
+  assert.equal(readPiConfigStatusDisplay(configPath), "widget");
+
+  await writeFile(configPath, JSON.stringify({ status_display: "footer" }));
+  assert.equal(readPiConfigStatusDisplay(configPath), "widget");
+
+  await writeFile(configPath, JSON.stringify({ status_display: 1 }));
+  assert.equal(readPiConfigStatusDisplay(configPath), "widget");
+});
+
+void test("project status_display overrides global config", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-x-ide-config-scope-"));
+  const home = join(root, "home");
+  const projectDir = join(root, "project");
+  await mkdir(home, { recursive: true });
+  await mkdir(projectDir, { recursive: true });
+
+  const globalPath = join(home, CONFIG_DIR_NAME, EXT_CONFIG_NAME, "config.json");
+  await mkdir(dirname(globalPath), { recursive: true });
+  await writeFile(globalPath, JSON.stringify({ status_display: "widget", env: { KEEP: "1" } }));
+
+  assert.deepEqual(resolvePiConfigStatusDisplay({ projectDir, home }), {
+    value: "widget",
+    scope: "global",
+    path: globalPath,
+  });
+
+  const projectSaved = writePiConfigStatusDisplay("statusline", { scope: "project", projectDir });
+  assert.equal(projectSaved.path, resolvePiProjectConfigPath(projectDir));
+  assert.equal(readPiConfigStatusDisplay({ projectDir, home }), "statusline");
+  assert.deepEqual(resolvePiConfigStatusDisplay({ projectDir, home }), {
+    value: "statusline",
+    scope: "project",
+    path: projectSaved.path,
+  });
+
+  // Global file is unchanged and still preserves unrelated keys when rewritten.
+  const globalSaved = writePiConfigStatusDisplay("statusline", { scope: "global", home });
+  const globalRaw = JSON.parse(await readFile(globalSaved.path, "utf8")) as Record<string, unknown>;
+  assert.equal(globalRaw.status_display, "statusline");
+  assert.deepEqual(globalRaw.env, { KEEP: "1" });
+});
+
+void test("writePiConfigSettings merges AutoInstall env without wiping other env keys", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-x-ide-config-settings-"));
+  const home = join(root, "home");
+  const projectDir = join(root, "project");
+  await mkdir(home, { recursive: true });
+
+  writePiConfigSettings({ display: "widget", autoInstall: false }, { scope: "global", home });
+  writePiConfigSettings({ autoInstall: true }, { scope: "global", home });
+
+  // Preserve unrelated env keys across writes.
+  const globalPath = join(home, CONFIG_DIR_NAME, EXT_CONFIG_NAME, "config.json");
+  const first = JSON.parse(await readFile(globalPath, "utf8")) as {
+    status_display?: string;
+    env?: Record<string, string>;
+  };
+  first.env = { ...first.env, PI_X_IDE_ATTACH_SHORTCUT: "ctrl+alt+k" };
+  await writeFile(globalPath, `${JSON.stringify(first, null, 2)}\n`);
+
+  writePiConfigSettings({ autoInstall: false }, { scope: "global", home });
+  const after = JSON.parse(await readFile(globalPath, "utf8")) as {
+    status_display?: string;
+    env?: Record<string, string>;
+  };
+  assert.equal(after.status_display, "widget");
+  assert.equal(after.env?.PI_X_IDE_AUTO_INSTALL, "false");
+  assert.equal(after.env?.PI_X_IDE_ATTACH_SHORTCUT, "ctrl+alt+k");
+
+  writePiConfigSettings({ display: "statusline", autoInstall: true }, { scope: "project", projectDir });
+  assert.deepEqual(resolveIdeConfigSettings({ projectDir, home }).settings, {
+    display: "statusline",
+    autoInstall: true,
+  });
+  assert.equal(resolvePiConfigAutoInstall({ projectDir, home }).scope, "project");
+});
+
+void test("routes IDE status to widget or statusline based on status_display", () => {
+  const runtime = createRuntime();
+  runtime.connectionStatus = "connected";
+  setLatestSelection(runtime, snapshot);
+
+  let widgetFactory: unknown;
+  let statusText: string | undefined = "stale";
+  const ctx = {
+    cwd: "/repo",
+    hasUI: true,
+    ui: {
+      setWidget: (_id: string, factory: unknown) => {
+        widgetFactory = factory;
+      },
+      setStatus: (_id: string, text: string | undefined) => {
+        statusText = text;
+      },
+    },
+  } as unknown as NonNullable<typeof runtime.ctx>;
+
+  updateIdeUi(runtime, ctx, "widget");
+  assert.equal(typeof widgetFactory, "function");
+  assert.equal(statusText, undefined);
+
+  widgetFactory = undefined;
+  statusText = "stale";
+  updateIdeUi(runtime, ctx, "statusline");
+  assert.equal(widgetFactory, undefined);
+  assert.equal(statusText, "⧉ ⇡ main.ts#L10-L20");
+});
+
+void test("statusline status text uses the same segment colors as the widget", () => {
+  const runtime = createRuntime();
+  runtime.connectionStatus = "connected";
+  setLatestSelection(runtime, snapshot);
+
+  // Inject a fake active Pi theme so statusline colorization matches production.
+  const themeKey = Symbol.for("@earendil-works/pi-coding-agent:theme");
+  const previousTheme = (globalThis as Record<symbol, unknown>)[themeKey];
+  (globalThis as Record<symbol, unknown>)[themeKey] = {
+    fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+  };
+
+  let statusText: string | undefined;
+  const ctx = {
+    cwd: "/repo",
+    hasUI: true,
+    ui: {
+      setWidget: () => {},
+      setStatus: (_id: string, text: string | undefined) => {
+        statusText = text;
+      },
+    },
+  } as unknown as NonNullable<typeof runtime.ctx>;
+
+  try {
+    updateIdeUi(runtime, ctx, "statusline");
+    assert.equal(statusText, "<success>⧉ ⇡ </success><success>main.ts</success><success>#L10-L20</success>");
+
+    runtime.connectionStatus = "error";
+    updateIdeUi(runtime, ctx, "statusline");
+    assert.equal(statusText, "<dim>⧉ </dim><error>✕</error>");
+
+    runtime.connectionStatus = "connecting";
+    updateIdeUi(runtime, ctx, "statusline");
+    assert.match(statusText ?? "", /^<dim>⧉ .+<\/dim>$/);
+  } finally {
+    if (previousTheme === undefined) delete (globalThis as Record<symbol, unknown>)[themeKey];
+    else (globalThis as Record<symbol, unknown>)[themeKey] = previousTheme;
+  }
+});
+
+void test("validates lock file content", () => {
+  const lock: IdeLockFile = {
+    version: 1,
+    ide: "vscode",
+    name: "Visual Studio Code",
+    transport: "ws",
+    host: "127.0.0.1",
+    port: 49152,
+    authToken: "token",
+    workspaceFolders: ["/repo"],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  assert.deepEqual(parseLockFileContent(JSON.stringify(lock)), lock);
+  assert.deepEqual(parseLockFileContent(JSON.stringify({ ...lock, ide: "nvim", name: "Neovim" })), {
+    ...lock,
+    ide: "nvim",
+    name: "Neovim",
+  });
+  assert.deepEqual(parseLockFileContent(JSON.stringify({ ...lock, ide: "jetbrains", name: "Pi x IDE" })), {
+    ...lock,
+    ide: "jetbrains",
+    name: "Pi x IDE",
+  });
+  assert.equal(parseLockFileContent(JSON.stringify({ ...lock, ide: "helix" })), undefined);
+  assert.equal(parseLockFileContent(JSON.stringify({ ...lock, port: 99999 })), undefined);
+  assert.equal(parseLockFileContent(JSON.stringify({ ...lock, port: 0 })), undefined);
+  assert.equal(parseLockFileContent(JSON.stringify({ ...lock, port: 70_000 })), undefined);
+  assert.equal(parseLockFileContent(JSON.stringify({ ...lock, version: 2 })), undefined);
+  const { authToken: _omitAuth, ...withoutAuth } = lock;
+  assert.equal(parseLockFileContent(JSON.stringify(withoutAuth)), undefined);
+  assert.equal(isIdeLockFile({ ...lock, authToken: undefined }), false);
+  assert.equal(parseLockFileContent("{ not json"), undefined);
+  assert.equal(parseLockFileContent("[]"), undefined);
+  assert.equal(parseLockFileContent("null"), undefined);
+  assert.equal(isEditorSelectionSnapshot(snapshot), true);
+});
+
+void test("accepts boolean runningInWindows and rejects non-boolean", () => {
+  const lock: IdeLockFile = {
+    version: 1,
+    ide: "vscode",
+    name: "Visual Studio Code",
+    transport: "ws",
+    host: "127.0.0.1",
+    port: 49152,
+    authToken: "token",
+    workspaceFolders: ["/repo"],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  // Absent is valid (backward compatible with old lock files).
+  assert.deepEqual(parseLockFileContent(JSON.stringify(lock)), lock);
+  // Explicit true/false are preserved.
+  assert.deepEqual(parseLockFileContent(JSON.stringify({ ...lock, runningInWindows: true })), {
+    ...lock,
+    runningInWindows: true,
+  });
+  assert.deepEqual(parseLockFileContent(JSON.stringify({ ...lock, runningInWindows: false })), {
+    ...lock,
+    runningInWindows: false,
+  });
+  // Non-boolean values are rejected.
+  assert.equal(parseLockFileContent(JSON.stringify({ ...lock, runningInWindows: "true" })), undefined);
+  assert.equal(parseLockFileContent(JSON.stringify({ ...lock, runningInWindows: 1 })), undefined);
+  assert.equal(parseLockFileContent(JSON.stringify({ ...lock, runningInWindows: {} })), undefined);
+});
+
+void test("validates jetbrains lock file content", () => {
+  const lock: IdeLockFile = {
+    version: 1,
+    ide: "jetbrains",
+    name: "Pi x IDE",
+    transport: "ws",
+    host: "127.0.0.1",
+    port: 48123,
+    authToken: "a".repeat(64),
+    workspaceFolders: ["/repo"],
+    pid: 12345,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  assert.deepEqual(parseLockFileContent(JSON.stringify(lock)), lock);
+  // An unsupported JetBrains-adjacent source string is still rejected.
+  assert.equal(parseLockFileContent(JSON.stringify({ ...lock, ide: "intellij" })), undefined);
+});
+
+void test("validates nvim editor selection snapshots", () => {
+  assert.equal(isEditorSelectionSnapshot({ ...snapshot, source: "nvim" }), true);
+  assert.equal(isEditorSelectionSnapshot({ ...snapshot, source: "helix" }), false);
+});
+
+void test("validates jetbrains editor selection snapshots", () => {
+  // Non-empty ranges from a local file are accepted.
+  assert.equal(isEditorSelectionSnapshot({ ...snapshot, source: "jetbrains" }), true);
+  // An active file with no selection (empty ranges) is also a valid snapshot.
+  assert.equal(
+    isEditorSelectionSnapshot({
+      source: "jetbrains",
+      filePath: "/repo/src/main.ts",
+      workspaceFolder: "/repo",
+      ranges: [],
+    }),
+    true,
+  );
+  // An unsupported source string is still rejected.
+  assert.equal(isEditorSelectionSnapshot({ ...snapshot, source: "intellij" }), false);
+});
+
+void test("matches workspace relationship", () => {
+  assert.ok(relationshipMatchLength("/repo/src", "/repo/src/app") > relationshipMatchLength("/repo", "/repo/src/app"));
+  assert.equal(relationshipMatchLength("/other", "/repo"), 0);
+});
+
+void test("normalizePathForHost converts Windows and UNC paths under WSL", () => {
+  const wslEnv = { WSL_DISTRO_NAME: "Ubuntu" };
+  // Drive-letter path -> /mnt mount.
+  assert.equal(normalizePathForHost("C:\\Users\\me\\repo", wslEnv), "/mnt/c/Users/me/repo");
+  assert.equal(normalizePathForHost("D:/work/repo/file.ts", wslEnv), "/mnt/d/work/repo/file.ts");
+  // wsl$ and wsl.localhost UNC paths for the current distro -> Linux path.
+  assert.equal(normalizePathForHost("\\\\wsl$\\Ubuntu\\home\\julian\\repo", wslEnv), "/home/julian/repo");
+  assert.equal(normalizePathForHost("\\\\wsl.localhost\\Ubuntu\\home\\julian\\repo", wslEnv), "/home/julian/repo");
+  // Forward-slash UNC paths (IntelliJ VirtualFile.getPath() is system-independent) -> Linux path.
+  assert.equal(normalizePathForHost("//wsl.localhost/Ubuntu/home/julian/repo", wslEnv), "/home/julian/repo");
+  assert.equal(normalizePathForHost("//wsl$/Ubuntu/home/julian/repo/src/a.ts", wslEnv), "/home/julian/repo/src/a.ts");
+  // A UNC path for a different distro is left unchanged (both separator styles).
+  assert.equal(
+    normalizePathForHost("\\\\wsl.localhost\\Debian\\home\\julian\\repo", wslEnv),
+    "\\\\wsl.localhost\\Debian\\home\\julian\\repo",
+  );
+  assert.equal(
+    normalizePathForHost("//wsl.localhost/Debian/home/julian/repo", wslEnv),
+    "//wsl.localhost/Debian/home/julian/repo",
+  );
+  // Outside WSL, paths are returned untouched.
+  assert.equal(normalizePathForHost("C:\\Users\\me\\repo", {}), "C:\\Users\\me\\repo");
+});
+
+void test("normalizes editor selection snapshots for WSL host paths", () => {
+  const raw: EditorSelectionSnapshot = {
+    source: "jetbrains",
+    filePath: "\\\\wsl.localhost\\Ubuntu\\home\\julian\\repo\\src\\a.ts",
+    workspaceFolder: "\\\\wsl.localhost\\Ubuntu\\home\\julian\\repo",
+    ranges: [
+      {
+        text: "hello",
+        selection: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },
+      },
+    ],
+  };
+  const normalized = normalizeEditorSelectionSnapshotForHost(raw, { WSL_DISTRO_NAME: "Ubuntu" });
+  assert.equal(normalized.filePath, "/home/julian/repo/src/a.ts");
+  assert.equal(normalized.workspaceFolder, "/home/julian/repo");
+  assert.equal(formatRangeMention(normalized, { cwd: "/home/julian/repo" }), "@src/a.ts#L1");
+  assert.match(formatEditorContext(normalized), /\/home\/julian\/repo\/src\/a\.ts/);
+
+  const otherDistro = normalizeEditorSelectionSnapshotForHost(raw, { WSL_DISTRO_NAME: "Debian" });
+  assert.equal(otherDistro.filePath, raw.filePath);
+  assert.equal(otherDistro.workspaceFolder, raw.workspaceFolder);
+});
+
+void test("normalizes JetBrains-on-Windows forward-slash UNC snapshots for the Pi host", () => {
+  // IntelliJ VirtualFile.getPath() is system-independent: Windows-side JetBrains
+  // connected to a WSL project reports //wsl.localhost/<distro>/... with forward slashes.
+  const raw: EditorSelectionSnapshot = {
+    source: "jetbrains",
+    filePath: "//wsl.localhost/Ubuntu/home/julian/repo/src/a.ts",
+    workspaceFolder: "//wsl.localhost/Ubuntu/home/julian/repo",
+    ranges: [
+      {
+        text: "hello",
+        selection: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },
+      },
+    ],
+  };
+  const normalized = normalizeEditorSelectionSnapshotForHost(raw, { WSL_DISTRO_NAME: "Ubuntu" });
+  assert.equal(normalized.filePath, "/home/julian/repo/src/a.ts");
+  assert.equal(normalized.workspaceFolder, "/home/julian/repo");
+  assert.equal(formatRangeMention(normalized, { cwd: "/home/julian/repo" }), "@src/a.ts#L1");
+  // The prompt context must reference the Linux path, never //wsl.localhost.
+  const context = formatEditorContext(normalized);
+  assert.match(context, /\/home\/julian\/repo\/src\/a\.ts/);
+  assert.doesNotMatch(context, /wsl\.localhost/);
+});
+
+void test("isWsl detects WSL env markers without touching the host", () => {
+  assert.equal(isWsl({ WSL_DISTRO_NAME: "Ubuntu" }), true);
+  assert.equal(isWsl({ WSL_INTEROP: "/run/WSL/1_interop" }), true);
+  assert.equal(isWsl({}), false);
+});
+
+void test("windowsUserProfileDirs returns empty outside WSL", () => {
+  assert.deepEqual(windowsUserProfileDirs("/mnt/c/Users", {}), []);
+});
+
+void test("resolveLockDirs includes Windows user lock dirs under WSL", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-x-ide-users-"));
+  const usersRoot = join(root, "Users");
+  await mkdir(join(usersRoot, "julian"), { recursive: true });
+  await mkdir(join(usersRoot, "Public"), { recursive: true });
+  await mkdir(join(usersRoot, "Default User"), { recursive: true });
+  const homeLockDir = join(root, "home-lock");
+
+  assert.deepEqual(resolveLockDirs({ homeLockDir, windowsUsersRoot: usersRoot, env: { WSL_DISTRO_NAME: "Ubuntu" } }), [
+    resolve(homeLockDir),
+    resolve(usersRoot, "julian", CONFIG_DIR_NAME, EXT_CONFIG_NAME, "lock"),
+  ]);
+});
+
+void test("resolveLockDirs lockDir override scans only the provided directory", () => {
+  assert.deepEqual(
+    resolveLockDirs({
+      lockDir: "/tmp/custom-lock",
+      homeLockDir: "/tmp/home-lock",
+      windowsUsersRoot: "/mnt/c/Users",
+      env: { WSL_DISTRO_NAME: "Ubuntu" },
+    }),
+    [resolve("/tmp/custom-lock")],
+  );
+});
+
+void test("matches direct workspace paths for auto-connect", () => {
+  assert.equal(hasDirectWorkspaceMatch(["/repo"], "/repo"), true);
+  assert.equal(hasDirectWorkspaceMatch(["/repo"], "/repo/src/app"), true);
+  assert.equal(hasDirectWorkspaceMatch(["/repo/src/app"], "/repo"), false);
+  assert.equal(
+    hasDirectWorkspaceMatch(["\\\\wsl.localhost\\Ubuntu\\home\\julian\\repo"], "/home/julian/repo", {
+      WSL_DISTRO_NAME: "Ubuntu",
+    }),
+    true,
+  );
+  assert.ok(relationshipMatchLength("/repo/src/app", "/repo") > 0);
+});
+
+void test("discovers and sorts matching lock files", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-x-ide-test-"));
+  const baseLock: IdeLockFile = {
+    version: 1,
+    ide: "vscode",
+    name: "VS Code",
+    transport: "ws",
+    host: "127.0.0.1",
+    port: 40000,
+    authToken: "token",
+    workspaceFolders: ["/repo"],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  await writeFile(join(dir, "a.lock"), JSON.stringify(baseLock));
+  await writeFile(join(dir, "b.lock"), JSON.stringify({ ...baseLock, port: 40001, workspaceFolders: ["/repo/src"] }));
+  await writeFile(join(dir, "bad.lock"), "not json");
+
+  const candidates = await discoverIdeCandidates({ cwd: "/repo/src/app", lockDir: dir, checkPid: false });
+  assert.equal(candidates.length, 2);
+  assert.equal(candidates[0].lock.port, 40001);
+
+  // Invalid lockfile was removed during scanning
+  await assert.rejects(() => access(join(dir, "bad.lock")));
+});
+
+void test("discovers candidates across home and WSL Windows lock directories", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-x-ide-multi-lock-"));
+  const homeLockDir = join(root, "home-lock");
+  const usersRoot = join(root, "Users");
+  const windowsLockDir = join(usersRoot, "julian", CONFIG_DIR_NAME, EXT_CONFIG_NAME, "lock");
+  await mkdir(homeLockDir, { recursive: true });
+  await mkdir(windowsLockDir, { recursive: true });
+
+  const baseLock: IdeLockFile = {
+    version: 1,
+    ide: "vscode",
+    name: "VS Code",
+    transport: "ws",
+    host: "127.0.0.1",
+    port: 40000,
+    authToken: "token",
+    workspaceFolders: ["/repo"],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  await writeFile(join(homeLockDir, "a.lock"), JSON.stringify(baseLock));
+  await writeFile(
+    join(windowsLockDir, "b.lock"),
+    JSON.stringify({ ...baseLock, port: 40001, workspaceFolders: ["/repo/src"], runningInWindows: true }),
+  );
+
+  const candidates = await discoverIdeCandidates({
+    cwd: "/repo/src/app",
+    homeLockDir,
+    windowsUsersRoot: usersRoot,
+    env: { WSL_DISTRO_NAME: "Ubuntu" },
+    checkPid: false,
+  });
+  assert.equal(candidates.length, 2);
+  assert.equal(candidates[0].lock.port, 40001);
+  assert.equal(candidates[1].lock.port, 40000);
+});
+
+void test("keeps an old reachable Windows-side WSL lock", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-x-ide-old-windows-wsl-"));
+  const homeLockDir = join(root, "home-lock");
+  const usersRoot = join(root, "Users");
+  const windowsLockDir = join(usersRoot, "julian", CONFIG_DIR_NAME, EXT_CONFIG_NAME, "lock");
+  await mkdir(homeLockDir, { recursive: true });
+  await mkdir(windowsLockDir, { recursive: true });
+  const lockPath = join(windowsLockDir, `jetbrains-${NON_RUNNING_LINUX_PID}-${WINDOWS_WSL_TEST_PORT}.lock`);
+  await writeFile(
+    lockPath,
+    JSON.stringify(
+      discoveryTestLock({
+        ide: "jetbrains",
+        name: "Pi x IDE JetBrains",
+        port: WINDOWS_WSL_TEST_PORT,
+        pid: NON_RUNNING_LINUX_PID,
+        runningInWindows: true,
+      }),
+    ),
+  );
+  const nowMs = await ageLockFile(lockPath, OLD_LOCK_AGE_MS);
+
+  const candidates = await discoverIdeCandidates({
+    cwd: "/repo",
+    homeLockDir,
+    windowsUsersRoot: usersRoot,
+    env: { WSL_DISTRO_NAME: "Ubuntu" },
+    now: nowMs,
+    resolveHost: () => Promise.resolve(WINDOWS_WSL_TEST_HOST),
+    tcpProbe: (host, port) => Promise.resolve(host === WINDOWS_WSL_TEST_HOST && port === WINDOWS_WSL_TEST_PORT),
+  });
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0]?.path, lockPath);
+  await access(lockPath);
+});
+
+void test("removes an unreachable Windows-side WSL lock despite a Linux PID collision", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-x-ide-wsl-pid-collision-"));
+  const homeLockDir = join(root, "home-lock");
+  const usersRoot = join(root, "Users");
+  const windowsLockDir = join(usersRoot, "julian", CONFIG_DIR_NAME, EXT_CONFIG_NAME, "lock");
+  await mkdir(homeLockDir, { recursive: true });
+  await mkdir(windowsLockDir, { recursive: true });
+  const lockPath = join(windowsLockDir, `jetbrains-${process.pid}-${WINDOWS_WSL_TEST_PORT}.lock`);
+  await writeFile(
+    lockPath,
+    JSON.stringify(
+      discoveryTestLock({
+        ide: "jetbrains",
+        name: "Pi x IDE JetBrains",
+        port: WINDOWS_WSL_TEST_PORT,
+        pid: process.pid,
+        runningInWindows: true,
+      }),
+    ),
+  );
+
+  const candidates = await discoverIdeCandidates({
+    cwd: "/repo",
+    homeLockDir,
+    windowsUsersRoot: usersRoot,
+    env: { WSL_DISTRO_NAME: "Ubuntu" },
+    resolveHost: () => Promise.resolve(WINDOWS_WSL_TEST_HOST),
+    tcpProbe: (_host, port) => Promise.resolve(port !== WINDOWS_WSL_TEST_PORT),
+  });
+  assert.equal(candidates.length, 0);
+  await assert.rejects(() => access(lockPath));
+});
+
+void test("keeps Windows-side WSL lock when Linux PID check fails", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-x-ide-windows-pid-"));
+  const homeLockDir = join(root, "home-lock");
+  const usersRoot = join(root, "Users");
+  const windowsLockDir = join(usersRoot, "julian", CONFIG_DIR_NAME, EXT_CONFIG_NAME, "lock");
+  await mkdir(homeLockDir, { recursive: true });
+  await mkdir(windowsLockDir, { recursive: true });
+  const lockPath = join(windowsLockDir, "jetbrains-999999-48123.lock");
+  const lock: IdeLockFile = {
+    version: 1,
+    ide: "jetbrains",
+    name: "Pi x IDE JetBrains",
+    transport: "ws",
+    host: "127.0.0.1",
+    port: 48123,
+    authToken: "token",
+    workspaceFolders: ["/repo"],
+    pid: 999999,
+    runningInWindows: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  await writeFile(lockPath, JSON.stringify(lock));
+
+  const candidates = await discoverIdeCandidates({
+    cwd: "/repo",
+    homeLockDir,
+    windowsUsersRoot: usersRoot,
+    env: { WSL_DISTRO_NAME: "Ubuntu" },
+    resolveHost: () => Promise.resolve("172.30.96.1"),
+    tcpProbe: (host, port) => Promise.resolve(host === "172.30.96.1" && port === 48123),
+  });
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].path, lockPath);
+  await access(lockPath);
+});
+
+const LOCK_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const OLD_LOCK_AGE_MS = LOCK_MAX_AGE_MS + 60_000;
+const DEAD_USABLE_PID = 2_147_483_647;
+const WINDOWS_WSL_TEST_HOST = "172.30.96.1";
+const WINDOWS_WSL_TEST_PORT = 48125;
+const NON_RUNNING_LINUX_PID = 999999;
+
+function discoveryTestLock(overrides: Partial<IdeLockFile> = {}): IdeLockFile {
+  return {
+    version: 1,
+    ide: "vscode",
+    name: "VS Code",
+    transport: "ws",
+    host: "127.0.0.1",
+    port: 40000,
+    authToken: "token",
+    workspaceFolders: ["/repo"],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+async function ageLockFile(path: string, ageMs: number, nowMs = Date.now()): Promise<number> {
+  const agedAt = new Date(nowMs - ageMs);
+  await utimes(path, agedAt, agedAt);
+  return nowMs;
+}
+
+void test("keeps an old local lock while its usable PID is alive", async () => {
+  const lockDir = await mkdtemp(join(tmpdir(), "pi-x-ide-live-pid-"));
+  const lockPath = join(lockDir, "vscode-live.lock");
+  await writeFile(lockPath, JSON.stringify(discoveryTestLock({ pid: process.pid })));
+  const nowMs = await ageLockFile(lockPath, OLD_LOCK_AGE_MS);
+
+  const kept = await discoverIdeCandidates({ cwd: "/repo", lockDir, now: nowMs });
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0]?.path, lockPath);
+  await access(lockPath);
+
+  await writeFile(lockPath, JSON.stringify(discoveryTestLock({ pid: DEAD_USABLE_PID })));
+  const removed = await discoverIdeCandidates({ cwd: "/repo", lockDir });
+  assert.equal(removed.length, 0);
+  await assert.rejects(() => access(lockPath));
+});
+
+void test("uses age-only cleanup when no usable local PID exists", async () => {
+  const lockDir = await mkdtemp(join(tmpdir(), "pi-x-ide-age-only-"));
+  const unusablePids = [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1];
+  const freshPaths: string[] = [];
+  for (const [index, pid] of unusablePids.entries()) {
+    const path = join(lockDir, `fresh-${index}.lock`);
+    await writeFile(path, JSON.stringify(discoveryTestLock({ pid, port: 40000 + index })));
+    freshPaths.push(path);
+  }
+
+  const fresh = await discoverIdeCandidates({ cwd: "/repo", lockDir });
+  assert.equal(fresh.length, freshPaths.length);
+  for (const path of freshPaths) await access(path);
+
+  const oldMissingPidPath = join(lockDir, "old-missing-pid.lock");
+  await writeFile(oldMissingPidPath, JSON.stringify(discoveryTestLock({ port: 41000 })));
+  const oldUnusablePidPath = join(lockDir, "old-unusable-pid.lock");
+  await writeFile(oldUnusablePidPath, JSON.stringify(discoveryTestLock({ pid: 1.5, port: 41001 })));
+  const nowMs = Date.now();
+  await ageLockFile(oldMissingPidPath, OLD_LOCK_AGE_MS, nowMs);
+  await ageLockFile(oldUnusablePidPath, OLD_LOCK_AGE_MS, nowMs);
+
+  const afterAge = await discoverIdeCandidates({ cwd: "/repo", lockDir, now: nowMs });
+  assert.equal(afterAge.length, freshPaths.length);
+  for (const path of freshPaths) await access(path);
+  await assert.rejects(() => access(oldMissingPidPath));
+  await assert.rejects(() => access(oldUnusablePidPath));
+
+  const oldLivePidPath = join(lockDir, "old-live-pid.lock");
+  await writeFile(oldLivePidPath, JSON.stringify(discoveryTestLock({ pid: process.pid, port: 41002 })));
+  await ageLockFile(oldLivePidPath, OLD_LOCK_AGE_MS, nowMs);
+  const disabledPidCheck = await discoverIdeCandidates({
+    cwd: "/repo",
+    lockDir,
+    now: nowMs,
+    checkPid: false,
+  });
+  assert.equal(
+    disabledPidCheck.some((candidate) => candidate.path === oldLivePidPath),
+    false,
+  );
+  await assert.rejects(() => access(oldLivePidPath));
+});
+
+void test("removes unreachable Windows-side WSL lock after Linux PID check fails", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-x-ide-windows-pid-unreachable-"));
+  const homeLockDir = join(root, "home-lock");
+  const usersRoot = join(root, "Users");
+  const windowsLockDir = join(usersRoot, "julian", CONFIG_DIR_NAME, EXT_CONFIG_NAME, "lock");
+  await mkdir(homeLockDir, { recursive: true });
+  await mkdir(windowsLockDir, { recursive: true });
+  const lockPath = join(windowsLockDir, "jetbrains-999999-48124.lock");
+  const lock: IdeLockFile = {
+    version: 1,
+    ide: "jetbrains",
+    name: "Pi x IDE JetBrains",
+    transport: "ws",
+    host: "127.0.0.1",
+    port: 48124,
+    authToken: "token",
+    workspaceFolders: ["/repo"],
+    pid: 999999,
+    runningInWindows: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  await writeFile(lockPath, JSON.stringify(lock));
+
+  const candidates = await discoverIdeCandidates({
+    cwd: "/repo",
+    homeLockDir,
+    windowsUsersRoot: usersRoot,
+    env: { WSL_DISTRO_NAME: "Ubuntu" },
+    resolveHost: () => Promise.resolve("172.30.96.1"),
+    tcpProbe: () => Promise.resolve(false),
+  });
+  assert.equal(candidates.length, 0);
+  await assert.rejects(() => access(lockPath));
+});
+
+void test("LockFileParseError carries Effect tag and readable message", () => {
+  const error = new LockFileParseError({ path: "/tmp/x.lock", reason: "invalid json" });
+  assert.equal(error._tag, "LockFileParseError");
+  assert.equal(error.path, "/tmp/x.lock");
+  assert.equal(error.reason, "invalid json");
+  assert.match(error.message, /LockFileParseError/);
+  assert.match(error.message, /invalid json/);
+  assert.match(error.message, /\/tmp\/x\.lock/);
+});
+

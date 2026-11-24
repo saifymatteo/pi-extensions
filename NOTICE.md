@@ -9,11 +9,12 @@ Upstream code keeps its own license and attribution; AGPL-3.0-only applies to th
 - `pi-codegraph` is a merge of the @izhimu/pi-codegraph 0.3.0 adapter (MIT, https://github.com/izhimu/pi-codegraph) with locally written automation. The upstream MIT portions remain MIT with their copyright notices retained in the source header.
 - `pi-atelier` is forked from michaelmjhhhh/pi-atelier (MIT). The upstream MIT notice is retained in `packages/pi-atelier/LICENSE.MIT` and still covers the upstream portions; saifymatteo's changes from 0.20.3 onward are AGPL-3.0-only.
 - `pi-agent-ask` is forked from alexshpunt/pi-agent-ask (built on eko24ive/pi-ask, MIT). The upstream MIT notice is retained in `packages/pi-agent-ask/LICENSE.MIT` and still covers the upstream portions; saifymatteo's changes from 1.2.2 onward are AGPL-3.0-only.
+- `pi-x-ide` is forked from balaenis/pi-x-ide (Apache-2.0), keeping only the Pi-side extension. The upstream Apache License 2.0 text is retained in `packages/pi-x-ide/LICENSE.APACHE` and still covers the upstream portions; saifymatteo's changes from 1.22.0 onward are AGPL-3.0-only.
 - `pi-model-go` is ported from `@rizal72/oc-models-pro` (npm registry metadata reports MIT, version 0.3.1). Upstream attribution is retained in the source. The basis for this clearance is the registry's license field, not a line-by-line audit of the upstream distribution.
 
 ## Not bundled
 
-`@saifymatteo/pi-x-ide` is not part of this collection. Credentials and personal endpoint/configuration values are not part of this repository.
+Credentials and personal endpoint/configuration values are not part of this repository.
 
 ## Before publishing
 
