@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-vision/schemas/vision-toolkit.schema.json",
+  "title": "pi-vision config",
+  "description": "<agent-dir>/extensions/vision-toolkit.json, read by the pi-vision extension and the vision-tools skill CLIs. Missing connection fields come from Pi's models.json / models-store.json, and the key from auth.json (/login).",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Editor JSON Schema reference; not a runtime setting."
+    },
+    "model": {
+      "$ref": "#/$defs/modelEntry",
+      "description": "First vision model in the chain. Required: with no usable model, text-only models receive failure markers instead of images."
+    },
+    "fallbackModels": {
+      "type": "array",
+      "description": "Further vision models tried in order when an earlier one fails to resolve or its request fails.",
+      "items": { "$ref": "#/$defs/modelEntry" },
+      "default": []
+    },
+    "imagePolicy": {
+      "enum": ["native", "describe", "describe-old"],
+      "description": "For image-capable session models: native keeps images; describe replaces all images and describe-old only older ones with the current model's own description (OpenAI Chat Completions connections only). Text-only models always get the vision chain.",
+      "default": "native"
+    },
+    "lang": {
+      "enum": ["en", "zh"],
+      "description": "Language for image descriptions. Omitted adds no language instruction."
+    },
+    "fallbacks": {
+      "type": "array",
+      "description": "Legacy name for fallbackModels, read only when fallbackModels is not an array.",
+      "items": { "$ref": "#/$defs/modelEntry" },
+      "deprecated": true
+    },
+    "providers": {
+      "type": "object",
+      "description": "Legacy per-provider connection overrides; a model entry's own fields win.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "baseUrl": { "$ref": "#/$defs/baseUrl" },
+          "apiKey": { "$ref": "#/$defs/apiKey" },
+          "protocol": { "$ref": "#/$defs/protocol" }
+        }
+      },
+      "deprecated": true
+    }
+  },
+  "$defs": {
+    "baseUrl": {
+      "type": "string",
+      "description": "API base URL (trailing slashes removed); requests go to <baseUrl>/chat/completions. Overrides models.json."
+    },
+    "apiKey": {
+      "type": "string",
+      "description": "API key, or a \"$ENV_NAME\" reference (no brace syntax). Overrides models.json and auth.json."
+    },
+    "protocol": {
+      "enum": ["chat_completions", "responses", "anthropic"],
+      "description": "Wire protocol for the skill CLIs. Defaults to the models.json provider api type, else chat_completions.",
+      "default": "chat_completions"
+    },
+    "modelEntry": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["id"],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "description": "Provider name. Omitted: the id is searched across models.json, models-store.json and providers entries."
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Model id."
+            },
+            "baseUrl": { "$ref": "#/$defs/baseUrl" },
+            "apiKey": { "$ref": "#/$defs/apiKey" },
+            "protocol": { "$ref": "#/$defs/protocol" },
+            "thinking": {
+              "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+              "description": "Reasoning level sent as reasoning_effort (xhigh and max are sent as high). Omitted or off sends none."
+            }
+          }
+        },
+        {
+          "type": "string",
+          "minLength": 1,
+          "description": "Legacy \"provider/model-id\" or bare \"model-id\" string.",
+          "deprecated": true
+        }
+      ]
+    }
+  }
+}

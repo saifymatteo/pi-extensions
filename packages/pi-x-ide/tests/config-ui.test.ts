@@ -9,8 +9,6 @@ import { DynamicBorder, showIdeSettings } from "../src/pi/config-ui.ts";
 import { createRuntime } from "../src/pi/state.ts";
 import {
   AUTO_INSTALL_ENV_KEY,
-  CONFIG_DIR_NAME,
-  EXT_CONFIG_NAME,
   readPiConfigStatusDisplay,
   resolvePiGlobalConfigPath,
   resolvePiProjectConfigPath,
@@ -139,7 +137,7 @@ void test("showIdeSettings cancel leaves config untouched", async () => {
 
     assert.equal(notifications.length, 0);
     await assert.rejects(() => readFile(resolvePiGlobalConfigPath(home), "utf8"));
-    await assert.rejects(() => readFile(join(projectDir, CONFIG_DIR_NAME, EXT_CONFIG_NAME, "config.json"), "utf8"));
+    await assert.rejects(() => readFile(resolvePiProjectConfigPath(projectDir), "utf8"));
   });
 });
 

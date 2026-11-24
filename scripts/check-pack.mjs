@@ -38,7 +38,7 @@ for (const pkg of packages) {
   if (JSON.parse(readFileSync(resolve(root, 'packages', pkg.name.replace('@saifymatteo/', ''), 'package.json'), 'utf8')).pi?.skills) {
     assert.ok(paths.some(path => path.startsWith('skills/')), `${pkg.name}: bundled skill missing from tarball`);
   }
-  for (const path of paths) assert.ok(['package.json', 'README.md', 'CHANGELOG.md', 'NOTICE.md', 'LICENSE'].includes(path) || path.startsWith('src/') || path.startsWith('examples/') || path.startsWith('skills/') || (pkg.name === '@saifymatteo/pi-orchestrator' && /^(agents|schemas|docs)\//.test(path)) || (pkg.name === '@saifymatteo/pi-agent-ask' && path.startsWith('docs/')) || (pkg.name === '@saifymatteo/pi-x-ide' && (path === 'LICENSE.APACHE' || /^(schemas|docs|examples)\//.test(path))) || path === 'LICENSE.MIT', `${pkg.name}: unexpected packed file ${path}`);
+  for (const path of paths) assert.ok(['package.json', 'README.md', 'CHANGELOG.md', 'NOTICE.md', 'LICENSE'].includes(path) || path.startsWith('src/') || /^schemas\/[^/]+\.schema\.json$/.test(path) || path.startsWith('examples/') || path.startsWith('skills/') || (pkg.name === '@saifymatteo/pi-orchestrator' && /^(agents|docs)\//.test(path)) || (pkg.name === '@saifymatteo/pi-agent-ask' && path.startsWith('docs/')) || (pkg.name === '@saifymatteo/pi-x-ide' && (path === 'LICENSE.APACHE' || /^(docs|examples)\//.test(path))) || path === 'LICENSE.MIT', `${pkg.name}: unexpected packed file ${path}`);
   console.log(`PASS ${pkg.name}: ${paths.length} prospective files`);
 }
 console.log(`Verified ${packages.length} standalone package file lists. No archives created or packages published.`);

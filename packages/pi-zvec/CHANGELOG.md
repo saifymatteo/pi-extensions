@@ -4,6 +4,14 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Added
+
+- JSON schema for `zvec.json` (`schemas/zvec.schema.json`); the auto-created global config and the example include its `$schema` line, which the loader ignores.
+
+### Changed
+
+- Project overrides move to `<project-root>/.pi/extensions/zvec.json`. The older `.pi/zvec.json` is still read when the new file is absent and is never moved.
+
 ## [0.1.7]
 
 ### Fixed

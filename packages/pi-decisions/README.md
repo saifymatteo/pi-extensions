@@ -12,6 +12,8 @@ When configured, registers classifier providers and the `classify` tool (choice/
 
 Reads the shared `<agent-dir>/extensions/service-models.json` registry and registers every model with `type: "classifier"`. A missing registry or no classifier model means no registration. Nothing is created automatically; opt in by manually creating the registry from `examples/service-models.example.json`. An optional one-line `description` per model is shown to the agent as a strength hint in the `model` parameter. Classifier models require `type: "classifier"`, `api: "openai-decisions"`, positive `contextWindow` and `input` capabilities.
 
+Editor validation: set `"$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-decisions/schemas/service-models.schema.json"` at the top of the registry. pi-decisions and pi-tts ship identical copies of `schemas/service-models.schema.json`, so either installed package's URL works. The loader ignores `$schema`; the schema is editor help, not a runtime gate.
+
 Use an actual OpenAI Decisions-compatible service at your chosen base URL (POST `decisions` under the versioned base). Generic examples use localhost, not a configured personal server. API keys accept `$ENV` or `${ENV}`; if omitted, credentials fall back to agent `auth.json`. Prefer explicit environment references. No external CLI required.
 
 ## Security and limits

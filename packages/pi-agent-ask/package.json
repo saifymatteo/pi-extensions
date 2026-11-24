@@ -17,6 +17,7 @@
   ],
   "files": [
     "src",
+    "schemas",
     "docs/configuration.md",
     "docs/contract.md",
     "docs/remote-events.md",

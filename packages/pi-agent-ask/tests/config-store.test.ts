@@ -3,10 +3,14 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { DEFAULT_ASK_CONFIG } from "../src/config/defaults.ts";
+import {
+	DEFAULT_ASK_CONFIG,
+	toAskConfigFileV5,
+} from "../src/config/defaults.ts";
 import type { AskConfig } from "../src/config/schema.ts";
 import {
 	AskConfigStore,
+	ASK_CONFIG_SCHEMA_URL,
 	getAskConfigStore,
 	resetAskConfigStore,
 } from "../src/config/store.ts";
@@ -20,6 +24,7 @@ function expectedConfigFile(
 	overrides: { behaviour?: typeof DEFAULT_ASK_CONFIG.behaviour } = {}
 ) {
 	return {
+		$schema: ASK_CONFIG_SCHEMA_URL,
 		schemaVersion: 5,
 		behaviour: overrides.behaviour ?? DEFAULT_ASK_CONFIG.behaviour,
 		keymaps: DEFAULT_ASK_CONFIG.keymaps,
@@ -264,5 +269,56 @@ test("config store falls back only keymaps when configured keymaps are invalid",
 	assert.equal(result.config.behaviour.showFooterHints, false);
 	assert.deepEqual(result.config.keymaps, DEFAULT_ASK_CONFIG.keymaps);
 	assert.match(result.notice?.text ?? "", DEFAULT_KEYMAPS_NOTICE_PATTERN);
+	await rm(dirname(path), { force: true, recursive: true });
+});
+
+test("schema properties match the saved config keys plus $schema, at the manifest version", async () => {
+	const schema = JSON.parse(
+		await readFile(
+			new URL("../schemas/pi-agent-ask.schema.json", import.meta.url),
+			"utf8"
+		)
+	);
+	const saved = toAskConfigFileV5(DEFAULT_ASK_CONFIG);
+	assert.deepEqual(
+		Object.keys(schema.properties).sort(),
+		[...Object.keys(saved), "$schema"].sort()
+	);
+	assert.equal(
+		ASK_CONFIG_SCHEMA_URL,
+		"https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-agent-ask/schemas/pi-agent-ask.schema.json"
+	);
+	assert.equal(schema.$id, ASK_CONFIG_SCHEMA_URL);
+	for (const key of ["behaviour", "notifications"] as const) {
+		assert.deepEqual(
+			Object.keys(schema.properties[key].properties).sort(),
+			Object.keys(saved[key] ?? {}).sort()
+		);
+	}
+	for (const [context, actions] of Object.entries(saved.keymaps ?? {})) {
+		assert.deepEqual(
+			Object.keys(schema.properties.keymaps.properties[context].properties).sort(),
+			Object.keys(actions).sort()
+		);
+	}
+});
+
+test("config store loads $schema and keeps an existing one on save", async () => {
+	const path = await makeTempPath("pi-ask-config-schema-");
+	await mkdir(dirname(path), { recursive: true });
+	await writeFile(
+		path,
+		JSON.stringify({ ...expectedConfigFile(), $schema: "./local.schema.json" })
+	);
+	const store = new AskConfigStore(path);
+	const result = await store.ensureLoaded();
+	assert.equal(result.notice, undefined);
+	assert.deepEqual(result.config, DEFAULT_ASK_CONFIG);
+
+	await store.save(DEFAULT_ASK_CONFIG);
+	assert.equal(
+		JSON.parse(await readFile(path, "utf-8")).$schema,
+		"./local.schema.json"
+	);
 	await rm(dirname(path), { force: true, recursive: true });
 });

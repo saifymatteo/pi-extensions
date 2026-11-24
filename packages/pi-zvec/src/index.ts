@@ -32,7 +32,10 @@
 // Config (merged, later wins):
 //   1. Global : $PI_CODING_AGENT_DIR/extensions/zvec.json (fallback ~/.pi/agent/extensions/zvec.json)
 //               — auto-created with defaults when missing.
-//   2. Project: <project-root>/.pi/zvec.json — optional per-project overrides.
+//   2. Project: <project-root>/.pi/extensions/zvec.json — optional per-project overrides.
+//               Falls back to the older <project-root>/.pi/zvec.json only when
+//               the new file is absent; repo files are never moved.
+//   A top-level "$schema" key is ignored; the auto-created global file gets it.
 //   Keys: { "autoInit": boolean, "syncOnSettle": boolean, "embedding": string }
 //   Edits are picked up on /reload or the next session start.
 //
@@ -104,7 +107,10 @@ interface ProjectState {
 }
 
 const DEFAULT_EMBEDDING = "local/potion-code-16m-v2";
-const DEFAULTS: ZvecConfig = {
+// Exported for the schema drift test.
+export const SCHEMA_URL =
+	"https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-zvec/schemas/zvec.schema.json";
+export const DEFAULTS: ZvecConfig = {
 	autoInit: true,
 	syncOnSettle: true,
 	embedding: DEFAULT_EMBEDDING,
@@ -148,6 +154,14 @@ function globalConfigPath(): string {
 	return path.join(agentHome(), "extensions", "zvec.json");
 }
 
+// Project overrides: .pi/extensions/zvec.json, else the older .pi/zvec.json.
+// Exported for testing.
+export function projectConfigPath(root: string): string {
+	const preferred = path.join(root, ".pi", "extensions", "zvec.json");
+	const legacy = path.join(root, ".pi", "zvec.json");
+	return !existsSync(preferred) && existsSync(legacy) ? legacy : preferred;
+}
+
 function usageLogPath(): string {
 	return path.join(agentHome(), "zvec-usage.log");
 }
@@ -169,7 +183,7 @@ async function ensureGlobalConfig(): Promise<void> {
 	if (existsSync(p)) return;
 	try {
 		await mkdir(path.dirname(p), { recursive: true });
-		await writeFile(p, `${JSON.stringify(DEFAULTS, null, 2)}\n`, "utf8");
+		await writeFile(p, `${JSON.stringify({ $schema: SCHEMA_URL, ...DEFAULTS }, null, 2)}\n`, "utf8");
 	} catch {
 		// read-only dir etc. → defaults stay in memory only
 	}
@@ -727,7 +741,7 @@ export default function zvec(pi: ExtensionAPI) {
 		const projectRoot = indexedRoot ?? ctx.cwd;
 		const [globalCfg, projectCfg] = await Promise.all([
 			readConfigFile(globalConfigPath()),
-			readConfigFile(path.join(projectRoot, ".pi", "zvec.json")),
+			readConfigFile(projectConfigPath(projectRoot)),
 		]);
 		const config: ZvecConfig = {
 			autoInit: boolOr(projectCfg, globalCfg, "autoInit"),

@@ -87,7 +87,7 @@ process but **not** reachable from inside WSL. Pi resolves a usable host in this
 order (`src/pi/ide-host.ts`):
 
 1. **`PI_X_IDE_HOST_OVERRIDE`** - if set (in the environment or
-   `~/.pi/pi-x-ide/config.json` under `env`), use it directly.
+   `~/.pi/agent/extensions/pi-x-ide.json` under `env`), use it directly.
 2. **WSL default gateway** - if the lock has `runningInWindows: true` and Pi is in
    WSL, parse the gateway from `ip route show` and use it only if a short TCP
    probe to `<gateway>:<port>` succeeds (500 ms timeout).

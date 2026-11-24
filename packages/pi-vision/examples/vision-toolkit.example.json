@@ -1,4 +1,5 @@
 {
+  "$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-vision/schemas/vision-toolkit.schema.json",
   "model": {
     "provider": "example-vision",
     "id": "example-model",

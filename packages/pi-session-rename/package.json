@@ -9,6 +9,7 @@
   ],
   "files": [
     "src",
+    "schemas",
     "README.md",
     "CHANGELOG.md",
     "NOTICE.md",

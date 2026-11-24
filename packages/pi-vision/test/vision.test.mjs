@@ -65,3 +65,27 @@ test('model entries carry their own provider, baseUrl and thinking; legacy strin
   await rewriteMessages([{ role: 'user', content: [{ type: 'image', mimeType: 'image/png', data: 'b3RoZXI=' }] }], [chain.candidates[1]], fetchStub);
   assert.equal(body.reasoning_effort, undefined);
 });
+
+test('schema properties match the config keys the loader reads plus $schema', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'pi-vision-schema-'));
+  mkdirSync(join(dir, 'extensions'));
+  const url = 'https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-vision/schemas/vision-toolkit.schema.json';
+  writeFileSync(join(dir, 'extensions', 'vision-toolkit.json'), JSON.stringify({ $schema: url }));
+  // Record the top-level keys read from the parsed config file.
+  const read = new Set();
+  const json = { ...JSON, parse: (text, ...rest) => {
+    const value = JSON.parse(text, ...rest);
+    return value?.$schema === url ? new Proxy(value, { get: (t, k) => (read.add(k), t[k]) }) : value;
+  } };
+  const { loadVisionChain } = loadExtension(fileURLToPath(new URL('../src/index.ts', import.meta.url)), {}, {
+    process: { ...process, env: { PI_CODING_AGENT_DIR: dir } }, JSON: json,
+  });
+  // $schema alone is accepted and ignored: the only complaint is the missing model.
+  assert.match(loadVisionChain().error, /no usable "model"/);
+  const schema = JSON.parse(readFileSync(new URL('../schemas/vision-toolkit.schema.json', import.meta.url), 'utf8'));
+  assert.equal(schema.$id, 'https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-vision/schemas/vision-toolkit.schema.json');
+  assert.deepEqual(Object.keys(schema.properties).sort(), [...read, '$schema'].sort());
+});

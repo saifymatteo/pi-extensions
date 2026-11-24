@@ -10,7 +10,7 @@ Registers `codegraph_explore`, `/codegraph-init`, `/codegraph-sync`, `/codegraph
 
 ## Configuration and external CLI
 
-Requires `codegraph` on PATH (external package `@colbymchenry/codegraph`; not installed here). Windows invokes its cmd shim. Reads `<agent-dir>/extensions/codegraph.json`, then index-owner `.pi/codegraph.json`. Boolean keys: `autoInit`, `syncOnSettle`. Missing config is auto-created with both **true**, preserving source behavior. The manually authored example sets both false for cautious testing. Existing indexed roots still receive startup sync in UI modes even when both flags are false.
+Requires `codegraph` on PATH (external package `@colbymchenry/codegraph`; not installed here). Windows invokes its cmd shim. Reads `<agent-dir>/extensions/codegraph.json`, then index-owner `.pi/extensions/codegraph.json` (the older `.pi/codegraph.json` is still read when the new file is absent; it is never moved). Boolean keys: `autoInit`, `syncOnSettle`. Missing config is auto-created with both **true**, preserving source behavior, plus `"$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-codegraph/schemas/codegraph.schema.json"` for editor completion (ignored at runtime). The manually authored example sets both false for cautious testing. Existing indexed roots still receive startup sync in UI modes even when both flags are false.
 
 ## Host limitations and security
 

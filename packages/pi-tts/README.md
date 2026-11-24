@@ -12,6 +12,8 @@ Registers `text_to_speech` when the registry has a `type: "tts"` model; no slash
 
 Reads the shared `<agent-dir>/extensions/service-models.json` registry and uses every model with `type: "tts"` and `api: "openai-audio-speech"`. A missing registry or no TTS model leaves the tool absent; no automatic config creation. A model may set default `voice` and `language` (requests can override them) and an optional one-line `description`, shown to the agent as a strength hint in the `model` parameter. Opt in by manually creating the registry from `examples/service-models.example.json`.
 
+Editor validation: set `"$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-tts/schemas/service-models.schema.json"` at the top of the registry. pi-decisions and pi-tts ship identical copies of `schemas/service-models.schema.json`, so either installed package's URL works. The loader ignores `$schema`; the schema is editor help, not a runtime gate.
+
 Requires an OpenAI-compatible speech server (POST `audio/speech` relative to the versioned base URL), not an installed CLI. Keys accept `$ENV` / `${ENV}`; omission falls back to agent `auth.json`, explicit `""` permits keyless TTS. Use environment references rather than embedded credentials.
 
 ## Security and limits

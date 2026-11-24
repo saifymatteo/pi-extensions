@@ -96,3 +96,26 @@ test('herdr tab sync runs in the background, in order, and shutdown waits for th
   await shutdown;
   assert.equal(existsSync(stateFile), false);
 });
+
+test('schema properties match the config keys the loader reads plus $schema', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'pi-rename-schema-'));
+  mkdirSync(join(dir, 'extensions'));
+  const url = 'https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-session-rename/schemas/session-rename.schema.json';
+  writeFileSync(join(dir, 'extensions', 'session-rename.json'), JSON.stringify({ $schema: url }));
+  // Record the top-level keys read from the parsed config file.
+  const read = new Set();
+  const json = { ...JSON, parse: (text, ...rest) => {
+    const value = JSON.parse(text, ...rest);
+    return value?.$schema === url ? new Proxy(value, { get: (t, k) => (read.add(k), t[k]) }) : value;
+  } };
+  const extension = loadExtension(new URL('../src/index.ts', import.meta.url), {}, {
+    process: { ...process, env: { PI_CODING_AGENT_DIR: dir } }, JSON: json,
+  });
+  assert.equal(extension.readConfig().length, 0);
+  const schema = JSON.parse(readFileSync(new URL('../schemas/session-rename.schema.json', import.meta.url), 'utf8'));
+  assert.equal(schema.$id, 'https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-session-rename/schemas/session-rename.schema.json');
+  assert.deepEqual(Object.keys(schema.properties).sort(), [...read, '$schema'].sort());
+});

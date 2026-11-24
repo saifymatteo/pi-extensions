@@ -39,8 +39,8 @@ Keybindings:
 | `Ctrl+P` | Save all settings to project config |
 | `Esc`    | Cancel without saving               |
 
-- **Global:** `~/.pi/pi-x-ide/config.json`
-- **Project:** `<cwd>/.pi/pi-x-ide/config.json` (overrides global)
+- **Global:** `<agent-dir>/extensions/pi-x-ide.json` (`$PI_CODING_AGENT_DIR` or `~/.pi/agent`)
+- **Project:** `<cwd>/.pi/extensions/pi-x-ide.json` (overrides global)
 
 `Display` applies immediately in the current Pi session. See
 [Configuration](configuration.md).

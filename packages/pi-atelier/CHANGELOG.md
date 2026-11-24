@@ -4,6 +4,15 @@ Release notes are recorded from 0.20.1 onward. Earlier fork and upstream history
 
 ## [Unreleased]
 
+### Added
+
+- JSON schema at `schemas/pi-atelier.schema.json` for editor completion; saving settings adds its `$schema` URL only when the file has none.
+
+### Changed
+
+- The user config moves to `<agent-dir>/extensions/pi-atelier.json`. An existing `<agent-dir>/pi-atelier.json` is moved there once on session start (a symlink's contents are copied and the link removed), with one notice naming both paths.
+- The project config moves to `.pi/extensions/pi-atelier.json`; `.pi/pi-atelier.json` is still read when the new file is absent.
+
 ## [0.20.4] - 2026-11-24
 
 ### Changed

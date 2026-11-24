@@ -1,4 +1,5 @@
 {
+  "$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-zvec/schemas/zvec.schema.json",
   "autoInit": false,
   "syncOnSettle": false,
   "embedding": "local/potion-code-16m-v2"

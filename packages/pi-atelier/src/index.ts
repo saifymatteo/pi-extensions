@@ -166,7 +166,8 @@ interface LifecycleToken {
 
 const NOT_ACTIVE = "Pi Atelier is not active in this session";
 
-const userConfigPath = (): string => join(getAgentDir(), "pi-atelier.json");
+const CONFIG_FILE = "pi-atelier.json";
+const userConfigPath = (): string => join(getAgentDir(), "extensions", CONFIG_FILE);
 
 /** Run every cleanup step even when one throws; teardown must not mask the original failure. */
 function attempt(action: () => void): void {
@@ -878,7 +879,9 @@ export default function atelierExtension(
 		try {
 			const loaded = await loadAtelierConfig({
 				userPath: userConfigPath(),
-				projectPath: join(ctx.cwd, CONFIG_DIR_NAME, "pi-atelier.json"),
+				legacyUserPath: join(getAgentDir(), CONFIG_FILE),
+				projectPath: join(ctx.cwd, CONFIG_DIR_NAME, "extensions", CONFIG_FILE),
+				legacyProjectPath: join(ctx.cwd, CONFIG_DIR_NAME, CONFIG_FILE),
 				projectTrusted: ctx.isProjectTrusted(),
 			});
 			// The only await: a newer lifecycle may have started meanwhile.

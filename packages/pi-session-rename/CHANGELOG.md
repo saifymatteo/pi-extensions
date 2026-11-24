@@ -4,6 +4,10 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Added
+
+- JSON schema for `session-rename.json` (`schemas/session-rename.schema.json`) for editor completion and validation. A top-level `$schema` line is ignored at runtime.
+
 ## [0.1.7]
 
 ### Fixed

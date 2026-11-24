@@ -4,6 +4,20 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Added
+
+- Every package with a JSON config ships a JSON Schema under `schemas/`; add `"$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/<package>/schemas/<name>.schema.json"` for editor completion and descriptions.
+
+### Changed
+
+- pi-atelier, pi-x-ide and pi-orchestrator user configs live in `<agent-dir>/extensions/` and move there automatically on first load.
+- pi-atelier, pi-x-ide, pi-codegraph and pi-zvec project configs live in `.pi/extensions/`; the old project path is still read when the new one is absent.
+- pi-9router removes the retired `@haoyiyin/9router` config after migrating it.
+
+### Fixed
+
+- pi-x-ide: IDE context paths are relative to Pi's working directory, or absolute when the file is outside it.
+
 ## [0.1.24]
 
 ### Added

@@ -15,6 +15,7 @@ import {
   resolveIdeConfigSettings,
   resolvePiConfigAutoInstall,
   resolvePiConfigStatusDisplay,
+  resolvePiGlobalConfigPath,
   resolvePiProjectConfigPath,
   writePiConfigSettings,
   writePiConfigStatusDisplay,
@@ -95,7 +96,7 @@ async function captureExtensionErrorsAsync(action: () => Promise<void>): Promise
 }
 
 void test("formats and parses range mentions", () => {
-  assert.equal(formatRangeMention(snapshot), "@src/main.ts#L10-L20");
+  assert.equal(formatRangeMention(snapshot, { cwd: "/repo" }), "@src/main.ts#L10-L20");
   assert.deepEqual(parseRangeMention("@src/main.ts#L10-L20"), {
     path: "src/main.ts",
     startLine: 10,
@@ -115,7 +116,7 @@ void test("formats and parses range mentions", () => {
 });
 
 void test("formats bounded editor context", () => {
-  const context = formatEditorContext(snapshot, { maxChars: 6 });
+  const context = formatEditorContext(snapshot, { maxChars: 6, cwd: "/repo" });
   assert.match(context, /src\/main\.ts/);
   assert.match(context, /L10-L20/);
   assert.match(context, /truncated/i);
@@ -123,14 +124,33 @@ void test("formats bounded editor context", () => {
 
 void test("formats concise IDE context metadata and omits selection when no range is available", () => {
   assert.equal(
-    formatEditorContextMessage(snapshot),
+    formatEditorContextMessage(snapshot, { cwd: "/repo" }),
     "### IDE Context\n- **IDE**: vscode\n- **File**: `src/main.ts`\n- **Selection**: L10-L20",
   );
   assert.equal(
-    formatEditorContextMessage({ ...snapshot, ranges: [] }),
+    formatEditorContextMessage({ ...snapshot, ranges: [] }, { cwd: "/repo" }),
     "### IDE Context\n- **IDE**: vscode\n- **File**: `src/main.ts`",
   );
   assert.doesNotMatch(formatEditorContextMessage(snapshot), /selected source text/);
+});
+
+void test("IDE context paths are relative to the agent cwd, not the IDE workspace", () => {
+  // Zed opened the monorepo root; Pi runs in a subfolder of it.
+  const zed: EditorSelectionSnapshot = {
+    source: "zed",
+    filePath: "/mnt/dev/Settings/pi/pi-extensions/packages/pi-atelier/package.json",
+    workspaceFolder: "/mnt/dev/Settings",
+    ranges: [{ text: "x", selection: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } } }],
+  };
+  const cwd = "/mnt/dev/Settings/pi/pi-extensions";
+  assert.match(formatEditorContextMessage(zed, { cwd }), /\*\*File\*\*: `packages\/pi-atelier\/package\.json`/);
+  assert.match(formatEditorContext(zed, { cwd }), /from `packages\/pi-atelier\/package\.json`/);
+  assert.equal(formatRangeMention(zed, { cwd }), "@packages/pi-atelier/package.json#L1");
+
+  // Inside the workspace but outside cwd: absolute, so the agent can still open it.
+  const outside = { ...zed, filePath: "/mnt/dev/Settings/pi/pi-atelier.json" };
+  assert.match(formatEditorContextMessage(outside, { cwd }), /\*\*File\*\*: `\/mnt\/dev\/Settings\/pi\/pi-atelier\.json`/);
+  assert.equal(formatRangeMention(outside, { cwd }), "@/mnt/dev/Settings/pi/pi-atelier.json#L1");
 });
 
 void test("validates selection cleared params", () => {
@@ -424,6 +444,7 @@ void test("project status_display overrides global config", async () => {
   await mkdir(home, { recursive: true });
   await mkdir(projectDir, { recursive: true });
 
+  // Legacy global location: still read until moved, and seeds the first write to the new path.
   const globalPath = join(home, CONFIG_DIR_NAME, EXT_CONFIG_NAME, "config.json");
   await mkdir(dirname(globalPath), { recursive: true });
   await writeFile(globalPath, JSON.stringify({ status_display: "widget", env: { KEEP: "1" } }));
@@ -460,7 +481,7 @@ void test("writePiConfigSettings merges AutoInstall env without wiping other env
   writePiConfigSettings({ autoInstall: true }, { scope: "global", home });
 
   // Preserve unrelated env keys across writes.
-  const globalPath = join(home, CONFIG_DIR_NAME, EXT_CONFIG_NAME, "config.json");
+  const globalPath = resolvePiGlobalConfigPath(home);
   const first = JSON.parse(await readFile(globalPath, "utf8")) as {
     status_display?: string;
     env?: Record<string, string>;

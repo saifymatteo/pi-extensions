@@ -26,8 +26,7 @@ import {
 	updateKeepToolOverrides,
 } from "../src/config.ts";
 
-const packageVersion = JSON.parse(fs.readFileSync("package.json", "utf8")).version;
-const expectedSchemaUrl = `https://cdn.jsdelivr.net/npm/@saifymatteo/pi-orchestrator@${packageVersion}/schemas/orchestrator.schema.json`;
+const expectedSchemaUrl = "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-orchestrator/schemas/orchestrator.schema.json";
 
 // ── loadConfig / maxTurns validation ────────────────────────────────────────
 
@@ -36,7 +35,10 @@ function withConfigFile(body: Record<string, unknown> | null, fn: () => unknown)
 	const prev = process.env.PI_ORCH_TEST_AGENT_DIR;
 	process.env.PI_ORCH_TEST_AGENT_DIR = dir;
 	try {
-		if (body !== null) fs.writeFileSync(path.join(dir, "orchestrator.json"), JSON.stringify(body), "utf-8");
+		if (body !== null) {
+			fs.mkdirSync(path.join(dir, "extensions"));
+			fs.writeFileSync(path.join(dir, "extensions", "orchestrator.json"), JSON.stringify(body), "utf-8");
+		}
 		return fn();
 	} finally {
 		if (prev === undefined) delete process.env.PI_ORCH_TEST_AGENT_DIR;
@@ -72,7 +74,7 @@ test("loadConfig: run limits default when omitted and reject invalid values with
 			});
 		}
 		for (const literal of ["1e400", "-1e400"]) {
-			withConfigFiles({ "orchestrator.jsonc": `{"enabled":false,"${key}":${literal}}` }, () => {
+			withConfigFiles({ "extensions/orchestrator.jsonc": `{"enabled":false,"${key}":${literal}}` }, () => {
 				assert.equal(loadConfig()[key], fallback);
 				assert.equal(loadConfig().enabled, false);
 			});
@@ -92,14 +94,14 @@ test("loadConfig: run limits accept safe integers up to MAX_SAFE_INTEGER and que
 });
 
 test("saveConfig: run limits survive comment-preserving round trips, including a disabled queue", () => {
-	withConfigFiles({ "orchestrator.jsonc": '{\n// preserve this comment\n"maxTurns": 20\n}' }, () => {
+	withConfigFiles({ "extensions/orchestrator.jsonc": '{\n// preserve this comment\n"maxTurns": 20\n}' }, () => {
 		for (const maxQueuedRuns of [0, 64, Number.MAX_SAFE_INTEGER]) {
 			const config = loadConfig();
 			config.maxConcurrency = Number.MAX_SAFE_INTEGER;
 			config.maxQueuedRuns = maxQueuedRuns;
 			saveConfig(config);
 			assert.deepEqual(loadConfig(), config);
-			const saved = fs.readFileSync(path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "orchestrator.jsonc"), "utf8");
+			const saved = fs.readFileSync(path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "extensions", "orchestrator.jsonc"), "utf8");
 			assert.match(saved, /preserve this comment/);
 			assert.equal(jsonc.parse(saved).maxConcurrency, Number.MAX_SAFE_INTEGER);
 			assert.equal(jsonc.parse(saved).maxQueuedRuns, maxQueuedRuns);
@@ -156,7 +158,7 @@ test("loadConfig: showFleetWidget defaults to true and accepts only booleans", (
 		});
 	}
 	for (const showFleetWidget of [true, false]) {
-		withConfigFiles({ "orchestrator.jsonc": JSON.stringify({ showFleetWidget }) }, () => {
+		withConfigFiles({ "extensions/orchestrator.jsonc": JSON.stringify({ showFleetWidget }) }, () => {
 			assert.equal(loadConfig().showFleetWidget, showFleetWidget);
 			saveConfig(loadConfig());
 			assert.equal(loadConfig().showFleetWidget, showFleetWidget, "widget preference survives saves");
@@ -306,8 +308,6 @@ const CONFIG_CANDIDATES = [
 	"project/.pi/extensions/orchestrator.json",
 	"extensions/orchestrator.jsonc",
 	"extensions/orchestrator.json",
-	"orchestrator.jsonc",
-	"orchestrator.json",
 ];
 
 test("config locations: directory precedence beats format, and JSONC wins within a directory", () => {
@@ -328,11 +328,11 @@ test("config locations: directory precedence beats format, and JSONC wins within
 	}
 });
 
-test("config locations: extension configs load and save in place, migrating JSON only beside the source", () => {
-	for (const candidate of CONFIG_CANDIDATES.slice(0, 4)) {
+test("config locations: project configs load and save in place, migrating JSON only beside the source", () => {
+	for (const candidate of CONFIG_CANDIDATES.slice(0, 2)) {
 		const source = '{\n // keep this comment\n "maxTurns": 12, "myOwnNote": "keep me",\n}';
 		const fallback = '{ "maxTurns": 99 }';
-		withConfigFiles({ [candidate]: source, "orchestrator.json": fallback, "orchestrator.jsonc": fallback }, () => {
+		withConfigFiles({ [candidate]: source, "extensions/orchestrator.json": fallback, "extensions/orchestrator.jsonc": fallback }, () => {
 			const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
 			const cwd = path.join(dir, "project");
 			assert.equal(loadConfig(cwd).maxTurns, 12);
@@ -345,7 +345,7 @@ test("config locations: extension configs load and save in place, migrating JSON
 			assert.equal(loadConfig(cwd).maxTurns, 21);
 			assert.equal(fs.existsSync(preferred.replace(/\.jsonc$/, ".json")), false);
 			for (const name of ["orchestrator.json", "orchestrator.jsonc"]) {
-				assert.equal(fs.readFileSync(path.join(dir, name), "utf8"), fallback, "unselected configs must be untouched");
+				assert.equal(fs.readFileSync(path.join(dir, "extensions", name), "utf8"), fallback, "unselected configs must be untouched");
 			}
 			saveConfig(loadConfig(cwd), cwd);
 			assert.equal(fs.readFileSync(preferred, "utf8"), saved, "subsequent saves stay in place and byte-stable");
@@ -353,17 +353,15 @@ test("config locations: extension configs load and save in place, migrating JSON
 	}
 });
 
-test("config locations: empty extensions folders keep the original fresh-install destination", () => {
+test("config locations: fresh installs save into <agent-dir>/extensions, not the project", () => {
 	withConfigFiles({}, () => {
 		const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
 		const cwd = path.join(dir, "project");
-		for (const folder of [path.join(cwd, ".pi", "extensions"), path.join(dir, "extensions")]) {
-			fs.mkdirSync(folder, { recursive: true });
-		}
-		assert.equal(getConfigPath(cwd), path.join(dir, "orchestrator.jsonc"));
+		fs.mkdirSync(path.join(cwd, ".pi", "extensions"), { recursive: true });
+		assert.equal(getConfigPath(cwd), path.join(dir, "extensions", "orchestrator.jsonc"));
 		saveConfig({ ...loadConfig(cwd), maxTurns: 9 }, cwd);
 		assert.equal(loadConfig(cwd).maxTurns, 9);
-		assert.deepEqual(fs.readdirSync(path.join(dir, "extensions")), []);
+		assert.equal(fs.existsSync(path.join(dir, "orchestrator.jsonc")), false);
 		assert.deepEqual(fs.readdirSync(path.join(cwd, ".pi", "extensions")), []);
 	});
 });
@@ -373,29 +371,71 @@ test("config locations: malformed selected JSONC uses defaults, not lower-priori
 		"project/.pi/extensions/orchestrator.jsonc": "{ broken",
 		"project/.pi/extensions/orchestrator.json": '{ "maxTurns": 10 }',
 		"extensions/orchestrator.jsonc": '{ "maxTurns": 20 }',
-		"orchestrator.jsonc": '{ "maxTurns": 30 }',
 	}, () => {
 		assert.equal(loadConfig(path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "project")).maxTurns, 50);
 	});
 });
 
-test("config locations: failed extension migration preserves both source and lower-priority config", () => {
-	for (const candidate of [CONFIG_CANDIDATES[1], CONFIG_CANDIDATES[3]]) {
-		const source = '{ "maxTurns": 12 }';
-		const fallback = '{ "maxTurns": 99 }';
-		withConfigFiles({ [candidate]: source, "orchestrator.json": fallback }, () => {
+test("config locations: failed JSON-to-JSONC migration preserves both source and lower-priority config", () => {
+	const source = '{ "maxTurns": 12 }';
+	const fallback = '{ "maxTurns": 99 }';
+	withConfigFiles({ [CONFIG_CANDIDATES[1]]: source, "extensions/orchestrator.json": fallback }, () => {
+		const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
+		const cwd = path.join(dir, "project");
+		fs.mkdirSync(path.join(dir, CONFIG_CANDIDATES[0]));
+		assert.throws(() => saveConfig(loadConfig(cwd), cwd));
+		assert.equal(fs.readFileSync(path.join(dir, CONFIG_CANDIDATES[1]), "utf8"), source);
+		assert.equal(fs.readFileSync(path.join(dir, "extensions", "orchestrator.json"), "utf8"), fallback);
+	});
+});
+
+test("config migration: bare <agent-dir> configs move once into extensions/, following symlinks", () => {
+	for (const name of ["orchestrator.jsonc", "orchestrator.json"]) {
+		const source = '{\n // keep this comment\n "maxTurns": 12\n}';
+		withConfigFiles({}, () => {
 			const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
-			const cwd = path.join(dir, "project");
-			fs.mkdirSync(path.join(dir, candidate.replace(/\.json$/, ".jsonc")));
-			assert.throws(() => saveConfig(loadConfig(cwd), cwd));
-			assert.equal(fs.readFileSync(path.join(dir, candidate), "utf8"), source);
-			assert.equal(fs.readFileSync(path.join(dir, "orchestrator.json"), "utf8"), fallback);
+			const target = path.join(dir, "dotfiles", name);
+			fs.mkdirSync(path.dirname(target));
+			fs.writeFileSync(target, source);
+			fs.symlinkSync(target, path.join(dir, name));
+			assert.equal(loadConfig().maxTurns, 12);
+			assert.equal(fs.lstatSync(path.join(dir, name), { throwIfNoEntry: false }), undefined, "old link removed");
+			assert.equal(fs.readFileSync(target, "utf8"), source, "link target never touched");
+			const moved = path.join(dir, "extensions", name);
+			assert.equal(fs.lstatSync(moved).isSymbolicLink(), false);
+			assert.equal(fs.readFileSync(moved, "utf8"), source);
 		});
 	}
 });
 
+test("config migration: an existing extensions/ config wins and the old file stays put", () => {
+	withConfigFiles({ "extensions/orchestrator.json": '{ "maxTurns": 7 }', "orchestrator.jsonc": '{ "maxTurns": 30 }' }, () => {
+		const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
+		assert.equal(loadConfig().maxTurns, 7);
+		assert.equal(fs.readFileSync(path.join(dir, "orchestrator.jsonc"), "utf8"), '{ "maxTurns": 30 }');
+		assert.equal(fs.existsSync(path.join(dir, "extensions", "orchestrator.jsonc")), false);
+	});
+});
+
+test("config migration: a failed move leaves the old file in place and reads it", () => {
+	withConfigFiles({ "orchestrator.jsonc": '{ "maxTurns": 30 }' }, () => {
+		const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
+		fs.writeFileSync(path.join(dir, "extensions"), ""); // a file blocks creating the directory
+		const errors: unknown[] = [];
+		const original = console.error;
+		console.error = (...args: unknown[]) => errors.push(args);
+		try {
+			assert.equal(loadConfig().maxTurns, 30);
+		} finally {
+			console.error = original;
+		}
+		assert.equal(errors.length, 1);
+		assert.equal(fs.readFileSync(path.join(dir, "orchestrator.jsonc"), "utf8"), '{ "maxTurns": 30 }');
+	});
+});
+
 test("loadConfig: orchestrator.jsonc parses with comments and trailing commas (ADR-0015)", () => {
-	withConfigFiles({ "orchestrator.jsonc": JSONC_WITH_COMMENTS }, () => {
+	withConfigFiles({ "extensions/orchestrator.jsonc": JSONC_WITH_COMMENTS }, () => {
 		const config = loadConfig();
 		assert.equal(config.enabled, true);
 		assert.equal(config.maxTurns, 30);
@@ -405,19 +445,19 @@ test("loadConfig: orchestrator.jsonc parses with comments and trailing commas (A
 });
 
 test("loadConfig: async default is true when absent, honored when false (ADR-0016)", () => {
-	withConfigFiles({ "orchestrator.jsonc": JSON.stringify({ enabled: true }) }, () => {
+	withConfigFiles({ "extensions/orchestrator.jsonc": JSON.stringify({ enabled: true }) }, () => {
 		assert.equal(loadConfig().async, true, "absent async falls back to the default");
 	});
-	withConfigFiles({ "orchestrator.jsonc": JSON.stringify({ async: false }) }, () => {
+	withConfigFiles({ "extensions/orchestrator.jsonc": JSON.stringify({ async: false }) }, () => {
 		assert.equal(loadConfig().async, false, "explicit async: false is honored");
 	});
-	withConfigFiles({ "orchestrator.jsonc": JSON.stringify({ async: "no" }) }, () => {
+	withConfigFiles({ "extensions/orchestrator.jsonc": JSON.stringify({ async: "no" }) }, () => {
 		assert.equal(loadConfig().async, true, "non-boolean async falls back to the default");
 	});
 });
 
 test("loadConfig: legacy orchestrator.json still works when no .jsonc exists (fallback)", () => {
-	withConfigFiles({ "orchestrator.json": JSON.stringify({ maxTurns: 12 }) }, () => {
+	withConfigFiles({ "extensions/orchestrator.json": JSON.stringify({ maxTurns: 12 }) }, () => {
 		assert.equal(loadConfig().maxTurns, 12);
 	});
 });
@@ -425,8 +465,8 @@ test("loadConfig: legacy orchestrator.json still works when no .jsonc exists (fa
 test("loadConfig: orchestrator.jsonc wins over legacy orchestrator.json when both exist", () => {
 	withConfigFiles(
 		{
-			"orchestrator.json": JSON.stringify({ maxTurns: 12 }),
-			"orchestrator.jsonc": JSONC_WITH_COMMENTS,
+			"extensions/orchestrator.json": JSON.stringify({ maxTurns: 12 }),
+			"extensions/orchestrator.jsonc": JSONC_WITH_COMMENTS,
 		},
 		() => {
 			assert.equal(loadConfig().maxTurns, 30);
@@ -435,21 +475,21 @@ test("loadConfig: orchestrator.jsonc wins over legacy orchestrator.json when bot
 });
 
 test("loadConfig: malformed JSONC falls back to defaults without throwing", () => {
-	withConfigFiles({ "orchestrator.jsonc": "{ // comment with no closing brace" }, () => {
+	withConfigFiles({ "extensions/orchestrator.jsonc": "{ // comment with no closing brace" }, () => {
 		assert.equal(loadConfig().maxTurns, 50);
 		assert.equal(loadConfig().enabled, true);
 	});
 });
 
 test("saveConfig: comments survive a save that changes one key (round trip)", () => {
-	withConfigFiles({ "orchestrator.jsonc": JSONC_WITH_COMMENTS }, () => {
+	withConfigFiles({ "extensions/orchestrator.jsonc": JSONC_WITH_COMMENTS }, () => {
 		const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
 		const config = loadConfig();
 		config.maxTurns = 77;
 		saveConfig(config);
 
-		assert.equal(fs.existsSync(path.join(dir, "orchestrator.json")), false, "save must target .jsonc, not the legacy name");
-		const raw = fs.readFileSync(path.join(dir, "orchestrator.jsonc"), "utf-8");
+		assert.equal(fs.existsSync(path.join(dir, "extensions", "orchestrator.json")), false, "save must target .jsonc, not the legacy name");
+		const raw = fs.readFileSync(path.join(dir, "extensions", "orchestrator.jsonc"), "utf-8");
 		assert.match(raw, /Orchestrator configuration/, "header comment must survive");
 		assert.match(raw, /engaged by default/, "inline comment must survive");
 		assert.match(raw, /always kept anyway/, "array element comment must survive");
@@ -459,14 +499,14 @@ test("saveConfig: comments survive a save that changes one key (round trip)", ()
 });
 
 test("saveConfig: legacy orchestrator.json migrates to orchestrator.jsonc on first save (removed only after write)", () => {
-	withConfigFiles({ "orchestrator.json": JSON.stringify({ maxTurns: 12 }) }, () => {
+	withConfigFiles({ "extensions/orchestrator.json": JSON.stringify({ maxTurns: 12 }) }, () => {
 		const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
 		const config = loadConfig();
 		config.maxTurns = 21;
 		saveConfig(config);
 
-		assert.equal(fs.existsSync(path.join(dir, "orchestrator.jsonc")), true, ".jsonc must be written");
-		assert.equal(fs.existsSync(path.join(dir, "orchestrator.json")), false, "legacy .json must be removed after successful write");
+		assert.equal(fs.existsSync(path.join(dir, "extensions", "orchestrator.jsonc")), true, ".jsonc must be written");
+		assert.equal(fs.existsSync(path.join(dir, "extensions", "orchestrator.json")), false, "legacy .json must be removed after successful write");
 		assert.equal(loadConfig().maxTurns, 21, "content carried over");
 	});
 });
@@ -475,39 +515,39 @@ test("saveConfig: fresh install writes orchestrator.jsonc", () => {
 	withConfigFiles({}, () => {
 		const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
 		saveConfig({ ...loadConfig(), maxTurns: 9 });
-		assert.equal(fs.existsSync(path.join(dir, "orchestrator.jsonc")), true);
-		assert.equal(fs.existsSync(path.join(dir, "orchestrator.json")), false);
+		assert.equal(fs.existsSync(path.join(dir, "extensions", "orchestrator.jsonc")), true);
+		assert.equal(fs.existsSync(path.join(dir, "extensions", "orchestrator.json")), false);
 		assert.equal(loadConfig().maxTurns, 9);
 	});
 });
 
 test("saveConfig: unknown extra keys in the user's file are preserved", () => {
-	withConfigFiles({ "orchestrator.jsonc": '{ "myOwnNote": "keep me", "maxTurns": 20 }' }, () => {
+	withConfigFiles({ "extensions/orchestrator.jsonc": '{ "myOwnNote": "keep me", "maxTurns": 20 }' }, () => {
 		const config = loadConfig();
 		config.enabled = false;
 		saveConfig(config);
-		const raw = fs.readFileSync(path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "orchestrator.jsonc"), "utf-8");
+		const raw = fs.readFileSync(path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "extensions", "orchestrator.jsonc"), "utf-8");
 		assert.match(raw, /keep me/, "user's extra key must survive");
 		assert.equal(loadConfig().maxTurns, 20);
 		assert.equal(loadConfig().enabled, false);
 	});
 });
 
-test("saveConfig: fresh and legacy configs gain the installed version's editor schema on save", () => {
-	const scenarios: Array<Record<string, string | null>> = [{}, { "orchestrator.json": '{ "maxTurns": 12 }' }];
+test("saveConfig: fresh and legacy configs gain the editor schema on save", () => {
+	const scenarios: Array<Record<string, string | null>> = [{}, { "extensions/orchestrator.json": '{ "maxTurns": 12 }' }];
 	for (const files of scenarios) {
 		withConfigFiles(files, () => {
 			saveConfig(loadConfig());
 			const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
-			const document = jsonc.parse(fs.readFileSync(path.join(dir, "orchestrator.jsonc"), "utf8"));
+			const document = jsonc.parse(fs.readFileSync(path.join(dir, "extensions", "orchestrator.jsonc"), "utf8"));
 			assert.equal(document.$schema, expectedSchemaUrl);
-			assert.equal(fs.existsSync(path.join(dir, "orchestrator.json")), false);
+			assert.equal(fs.existsSync(path.join(dir, "extensions", "orchestrator.json")), false);
 			assert.equal("$schema" in loadConfig(), false, "metadata is not a runtime setting");
 		});
 	}
 });
 
-test("saveConfig: refreshes only extension-owned schema URLs and preserves comments/custom references", () => {
+test("saveConfig: replaces only legacy jsdelivr schema URLs and preserves comments/custom references", () => {
 	const owned = "https://cdn.jsdelivr.net/npm/@saifymatteo/pi-orchestrator@0.1.0/schemas/orchestrator.schema.json";
 	const references = [
 		owned,
@@ -523,8 +563,8 @@ test("saveConfig: refreshes only extension-owned schema URLs and preserves comme
 	];
 	for (const [index, reference] of references.entries()) {
 		const source = `{\n  // Keep my reference annotation.\n  "$schema": ${JSON.stringify(reference)}, // Editor only.\n  "keepTools": ["delegate" /* Keep this too. */],\n  "myOwnNote": "keep me"\n}`;
-		withConfigFiles({ "orchestrator.jsonc": source }, () => {
-			const filename = path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "orchestrator.jsonc");
+		withConfigFiles({ "extensions/orchestrator.jsonc": source }, () => {
+			const filename = path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "extensions", "orchestrator.jsonc");
 			const config = loadConfig();
 			assert.equal(fs.readFileSync(filename, "utf8"), source, "loading must not rewrite the file");
 			assert.equal("$schema" in config, false);
@@ -548,30 +588,30 @@ test("loadConfig: schema metadata neither changes normalization nor causes write
 		assert.deepEqual(fs.readdirSync(process.env.PI_ORCH_TEST_AGENT_DIR!), []);
 	});
 	const source = JSON.stringify({ $schema: "https://example.invalid/custom.json", maxTurn: 7, maxTurns: 0, async: false, keepTools: ["todo", 42, " "] });
-	withConfigFiles({ "orchestrator.jsonc": source }, () => {
+	withConfigFiles({ "extensions/orchestrator.jsonc": source }, () => {
 		const config = loadConfig();
 		assert.equal(config.maxTurns, 50);
 		assert.equal(config.async, false);
 		assert.deepEqual(config.keepTools, ["todo"]);
 		assert.equal("$schema" in config, false);
 		assert.equal("maxTurn" in config, false);
-		assert.equal(fs.readFileSync(path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "orchestrator.jsonc"), "utf8"), source);
+		assert.equal(fs.readFileSync(path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "extensions", "orchestrator.jsonc"), "utf8"), source);
 	});
 });
 
 test("saveConfig: failed JSONC write retains the original legacy file and its schema reference", () => {
 	const source = '{ "$schema": "./custom.schema.json", "maxTurns": 12 }';
-	withConfigFiles({ "orchestrator.json": source }, () => {
+	withConfigFiles({ "extensions/orchestrator.json": source }, () => {
 		const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
-		fs.mkdirSync(path.join(dir, "orchestrator.jsonc")); // Force the destination write to fail.
+		fs.mkdirSync(path.join(dir, "extensions", "orchestrator.jsonc")); // Force the destination write to fail.
 		assert.throws(() => saveConfig(loadConfig()));
-		assert.equal(fs.readFileSync(path.join(dir, "orchestrator.json"), "utf8"), source);
+		assert.equal(fs.readFileSync(path.join(dir, "extensions", "orchestrator.json"), "utf8"), source);
 	});
 });
 
 test("saveConfig: legacy cleanup failure warns without disguising a committed write as a failed save", () => {
-	withConfigFiles({ "orchestrator.jsonc": '{"keepTools":[]}' }, () => {
-		fs.mkdirSync(path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "orchestrator.json"));
+	withConfigFiles({ "extensions/orchestrator.jsonc": '{"keepTools":[]}' }, () => {
+		fs.mkdirSync(path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "extensions", "orchestrator.json"));
 		const config = loadConfig();
 		config.keepToolOverrides = { foo_a: "blocked" };
 		const warnings = captureWarnings(() => saveConfig(config));
@@ -685,7 +725,7 @@ test("builtinThinkingOverrides: empty for boolean forms, name→level for object
 });
 
 test("saveConfig: builtinFleet object form survives a comment-preserving round trip", () => {
-	withConfigFiles({ "orchestrator.jsonc": '{ "maxTurns": 20 }' }, () => {
+	withConfigFiles({ "extensions/orchestrator.jsonc": '{ "maxTurns": 20 }' }, () => {
 		const config = loadConfig();
 		config.builtinFleet = { worker: { hidden: true, thinking: "xhigh" } };
 		saveConfig(config);

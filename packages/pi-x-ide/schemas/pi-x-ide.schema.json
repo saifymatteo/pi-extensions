@@ -1,11 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-x-ide/schemas/pi-x-ide.schema.json",
-  "title": "Pi config.json",
-  "description": "Schema for Pi-side configuration read from ~/.pi/pi-x-ide/config.json.",
+  "title": "pi-x-ide.json",
+  "description": "pi-x-ide configuration: <agent-dir>/extensions/pi-x-ide.json (global, agent-dir is $PI_CODING_AGENT_DIR or ~/.pi/agent) and <project>/.pi/extensions/pi-x-ide.json (project, overrides global).",
   "type": "object",
   "additionalProperties": true,
   "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema URL for editor completion. Ignored at runtime."
+    },
     "fixPrompt": {
       "type": "string",
       "description": "Custom prompt prefix when requesting a fix for IDE diagnostics. Use {DIAGNOSTIC} as a placeholder for the diagnostic context. If the placeholder is omitted, the diagnostic context is appended after your prompt.",

@@ -1,9 +1,12 @@
-import { lstat, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DEFAULT_CONFIG, loadConfig, resolveConfig, saveUserConfigPatch } from "../src/config.js";
 import { DISPLAY_TEMPLATES, PRODUCT_SEGMENT_ORDER } from "../src/display.js";
+
+const SCHEMA_URL = "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-atelier/schemas/pi-atelier.schema.json";
+const schema = JSON.parse(await readFile(new URL("../schemas/pi-atelier.schema.json", import.meta.url), "utf8"));
 
 const validateConfig = (user: unknown) => resolveConfig({ user });
 
@@ -314,6 +317,7 @@ describe("configuration files", () => {
 			density: "compact",
 			futureSetting: "keep",
 			completionNotifications: false,
+			$schema: SCHEMA_URL,
 		});
 	});
 
@@ -323,7 +327,11 @@ describe("configuration files", () => {
 		await symlink(target, userPath);
 		await saveUserConfigPatch(userPath, { nerdFont: false });
 		expect((await lstat(userPath)).isSymbolicLink()).toBe(true);
-		expect(JSON.parse(await readFile(target, "utf8"))).toEqual({ futureSetting: "keep", nerdFont: false });
+		expect(JSON.parse(await readFile(target, "utf8"))).toEqual({
+			futureSetting: "keep",
+			nerdFont: false,
+			$schema: SCHEMA_URL,
+		});
 	});
 
 	it("keeps every field when patches are saved concurrently", async () => {
@@ -338,6 +346,7 @@ describe("configuration files", () => {
 			sidebarWidth: 36,
 			completionNotifications: false,
 			nerdFont: false,
+			$schema: SCHEMA_URL,
 		});
 	});
 
@@ -379,5 +388,119 @@ describe("configuration files", () => {
 			session: { prefillProviders: ["strata"] },
 		});
 		expect(result.config.prefillProviders).toEqual(["llama.cpp"]);
+	});
+});
+
+describe("configuration schema", () => {
+	it("documents every default key plus $schema and accepted legacy keys", () => {
+		const legacy = ["segments", "ornament", "showExtensionStatuses", "showSidebarAgent", "showSidebarTodos"];
+		expect(Object.keys(schema.properties).sort()).toEqual(
+			[...Object.keys(DEFAULT_CONFIG), ...legacy, "$schema"].sort(),
+		);
+		expect(schema.$id).toBe(SCHEMA_URL);
+		for (const key of legacy) expect(schema.properties[key].deprecated).toBe(true);
+	});
+
+	it("ignores a top-level $schema without warning", () => {
+		const result = validateConfig({ $schema: SCHEMA_URL });
+		expect(result.config).toEqual(DEFAULT_CONFIG);
+		expect(result.warnings).toEqual([]);
+	});
+});
+
+describe("configuration paths", () => {
+	let root: string;
+	let userPath: string;
+	let legacyUserPath: string;
+	let projectPath: string;
+	let legacyProjectPath: string;
+	const writeJson = (path: string, value: unknown) => writeFile(path, JSON.stringify(value), "utf8");
+	const load = (projectTrusted = false) =>
+		loadConfig({ userPath, legacyUserPath, projectPath, legacyProjectPath, projectTrusted });
+
+	beforeEach(async () => {
+		root = await mkdtemp(join(tmpdir(), "pi-atelier-paths-"));
+		userPath = join(root, "agent", "extensions", "pi-atelier.json");
+		legacyUserPath = join(root, "agent", "pi-atelier.json");
+		projectPath = join(root, "repo", ".pi", "extensions", "pi-atelier.json");
+		legacyProjectPath = join(root, "repo", ".pi", "pi-atelier.json");
+		await mkdir(join(root, "agent"), { recursive: true });
+		await mkdir(join(root, "repo", ".pi"), { recursive: true });
+	});
+
+	afterEach(async () => {
+		await rm(root, { recursive: true, force: true });
+	});
+
+	it("moves the old user file once and reads the new one", async () => {
+		await writeJson(legacyUserPath, { density: "compact" });
+		const first = await load();
+		expect(first.config.density).toBe("compact");
+		expect(first.warnings).toEqual([`Moved Pi Atelier config from ${legacyUserPath} to ${userPath}`]);
+		expect(JSON.parse(await readFile(userPath, "utf8"))).toEqual({ density: "compact" });
+		await expect(lstat(legacyUserPath)).rejects.toMatchObject({ code: "ENOENT" });
+
+		const second = await load();
+		expect(second.config.density).toBe("compact");
+		expect(second.warnings).toEqual([]);
+	});
+
+	it("moves a symlinked old user file by copying its target and removing only the link", async () => {
+		const target = join(root, "dotfiles.json");
+		await writeJson(target, { density: "compact" });
+		await symlink(target, legacyUserPath);
+		const result = await load();
+		expect(result.config.density).toBe("compact");
+		expect((await lstat(userPath)).isSymbolicLink()).toBe(false);
+		expect(JSON.parse(await readFile(userPath, "utf8"))).toEqual({ density: "compact" });
+		await expect(lstat(legacyUserPath)).rejects.toMatchObject({ code: "ENOENT" });
+		expect(JSON.parse(await readFile(target, "utf8"))).toEqual({ density: "compact" });
+	});
+
+	it("leaves the old user file alone when the new one exists", async () => {
+		await mkdir(join(root, "agent", "extensions"));
+		await writeJson(userPath, { density: "compact" });
+		await writeJson(legacyUserPath, { density: "comfortable", nerdFont: true });
+		const result = await load();
+		expect(result.config).toMatchObject({ density: "compact", nerdFont: false });
+		expect(result.warnings).toEqual([]);
+		expect(JSON.parse(await readFile(legacyUserPath, "utf8"))).toEqual({ density: "comfortable", nerdFont: true });
+	});
+
+	it("reads the old user file for the session when the move fails", async () => {
+		await writeJson(legacyUserPath, { density: "compact" });
+		// A file where the extensions directory should be makes the move fail.
+		await writeFile(join(root, "agent", "extensions"), "", "utf8");
+		const result = await load();
+		expect(result.config.density).toBe("compact");
+		expect(result.warnings[0]).toMatch(/^Cannot move Pi Atelier config from .* reading the old file this session$/);
+		expect(JSON.parse(await readFile(legacyUserPath, "utf8"))).toEqual({ density: "compact" });
+	});
+
+	it("falls back to the old trusted project file without moving it", async () => {
+		await writeJson(legacyProjectPath, { density: "compact" });
+		expect((await load(true)).config.density).toBe("compact");
+		expect(JSON.parse(await readFile(legacyProjectPath, "utf8"))).toEqual({ density: "compact" });
+		await expect(lstat(projectPath)).rejects.toMatchObject({ code: "ENOENT" });
+		expect((await load(false)).config.density).toBe("comfortable");
+	});
+
+	it("prefers the new project file over the old one", async () => {
+		await mkdir(join(root, "repo", ".pi", "extensions"));
+		await writeJson(projectPath, { density: "compact" });
+		await writeJson(legacyProjectPath, { density: "comfortable", currencyDecimals: 1 });
+		const result = await load(true);
+		expect(result.config).toMatchObject({ density: "compact", currencyDecimals: 3 });
+	});
+
+	it("keeps an existing $schema and writes its own only when absent", async () => {
+		await mkdir(join(root, "agent", "extensions"));
+		await writeJson(userPath, { $schema: "https://example.com/mine.json" });
+		await saveUserConfigPatch(userPath, { nerdFont: true });
+		expect(JSON.parse(await readFile(userPath, "utf8")).$schema).toBe("https://example.com/mine.json");
+
+		await writeJson(userPath, { nerdFont: false });
+		await saveUserConfigPatch(userPath, { nerdFont: true });
+		expect(JSON.parse(await readFile(userPath, "utf8")).$schema).toBe(SCHEMA_URL);
 	});
 });

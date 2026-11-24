@@ -92,7 +92,7 @@ void test("does not duplicate attached context markers in the submitted prompt",
 });
 
 void test("context metadata formatter never includes selected source contents", () => {
-  const formatted = formatEditorContextMessage(snapshot);
+  const formatted = formatEditorContextMessage(snapshot, { cwd: "/repo" });
   assert.match(formatted, /### IDE Context/);
   assert.match(formatted, /\*\*IDE\*\*: vscode/);
   assert.match(formatted, /\*\*File\*\*: `package\.json`/);

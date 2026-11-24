@@ -66,7 +66,7 @@ Default database paths:
 - **WSL with Windows Zed:** `/mnt/c/Users/<user>/AppData/Local/Zed/db/0-stable/db.sqlite`
 
 These variables can be set as real environment variables or in
-`~/.pi/pi-x-ide/config.json` under `env`. See
+`~/.pi/agent/extensions/pi-x-ide.json` under `env`. See
 [Configuration](../reference/configuration.md).
 
 ## Notes

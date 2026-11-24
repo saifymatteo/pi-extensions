@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-zvec/schemas/zvec.schema.json",
+  "title": "pi-zvec config",
+  "description": "Global <agent-dir>/extensions/zvec.json, overridden per key by <project-root>/.pi/extensions/zvec.json. Values of the wrong type are ignored.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Editor JSON Schema reference; not a runtime setting."
+    },
+    "autoInit": {
+      "type": "boolean",
+      "description": "Build a zvec-grep index in the background when none is found walking up from cwd (UI modes only; never in the home dir or a filesystem root).",
+      "default": true
+    },
+    "syncOnSettle": {
+      "type": "boolean",
+      "description": "Run an incremental index after each completed agent turn. Existing indexes still sync once at startup regardless.",
+      "default": true
+    },
+    "embedding": {
+      "type": "string",
+      "description": "zg embedding model used to build and query the index. Blank values fall back to the default.",
+      "default": "local/potion-code-16m-v2"
+    }
+  }
+}

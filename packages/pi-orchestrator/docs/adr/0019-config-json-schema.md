@@ -1,5 +1,7 @@
 # Shared-source configuration schema for editors
 
+> **Partly superseded (Unreleased, after 0.12.0):** the collection-wide package JSON config standard replaces TypeBox authoring with a hand-written `schemas/orchestrator.schema.json` and a plain `DEFAULT_CONFIG`; a test asserts their properties and defaults match, and `npm run schema:generate` is removed. The schema's role, URL, `$schema`-write rule, and runtime-not-a-gate decisions below still hold.
+
 The field reference for orchestrator configuration currently lives in source comments and the README; user comments are useful annotations, not a dependable reference. We will expose a standard JSON Schema for editor completion, hover documentation, and diagnostics, deriving it together with the runtime configuration type and defaults from one TypeBox definition. This design is accepted and implemented; publication remains a separate release action. The bounded implementation plan is recorded locally in `.scratch/config-json-schema/spec.md` (gitignored under the repository's issue-tracker convention).
 
 ## Decision

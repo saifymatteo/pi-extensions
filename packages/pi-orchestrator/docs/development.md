@@ -52,13 +52,7 @@ pi-orchestrator computes the delegation policy once per engagement from what is 
 
 ## Maintaining the configuration schema
 
-After changing the shared definition in `src/config-schema.ts`, run this from the repository root and commit the generated `schemas/orchestrator.schema.json` alongside the change:
-
-```bash
-npm run schema:generate
-```
-
-Run it again before release and verify that the package includes the artifact, so the installed version's pinned public URL can resolve. Regeneration is an explicit maintainer responsibility; there is no new CI drift gate or workflow. See [ADR-0019](adr/0019-config-json-schema.md).
+`schemas/orchestrator.schema.json` is hand-written. When adding or changing a setting, edit it alongside `DEFAULT_CONFIG` in `src/config-schema.ts`: every property needs a `description` and a `default` equal to the runtime default. `tests/config-schema.test.ts` fails if the schema's top-level properties or defaults drift from `DEFAULT_CONFIG`. The schema's `$id` is its unversioned GitHub raw URL on `main`; no release bump is needed. See [ADR-0019](adr/0019-config-json-schema.md).
 
 ## Lifecycle verification
 
@@ -68,7 +62,7 @@ The lifecycle change's normal `npm test` command must include run-watcher tests 
 
 - `src/index.ts` handles the child watchdog, engagement, reduction, gate, and commands
 - `src/config.ts` implements orchestrator.jsonc (JSONC, comment-preserving writes), keep-list matchers, and runtime tool discovery
-- `src/config-schema.ts` owns the shared configuration definition; `schemas/orchestrator.schema.json` is its committed editor reference
+- `src/config-schema.ts` holds the runtime defaults and config types; `schemas/orchestrator.schema.json` is the hand-written editor reference kept in step by a test
 - `src/width.ts` provides ANSI-aware visible-width helpers for TUI rendering
 - `src/agents.ts` discovers the fleet (builtin, user, project tree)
 - `src/policy.ts` generates the delegation policy text from fleet and kept tools

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-codegraph/schemas/codegraph.schema.json",
+  "title": "pi-codegraph config",
+  "description": "Global <agent-dir>/extensions/codegraph.json, overridden per key by <project-root>/.pi/extensions/codegraph.json. Non-boolean values are ignored.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Editor JSON Schema reference; not a runtime setting."
+    },
+    "autoInit": {
+      "type": "boolean",
+      "description": "Build a CodeGraph index in the background when none is found walking up from cwd (UI modes only; never in the home dir or a filesystem root).",
+      "default": true
+    },
+    "syncOnSettle": {
+      "type": "boolean",
+      "description": "Sync the index after each completed agent turn. Existing indexes still sync once at startup regardless.",
+      "default": true
+    }
+  }
+}

@@ -63,12 +63,13 @@ export class AskConfigStore {
 
 	async save(config: AskConfig | Partial<AskConfig>): Promise<AskConfig> {
 		const normalized = normalizeAskConfig(config);
-		const content = JSON.stringify(
-			toAskConfigFileV5(normalized),
-			null,
-			2
-		).concat("\n");
 		try {
+			const $schema = await this.schemaReference();
+			const content = JSON.stringify(
+				{ $schema, ...toAskConfigFileV5(normalized) },
+				null,
+				2
+			).concat("\n");
 			await mkdir(dirname(this.configPath), { recursive: true });
 			await writeFile(this.configPath, content, "utf-8");
 		} catch (error) {
@@ -76,6 +77,19 @@ export class AskConfigStore {
 		}
 		this.setConfig(normalized);
 		return normalized;
+	}
+
+	// Write $schema only when absent; keep whatever the user has.
+	private async schemaReference(): Promise<string> {
+		const content = await readConfigFileIfPresent(this.configPath).catch(
+			() => undefined
+		);
+		const parsed = content === undefined ? undefined : parseJson(content);
+		const existing =
+			parsed?.ok && parsed.value && typeof parsed.value === "object"
+				? (parsed.value as { $schema?: unknown }).$schema
+				: undefined;
+		return typeof existing === "string" ? existing : ASK_CONFIG_SCHEMA_URL;
 	}
 
 	setConfig(config: AskConfig): void {
@@ -169,6 +183,9 @@ export function resetAskConfigStore(): void {
 export function getAskConfigPath(): string {
 	return join(getAgentDir(), "extensions", "pi-agent-ask.json");
 }
+
+export const ASK_CONFIG_SCHEMA_URL =
+	"https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-agent-ask/schemas/pi-agent-ask.schema.json";
 
 function createConfigSaveError(path: string, error: unknown): Error {
 	const detail = getErrorMessage(error);

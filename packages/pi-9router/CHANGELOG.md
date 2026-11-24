@@ -4,6 +4,14 @@ All notable changes to this package are documented here. Formats follow [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- JSON schema for `extensions/9router.json` (`schemas/9router.schema.json`); saving the config sets `$schema` only when absent and keeps any existing value.
+
+### Changed
+
+- Migration from `haoyiyin/9router.json` is now a one-time move: the legacy file (and its emptied `haoyiyin/` directory) is removed after the new config is written. pi-vision no longer reads it.
+
 ## [0.1.2]
 
 ### Fixed

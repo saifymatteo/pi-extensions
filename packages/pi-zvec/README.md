@@ -12,7 +12,7 @@ Registers `zvec_search` (exact/fts/vector/hybrid/auto), `/zvec-init`, `/zvec-syn
 
 Requires external `zg` 0.3+ (`@zvec/zvec-grep`) on PATH. Windows resolves the globally installed native executable using npm and spawns it directly to preserve arguments; cmd-shim fallback may reparse shell metacharacters. No dependencies are installed by this package.
 
-Reads `<agent-dir>/extensions/zvec.json`, then index-owner `.pi/zvec.json`: booleans `autoInit`, `syncOnSettle`, and string `embedding`. Missing config is auto-created with both flags **true** and `local/potion-code-16m-v2`. Example flags are false; an existing index still gets startup sync in UI modes. Exact mode uses managed ripgrep without an index or embedding model.
+Reads `<agent-dir>/extensions/zvec.json`, then index-owner `.pi/extensions/zvec.json` (the older `.pi/zvec.json` is still read when the new file is absent; it is never moved): booleans `autoInit`, `syncOnSettle`, and string `embedding`. Missing config is auto-created with both flags **true** and `local/potion-code-16m-v2`, plus `"$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-zvec/schemas/zvec.schema.json"` for editor completion (ignored at runtime). Example flags are false; an existing index still gets startup sync in UI modes. Exact mode uses managed ripgrep without an index or embedding model.
 
 ## Host limitations and security
 

@@ -48,7 +48,7 @@ The primary lock directory is always `~/.pi/pi-x-ide/lock`. When Pi runs inside 
 
 For connection hosts, Pi resolves in this order:
 
-1. `PI_X_IDE_HOST_OVERRIDE`, either from the real environment or `~/.pi/pi-x-ide/config.json` `env`.
+1. `PI_X_IDE_HOST_OVERRIDE`, either from the real environment or `~/.pi/agent/extensions/pi-x-ide.json` `env`.
 2. If Pi runs in WSL and the lock has `runningInWindows: true`, parse the WSL default gateway from `ip route show` and use it only if a short TCP probe to `<gateway>:<port>` succeeds.
 3. The lock file `host` value.
 4. `127.0.0.1` if `host` is empty.

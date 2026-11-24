@@ -1,6 +1,7 @@
 // ABOUTME: Registers the pi-x-ide extension lifecycle, commands, and IDE connection callbacks.
 // ABOUTME: Keeps the static shell Effect-free and loads heavy runtime services through one cached import.
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { migrateLegacyGlobalConfig } from "../shared/config.ts";
 import { logExtensionError } from "../shared/errors.ts";
 import { registerIdeCommand } from "./commands.ts";
 import { registerContextHandlers } from "./context.ts";
@@ -26,6 +27,16 @@ export type RegisterPiIdeExtensionOptions = {
    */
   runtimeLoader?: RuntimeServicesLoader;
 };
+
+/** One-time move of `~/.pi/pi-x-ide/config.json`; a failure leaves the old file, which readers keep using. */
+function moveLegacyGlobalConfig(ctx: ExtensionContext): void {
+  try {
+    const moved = migrateLegacyGlobalConfig();
+    if (moved) ctx.ui.notify(`[pi-x-ide] Moved config ${moved.from} -> ${moved.to}`, "info");
+  } catch (error) {
+    logExtensionError("move legacy config", error);
+  }
+}
 
 export default function (pi: ExtensionAPI): void {
   registerPiIdeExtension(pi);
@@ -72,6 +83,7 @@ export function registerPiIdeExtension(pi: ExtensionAPI, options: RegisterPiIdeE
         const generation = runtime.sessionGeneration;
         // Bind UI first so deferred preload failures can notify once.
         bindPiUiContext(runtime, ctx);
+        moveLegacyGlobalConfig(ctx);
         runtime.cwd = ctx.cwd;
         runtime.sessionStarting = true;
 

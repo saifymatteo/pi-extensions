@@ -1,7 +1,7 @@
 import { fakeTui, overlayHost } from "./overlay-host.js";
 import { eventTransport } from "./events.js";
 import { deferred, settleMicrotasks } from "./async.js";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vi, onTestFinished } from "vitest";
@@ -270,7 +270,8 @@ export async function withPersistedUserConfig(
 	const previous = process.env.PI_CODING_AGENT_DIR;
 	const agentDir = await mkdtemp(join(tmpdir(), "pi-atelier-extension-"));
 	try {
-		await writeFile(join(agentDir, "pi-atelier.json"), JSON.stringify(config), "utf8");
+		await mkdir(join(agentDir, "extensions"));
+		await writeFile(join(agentDir, "extensions", "pi-atelier.json"), JSON.stringify(config), "utf8");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 		persistedConfig = true;
 		await run();

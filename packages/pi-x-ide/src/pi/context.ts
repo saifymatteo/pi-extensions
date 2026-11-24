@@ -26,7 +26,7 @@ export function registerContextHandlers(pi: ExtensionAPI, runtime: PiIdeRuntime)
         return {
           message: {
             customType: IDE_CONTEXT_MESSAGE_TYPE,
-            content: formatEditorContextMessage(snapshot),
+            content: formatEditorContextMessage(snapshot, { cwd: ctx.cwd }),
             display: true,
           },
         };

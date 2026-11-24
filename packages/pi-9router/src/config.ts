@@ -1,8 +1,12 @@
 import { homedir } from "node:os";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, chmodSync, rmSync, rmdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export const DEFAULT_BASE = "";
+
+/** Editor schema for 9router.json. */
+export const SCHEMA_URL =
+	"https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-9router/schemas/9router.schema.json";
 
 /** Tool toggles in 9router.json — each defaults to on; set false to disable. */
 export interface ToolToggles {
@@ -105,8 +109,9 @@ export function seedAuthCredential(apiKey: string, opts: { force?: boolean } = {
  * One-time migration from the retired @haoyiyin/9router config (and the
  * never-shipped saifymatteo/ intermediate): write the new secret-free config
  * to extensions/9router.json, move the API key into the auth.json credential,
- * then remove the intermediate file. The @haoyiyin file is retained —
- * published pi-vision releases still read it until their own update ships.
+ * then remove the source file — and the haoyiyin/ directory once empty — so
+ * the move happens exactly once. pi-vision no longer reads the haoyiyin file
+ * (verified against published 0.1.6).
  */
 export function migrateLegacyConfig(): boolean {
 	const target = configPath();
@@ -135,12 +140,13 @@ export function migrateLegacyConfig(): boolean {
 		if (typeof parsed.apiKey === "string" && parsed.apiKey) {
 			seedAuthCredential(parsed.apiKey);
 		}
-		if (source === intermediate) {
-			try {
-				rmSync(intermediate);
-			} catch {
-				// best effort — a leftover only pollutes a directory
+		try {
+			rmSync(source);
+			if (source === legacyConfigPath() && readdirSync(dirname(source)).length === 0) {
+				rmdirSync(dirname(source));
 			}
+		} catch {
+			// best effort — the new config exists, so a leftover is never re-read
 		}
 		return true;
 	} catch {
@@ -182,8 +188,10 @@ export function loadConfig(): RouterConfig {
 }
 
 /** The persisted config shape — everything except the resolved API key. */
-function persisted(cfg: RouterConfig): Record<string, unknown> {
-	const out: Record<string, unknown> = { baseUrl: cfg.baseUrl };
+function persisted(cfg: RouterConfig, currentSchema: unknown): Record<string, unknown> {
+	// Write $schema only when absent; keep whatever the user has.
+	const $schema = currentSchema === undefined ? SCHEMA_URL : currentSchema;
+	const out: Record<string, unknown> = { $schema, baseUrl: cfg.baseUrl };
 	out.comboReasoning = cfg.comboReasoning ?? true;
 	if (cfg.tools !== undefined) out.tools = cfg.tools;
 	return out;
@@ -192,7 +200,13 @@ function persisted(cfg: RouterConfig): Record<string, unknown> {
 export function saveConfig(cfg: RouterConfig): void {
 	const path = configPath();
 	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(path, JSON.stringify(persisted(cfg), null, 2), { mode: 0o600 });
+	let currentSchema: unknown;
+	try {
+		currentSchema = JSON.parse(readFileSync(path, "utf8"))?.$schema;
+	} catch {
+		// missing or malformed file — treat $schema as absent
+	}
+	writeFileSync(path, JSON.stringify(persisted(cfg, currentSchema), null, 2), { mode: 0o600 });
 	try {
 		chmodSync(path, 0o600);
 	} catch {

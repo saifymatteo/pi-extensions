@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-session-rename/schemas/session-rename.schema.json",
+  "title": "pi-session-rename config",
+  "description": "<agent-dir>/extensions/session-rename.json, read on each title request. There is no implicit model: without one, titles are not generated.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Editor JSON Schema reference; not a runtime setting."
+    },
+    "model": {
+      "$ref": "#/$defs/modelEntry",
+      "description": "First title model."
+    },
+    "fallbackModels": {
+      "type": "array",
+      "description": "Further title models tried in order when an earlier one lacks credentials or its reply fails (error, cut off, not title JSON).",
+      "items": { "$ref": "#/$defs/modelEntry" },
+      "default": []
+    },
+    "fallbacks": {
+      "type": "array",
+      "description": "Legacy name for fallbackModels, read only when fallbackModels is not an array.",
+      "items": { "$ref": "#/$defs/modelEntry" },
+      "deprecated": true
+    },
+    "thinking": {
+      "$ref": "#/$defs/thinking",
+      "description": "Legacy default thinking level for entries that set none.",
+      "default": "low",
+      "deprecated": true
+    }
+  },
+  "$defs": {
+    "thinking": {
+      "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+    },
+    "modelEntry": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["provider", "id"],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Provider name; also the auth.json entry used for baseUrl entries."
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Model id."
+            },
+            "thinking": {
+              "$ref": "#/$defs/thinking",
+              "description": "Reasoning level; baseUrl entries send it as reasoning_effort capped at high. Defaults to the top-level thinking, else low.",
+              "default": "low"
+            },
+            "baseUrl": {
+              "type": "string",
+              "description": "Call this OpenAI Chat Completions base URL directly with the provider's auth.json key (key, else access; none means keyless). Without it, the entry needs Pi's model registry and credentials."
+            }
+          }
+        },
+        {
+          "type": "string",
+          "pattern": "^[^/]+/.+$",
+          "description": "Legacy \"provider/model-id\" string.",
+          "deprecated": true
+        }
+      ]
+    }
+  }
+}

@@ -14,6 +14,18 @@ pi install npm:@saifymatteo/pi-atelier
 
 Published to npm as [`@saifymatteo/pi-atelier`](https://www.npmjs.com/package/@saifymatteo/pi-atelier), and bundled in the [`@saifymatteo/pi-extensions`](https://github.com/saifymatteo/pi-extensions) collection; install one or the other. Releases publish from [pi-extensions](https://github.com/saifymatteo/pi-extensions) with `pi-atelier-v<version>` tags through npm Trusted Publishing.
 
+## Configuration
+
+Settings live in `~/.pi/agent/extensions/pi-atelier.json` (Pi's agent directory). A trusted project can override them in `.pi/extensions/pi-atelier.json`. Add the `$schema` line for editor completion:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-atelier/schemas/pi-atelier.schema.json"
+}
+```
+
+An older `~/.pi/agent/pi-atelier.json` is moved to the new path once, on the next session start; a symlinked file is copied and the link removed, leaving its target untouched. An older project `.pi/pi-atelier.json` is still read when the new project file is absent, and is never moved.
+
 ## Changes in this fork
 
 ### Extension statuses on dedicated rows

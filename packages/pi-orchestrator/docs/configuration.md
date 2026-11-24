@@ -31,34 +31,35 @@ The first directory containing `orchestrator.jsonc` or `orchestrator.json` wins,
 
 1. `<session cwd>/.pi/extensions/`
 2. `<getAgentDir()>/extensions/` (normally `~/.pi/agent/extensions/`)
-3. `<getAgentDir()>` (normally `~/.pi/agent/`, the original location)
 
-The agent directory comes from pi's `getAgentDir()`, so a custom `PI_CODING_AGENT_DIR` applies to both user-level locations. Within the chosen directory, `.jsonc` takes precedence over `.json`. Only one config is loaded; settings are **not merged** across files or directories. A project-local `.json` therefore wins over a user-level `.jsonc`.
+The agent directory comes from pi's `getAgentDir()`, so a custom `PI_CODING_AGENT_DIR` applies. Within the chosen directory, `.jsonc` takes precedence over `.json`. Only one config is loaded; settings are **not merged** across files or directories. A project-local `.json` therefore wins over a user-level `.jsonc`.
 
-Saves stay in the selected directory. A legacy `.json` is migrated to `.jsonc` there only after a successful write; lower-priority files are left untouched. If no config exists in any location, the default save target remains `<getAgentDir()>/orchestrator.jsonc` (normally `~/.pi/agent/orchestrator.jsonc`).
+A config in the old location, `<getAgentDir()>/orchestrator.jsonc` or `.json`, moves once into `<getAgentDir()>/extensions/` on load when that directory has no config yet. A symlinked old file is copied by content and the link itself removed; its target is left untouched. If the move fails, the old file stays in place and is read for that session.
+
+Saves stay in the selected directory. A legacy `.json` is migrated to `.jsonc` there only after a successful write; lower-priority files are left untouched. If no config exists in any location, the save target is `<getAgentDir()>/extensions/orchestrator.jsonc` (normally `~/.pi/agent/extensions/orchestrator.jsonc`).
 
 Configuration is loaded at extension initialization and on `session_start`, with no live file watcher. After moving a config or adding one in a higher-priority location, reload the extension or start a new session to select it.
 
 ## Editor assistance and field reference
 
-The [configuration schema](../schemas/orchestrator.schema.json) owns the exhaustive field types, defaults, constraints, descriptions, and examples, authored in the shared [definition](../src/config-schema.ts). The concepts and recipes below explain how to use those settings together. This schema covers only `orchestrator.jsonc` and legacy `orchestrator.json`, not pi settings or agent frontmatter.
+The [configuration schema](../schemas/orchestrator.schema.json) owns the exhaustive field types, defaults, constraints, descriptions, and examples, hand-written alongside the runtime defaults in [`src/config-schema.ts`](../src/config-schema.ts). The concepts and recipes below explain how to use those settings together. This schema covers only `orchestrator.jsonc` and legacy `orchestrator.json`, not pi settings or agent frontmatter.
 
 A standard `$schema` reference enables completion, hover documentation, and strict unknown-key diagnostics in schema-capable JSON/JSONC editors. For example, this recipe keeps a memory tool available to the parent but blocks it in children:
 
 ```jsonc
 {
   // Match this version to the installed package.
-  "$schema": "https://cdn.jsdelivr.net/npm/@saifymatteo/pi-orchestrator@0.9.0/schemas/orchestrator.schema.json",
+  "$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-orchestrator/schemas/orchestrator.schema.json",
   "keepTools": ["delegate", "hindsight_*"],
   "childBlockedTools": ["hindsight_*"]
 }
 ```
 
-Use the schema URL matching your installed package version, shown above for `0.9.0`. In a development checkout, use a local reference instead, such as `"$schema": "../schemas/orchestrator.schema.json"` for a config one directory below the checkout root. Adjust the relative path from your config's directory to the checkout's schema; the same path will not generally work in `~/.pi/agent/`.
+The URL tracks the `main` branch, not a released version. To pin the schema to a development checkout, use a local reference instead, such as `"$schema": "../schemas/orchestrator.schema.json"` for a config one directory below the checkout root. Adjust the relative path from your config's directory to the checkout's schema; the same path will not generally work in `~/.pi/agent/`.
 
 Editor diagnostics are **not runtime validation**. Unknown setting names (including typos such as `maxTurn`) are flagged in the editor but remain ignored by the loader and preserved on save. Invalid values such as `maxTurns: 0` get editor diagnostics while retaining the existing runtime fallback behavior. Supported agent-name maps allow arbitrary names; their values and known nested fields are still checked by the editor. Schema `default` annotations document defaults, not instructions to insert them into your file. `$schema` is metadata, not a runtime option.
 
-Normal configuration saves (for example, `/orchestrator`) add a missing `$schema` reference or refresh a recognized extension-owned reference to the installed version's pinned URL. Custom schema URLs and comments are preserved, including during legacy-file migration. Existing configs get a reference on their next normal save, or you can add one manually. **Loading never writes files or fetches schemas.** Your editor may fetch or cache the schema; an offline editor or unavailable CDN affects assistance only, not runtime loading. For an unreleased checkout, use the local reference above even if a save inserted a not-yet-published version URL.
+Normal configuration saves (for example, `/orchestrator`) add a missing `$schema` reference and replace a version-pinned jsdelivr reference written by earlier releases with the URL above. Other schema URLs and comments are preserved, including during legacy-file migration. Existing configs get a reference on their next normal save, or you can add one manually. **Loading never writes files or fetches schemas.** Your editor may fetch or cache the schema; an offline editor or unavailable host affects assistance only, not runtime loading.
 
 See [ADR-0019](adr/0019-config-json-schema.md) for the editor/runtime boundary and publishing decision.
 

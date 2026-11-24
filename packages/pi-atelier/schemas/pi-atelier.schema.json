@@ -1,0 +1,357 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-atelier/schemas/pi-atelier.schema.json",
+  "title": "Pi Atelier configuration",
+  "description": "User file: <agent-dir>/extensions/pi-atelier.json. Trusted project file: <cwd>/.pi/extensions/pi-atelier.json. Project values override user values except where a key is marked user-only.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema URL for editor completion and validation; ignored at runtime."
+    },
+    "preset": {
+      "type": "string",
+      "enum": [
+        "editorial",
+        "minimal",
+        "classic",
+        "custom"
+      ],
+      "description": "Status Rail display template. A named preset sets density and segmentLayout; later keys in the same file refine it, and the resolved preset becomes \"custom\" when they differ from the template.",
+      "default": "editorial"
+    },
+    "density": {
+      "type": "string",
+      "enum": [
+        "comfortable",
+        "compact"
+      ],
+      "description": "Status Rail spacing.",
+      "default": "comfortable"
+    },
+    "segmentLayout": {
+      "type": "array",
+      "description": "Status Rail segments in display order with their visibility. Segments left out are appended hidden.",
+      "default": [
+        {
+          "id": "brand",
+          "visible": false
+        },
+        {
+          "id": "activity",
+          "visible": true
+        },
+        {
+          "id": "metrics",
+          "visible": true
+        },
+        {
+          "id": "performance",
+          "visible": false
+        },
+        {
+          "id": "context",
+          "visible": true
+        },
+        {
+          "id": "model",
+          "visible": true
+        },
+        {
+          "id": "git",
+          "visible": true
+        },
+        {
+          "id": "statuses",
+          "visible": true
+        },
+        {
+          "id": "menu",
+          "visible": true
+        }
+      ],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "visible"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "brand",
+              "activity",
+              "metrics",
+              "performance",
+              "context",
+              "model",
+              "git",
+              "statuses",
+              "menu"
+            ],
+            "description": "Status Rail segment id."
+          },
+          "visible": {
+            "type": "boolean",
+            "description": "Whether the segment is shown."
+          }
+        }
+      }
+    },
+    "segments": {
+      "type": "array",
+      "deprecated": true,
+      "description": "Legacy list of visible Status Rail segments in order; read only when segmentLayout is absent. Use segmentLayout.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "brand",
+          "activity",
+          "metrics",
+          "performance",
+          "context",
+          "model",
+          "git",
+          "statuses",
+          "menu"
+        ]
+      }
+    },
+    "ornament": {
+      "type": "string",
+      "enum": [
+        "none",
+        "restrained"
+      ],
+      "deprecated": true,
+      "description": "Legacy brand ornament; \"restrained\" shows the brand segment on non-editorial presets. Read only when segmentLayout is absent. Use segmentLayout.",
+      "default": "none"
+    },
+    "showExtensionStatuses": {
+      "type": "boolean",
+      "deprecated": true,
+      "description": "Legacy toggle for the statuses segment; read only when segmentLayout is absent. Use segmentLayout.",
+      "default": true
+    },
+    "nerdFont": {
+      "type": "boolean",
+      "description": "Use Nerd Font glyphs instead of plain-text glyphs. User file only; ignored in project config.",
+      "default": false
+    },
+    "shortcut": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Shortcut that opens the Atelier menu. \"alt+a\" (the former default) is replaced by the current default.",
+      "default": "f6"
+    },
+    "resizeShortcut": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Shortcut that resizes the sidebar.",
+      "default": "ctrl+shift+r"
+    },
+    "toggleShortcut": {
+      "type": "string",
+      "description": "Optional shortcut that toggles the sidebar; an empty string leaves it unbound.",
+      "default": ""
+    },
+    "contextWarning": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Context usage percentage that shows the warning color; must be below contextDanger.",
+      "default": 70
+    },
+    "contextDanger": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Context usage percentage that shows the danger color; must be above contextWarning and at most 100.",
+      "default": 90
+    },
+    "currencyDecimals": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 6,
+      "description": "Decimal places shown for costs.",
+      "default": 3
+    },
+    "showSidebarToolNames": {
+      "type": "boolean",
+      "description": "Show tool names in the sidebar activity panel.",
+      "default": false
+    },
+    "showSidebarOnStartup": {
+      "type": "boolean",
+      "description": "Open the sidebar when a session starts. User file only; ignored in project config.",
+      "default": true
+    },
+    "sidebarWidth": {
+      "type": "integer",
+      "minimum": 28,
+      "maximum": 72,
+      "description": "Sidebar width in columns; out-of-range values are clamped. User file only; ignored in project config.",
+      "default": 44
+    },
+    "sidebarStyle": {
+      "type": "string",
+      "enum": [
+        "framed",
+        "minimal"
+      ],
+      "description": "Sidebar panel chrome. User file only; ignored in project config.",
+      "default": "framed"
+    },
+    "sidebarPanelLayout": {
+      "type": "array",
+      "description": "Sidebar panels in display order with their visibility. Built-in panels left out are inserted beside their product-order neighbours. User file only; ignored in project config.",
+      "default": [
+        {
+          "id": "agent",
+          "visible": false
+        },
+        {
+          "id": "activity",
+          "visible": true
+        },
+        {
+          "id": "alerts",
+          "visible": true
+        },
+        {
+          "id": "todos",
+          "visible": true
+        },
+        {
+          "id": "context",
+          "visible": true
+        },
+        {
+          "id": "prefill",
+          "visible": true
+        },
+        {
+          "id": "workspace",
+          "visible": true
+        },
+        {
+          "id": "usage",
+          "visible": false
+        },
+        {
+          "id": "subagents",
+          "visible": true
+        },
+        {
+          "id": "tools",
+          "visible": false
+        }
+      ],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "visible"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Built-in panel id, or an extension-contributed id of the form \"namespace:panel\" (for example \"orchestrator:fleet\").",
+            "anyOf": [
+              {
+                "enum": [
+                  "agent",
+                  "activity",
+                  "alerts",
+                  "todos",
+                  "context",
+                  "prefill",
+                  "workspace",
+                  "usage",
+                  "subagents",
+                  "tools"
+                ]
+              },
+              {
+                "pattern": "^[a-z][a-z0-9_-]*:[a-z][a-z0-9_-]*$"
+              }
+            ]
+          },
+          "visible": {
+            "type": "boolean",
+            "description": "Whether the panel is shown."
+          }
+        }
+      }
+    },
+    "showSidebarAgent": {
+      "type": "boolean",
+      "deprecated": true,
+      "description": "Legacy Agent panel visibility; read only from the user file when sidebarPanelLayout is absent. Use sidebarPanelLayout."
+    },
+    "showSidebarTodos": {
+      "type": "boolean",
+      "deprecated": true,
+      "description": "Legacy TODOS panel visibility; read only from the user file when sidebarPanelLayout is absent. Use sidebarPanelLayout."
+    },
+    "extensionStatusOrder": {
+      "type": "array",
+      "description": "Extension status keys (as passed to setStatus()) listed first, in this order; unlisted statuses keep Pi's order.",
+      "default": [],
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "completionNotifications": {
+      "type": "boolean",
+      "description": "Send a desktop notification when a run completes or input is requested. User file only; ignored in project config.",
+      "default": true
+    },
+    "showFooter": {
+      "type": "boolean",
+      "description": "Show the Atelier footer (Status Rail). User file only; ignored in project config.",
+      "default": true
+    },
+    "prefillEnabled": {
+      "type": "boolean",
+      "description": "Show the prefill progress panel.",
+      "default": true
+    },
+    "prefillViews": {
+      "type": "array",
+      "description": "Rows the prefill panel shows, in order.",
+      "default": [
+        "percent",
+        "tokens",
+        "eta",
+        "rate"
+      ],
+      "items": {
+        "type": "string",
+        "enum": [
+          "percent",
+          "tokens",
+          "eta",
+          "rate"
+        ]
+      }
+    },
+    "prefillProviders": {
+      "type": "array",
+      "description": "Providers whose requests get prefill progress reporting. User file only; ignored in project config.",
+      "default": [
+        "llama.cpp"
+      ],
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

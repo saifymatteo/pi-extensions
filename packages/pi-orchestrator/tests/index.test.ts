@@ -448,7 +448,8 @@ function toolsetPi(tools?: any[]) {
  *  restore the env afterwards so other tests are unaffected. */
 async function withAgentDir(enabled: boolean, fn: () => Promise<void>, settings: Record<string, unknown> = {}): Promise<void> {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-orch-auto-norm-"));
-	fs.writeFileSync(path.join(dir, "orchestrator.jsonc"), JSON.stringify({ enabled, ...settings }));
+	fs.mkdirSync(path.join(dir, "extensions"));
+	fs.writeFileSync(path.join(dir, "extensions", "orchestrator.jsonc"), JSON.stringify({ enabled, ...settings }));
 	const prev = process.env.PI_ORCH_TEST_AGENT_DIR;
 	process.env.PI_ORCH_TEST_AGENT_DIR = dir;
 	delete process.env.PI_ORCHESTRATOR_CHILD;
@@ -469,7 +470,7 @@ async function loadExtension(): Promise<any> {
 test("session config follows ctx.cwd and both commands save into the selected extensions directory", async () => {
 	await withAgentDir(true, async () => {
 		const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
-		const globalFile = path.join(dir, "orchestrator.jsonc");
+		const globalFile = path.join(dir, "extensions", "orchestrator.jsonc");
 		const globalSource = fs.readFileSync(globalFile, "utf8");
 		const projects = [path.join(dir, "project-a"), path.join(dir, "project-b")];
 		for (const cwd of projects) {
@@ -507,16 +508,12 @@ test("global extensions config is loaded at initialization and persists toggles 
 	await withAgentDir(true, async () => {
 		const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
 		const filename = path.join(dir, "extensions", "orchestrator.jsonc");
-		fs.mkdirSync(path.dirname(filename));
 		fs.writeFileSync(filename, '{ "enabled": false }');
-		const globalFile = path.join(dir, "orchestrator.jsonc");
-		const globalSource = fs.readFileSync(globalFile, "utf8");
 		const { stub, handlers } = toolsetPi();
 		(await loadExtension())(stub);
 		assert.equal(await handlers.before_agent_start[0]({ systemPrompt: "base" }, {}), undefined);
 		await (handlers as any).command.orchestrator("", {});
 		assert.equal(JSON.parse(fs.readFileSync(filename, "utf8")).enabled, true);
-		assert.equal(fs.readFileSync(globalFile, "utf8"), globalSource, "global fallback stays byte-for-byte unchanged");
 	});
 });
 
@@ -714,7 +711,7 @@ test("failed tool-edit save restores the binary control and leaves permissions u
 		(await loadExtension())(stub);
 		await handlers.session_start[0]({}, {});
 		const editor = await openToolEditor(handlers);
-		const file = path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "orchestrator.jsonc");
+		const file = path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "extensions", "orchestrator.jsonc");
 		fs.rmSync(file);
 		fs.mkdirSync(file); // Force saveConfig to fail without mocking persistence.
 		const beforeCalls = calls.length;
@@ -730,7 +727,7 @@ test("a committed tool edit remains applied if legacy cleanup fails", async () =
 		const { stub, handlers } = toolsetPi(editableTools());
 		(await loadExtension())(stub);
 		await handlers.session_start[0]({}, {});
-		fs.mkdirSync(path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "orchestrator.json"));
+		fs.mkdirSync(path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "extensions", "orchestrator.json"));
 		const editor = await openToolEditor(handlers);
 		editor.handleInput(" ");
 		assert.ok(editor.render(80).includes("foo_a: blocked"));
@@ -826,7 +823,7 @@ test("manual sidebar handoff hides only the live widget, including after discove
 		assert.equal("keyValues" in panels.at(-1), false);
 		assert.equal(widgets.filter((lines) => lines !== undefined).length, 0, "discovery and AUTO/ENGAGED must not override manual visibility");
 		for (const handler of handlers.session_shutdown) await handler({}, ctx);
-		const configFile = path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "orchestrator.jsonc");
+		const configFile = path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "extensions", "orchestrator.jsonc");
 		const settings = JSON.parse(fs.readFileSync(configFile, "utf8"));
 		assert.equal(settings.showFleetWidget, false, "engagement saves preserve widget preference");
 		fs.writeFileSync(configFile, JSON.stringify({ ...settings, showFleetWidget: true }));

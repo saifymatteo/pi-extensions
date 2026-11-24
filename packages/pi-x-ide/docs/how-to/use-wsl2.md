@@ -69,7 +69,7 @@ Use the gateway address (`172.x.x.1`) as `<windows-host-ip>`.
 
 ### Persist the override
 
-Set the variable in `~/.pi/pi-x-ide/config.json` instead of the shell:
+Set the variable in `~/.pi/agent/extensions/pi-x-ide.json` instead of the shell:
 
 ```json
 {

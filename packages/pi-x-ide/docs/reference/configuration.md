@@ -5,8 +5,15 @@ environment variables, and top-level options in config JSON files.
 
 Config files:
 
-- **Global:** `~/.pi/pi-x-ide/config.json`
-- **Project:** `<cwd>/.pi/pi-x-ide/config.json` (overrides global for supported keys)
+- **Global:** `<agent-dir>/extensions/pi-x-ide.json`, where `<agent-dir>` is
+  `$PI_CODING_AGENT_DIR` or `~/.pi/agent`
+- **Project:** `<cwd>/.pi/extensions/pi-x-ide.json` (overrides global for supported keys)
+
+Older locations still work: on the next start Pi moves `~/.pi/pi-x-ide/config.json`
+to the global path (writing through a symlink, then removing the old link) and
+notifies once. `<cwd>/.pi/pi-x-ide/config.json` is read as a fallback when the new
+project file is absent; it is never moved. The `$schema` key is ignored at runtime;
+`/ide settings` keeps a custom `$schema` and refreshes only this package's own URL.
 
 Pi-side variables can be set as real environment variables **or** in config
 `env`. Real environment variables take precedence. Interactive settings
@@ -24,7 +31,7 @@ Pi-side variables can be set as real environment variables **or** in config
 }
 ```
 
-See [`config.example.json`](../../examples/config.example.json) for a starting template and
+See [`pi-x-ide.example.json`](../../examples/pi-x-ide.example.json) for a starting template and
 [`schemas/pi-x-ide.schema.json`](../../schemas/pi-x-ide.schema.json) for the editor schema.
 
 ## VS Code settings

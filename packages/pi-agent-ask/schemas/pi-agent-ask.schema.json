@@ -1,0 +1,631 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-agent-ask/schemas/pi-agent-ask.schema.json",
+  "title": "pi-agent-ask config",
+  "description": "<agent-dir>/extensions/pi-agent-ask.json. Created with defaults on the first ask; run /reload after editing. Invalid files load defaults for the session and stay unchanged.",
+  "type": "object",
+  "required": [
+    "schemaVersion"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Editor JSON Schema reference; not a runtime setting. Saving keeps a non-pi-agent-ask value."
+    },
+    "schemaVersion": {
+      "const": 5,
+      "description": "Config format version. Older supported versions (1-4) migrate in memory; keep 5 when editing.",
+      "default": 5
+    },
+    "behaviour": {
+      "type": "object",
+      "description": "Form behaviour toggles; also editable via /ask-settings.",
+      "properties": {
+        "autoSubmitWhenAnsweredWithoutNotes": {
+          "type": "boolean",
+          "description": "Auto-submit from Review when every question has an answer and there are no notes.",
+          "default": false
+        },
+        "confirmDismissWhenDirty": {
+          "type": "boolean",
+          "description": "Require the same cancel/dismiss action twice when answers, notes, or editor drafts exist.",
+          "default": true
+        },
+        "doublePressReviewShortcuts": {
+          "type": "boolean",
+          "description": "Require the same Review number shortcut twice.",
+          "default": true
+        },
+        "presentSingleAsMulti": {
+          "type": "boolean",
+          "description": "Present requested single-select questions as multi-select in new or restored forms; results keep the requested type.",
+          "default": false
+        },
+        "showFooterHints": {
+          "type": "boolean",
+          "description": "Show keyboard hints in the form footer.",
+          "default": true
+        }
+      },
+      "default": {
+        "autoSubmitWhenAnsweredWithoutNotes": false,
+        "confirmDismissWhenDirty": true,
+        "doublePressReviewShortcuts": true,
+        "presentSingleAsMulti": false,
+        "showFooterHints": true
+      }
+    },
+    "keymaps": {
+      "type": "object",
+      "description": "Keyboard bindings per context. Each action takes a pi-tui key ID or an array of aliases; bindings are unique per context and 1..9 are reserved. Every context and action is required when keymaps is set; invalid keymaps fall back to defaults for the session.",
+      "required": [
+        "global",
+        "main",
+        "editor",
+        "noteEditor",
+        "settingsModal"
+      ],
+      "properties": {
+        "global": {
+          "type": "object",
+          "description": "Dismissal and settings in the main flow and editors. Must not overlap main, editor, or note-editor bindings.",
+          "required": [
+            "dismiss",
+            "settings"
+          ],
+          "properties": {
+            "dismiss": {
+              "$ref": "#/$defs/binding",
+              "description": "Dismiss the active ask surface",
+              "default": [
+                "ctrl+c"
+              ]
+            },
+            "settings": {
+              "$ref": "#/$defs/binding",
+              "description": "Open ask settings",
+              "default": [
+                "?"
+              ]
+            }
+          },
+          "default": {
+            "dismiss": [
+              "ctrl+c"
+            ],
+            "settings": [
+              "?"
+            ]
+          }
+        },
+        "main": {
+          "type": "object",
+          "description": "Questions and Review.",
+          "required": [
+            "confirm",
+            "cancel",
+            "changeQuestionType",
+            "toggle",
+            "nextTab",
+            "previousTab",
+            "nextOption",
+            "previousOption",
+            "optionNote",
+            "questionNote"
+          ],
+          "properties": {
+            "confirm": {
+              "$ref": "#/$defs/binding",
+              "description": "Confirm selection, continue, or submit",
+              "default": [
+                "enter"
+              ]
+            },
+            "cancel": {
+              "$ref": "#/$defs/binding",
+              "description": "Cancel flow",
+              "default": [
+                "esc"
+              ]
+            },
+            "changeQuestionType": {
+              "$ref": "#/$defs/binding",
+              "description": "Change current question type (single <-> multi, preview <-> multi)",
+              "default": [
+                "t"
+              ]
+            },
+            "toggle": {
+              "$ref": "#/$defs/binding",
+              "description": "Toggle selected option",
+              "default": [
+                "space"
+              ]
+            },
+            "nextTab": {
+              "$ref": "#/$defs/binding",
+              "description": "Switch to next tab",
+              "default": [
+                "tab",
+                "right"
+              ]
+            },
+            "previousTab": {
+              "$ref": "#/$defs/binding",
+              "description": "Switch to previous tab",
+              "default": [
+                "shift+tab",
+                "left"
+              ]
+            },
+            "nextOption": {
+              "$ref": "#/$defs/binding",
+              "description": "Move to next option/action",
+              "default": [
+                "down"
+              ]
+            },
+            "previousOption": {
+              "$ref": "#/$defs/binding",
+              "description": "Move to previous option/action",
+              "default": [
+                "up"
+              ]
+            },
+            "optionNote": {
+              "$ref": "#/$defs/binding",
+              "description": "Edit selected option note",
+              "default": [
+                "n"
+              ]
+            },
+            "questionNote": {
+              "$ref": "#/$defs/binding",
+              "description": "Edit question note",
+              "default": [
+                "shift+n"
+              ]
+            }
+          },
+          "default": {
+            "confirm": [
+              "enter"
+            ],
+            "cancel": [
+              "esc"
+            ],
+            "changeQuestionType": [
+              "t"
+            ],
+            "toggle": [
+              "space"
+            ],
+            "nextTab": [
+              "tab",
+              "right"
+            ],
+            "previousTab": [
+              "shift+tab",
+              "left"
+            ],
+            "nextOption": [
+              "down"
+            ],
+            "previousOption": [
+              "up"
+            ],
+            "optionNote": [
+              "n"
+            ],
+            "questionNote": [
+              "shift+n"
+            ]
+          }
+        },
+        "editor": {
+          "type": "object",
+          "description": "Custom-answer editor.",
+          "required": [
+            "submit",
+            "close",
+            "nextTabWhenEmpty",
+            "previousTabWhenEmpty",
+            "nextOptionWhenEmpty",
+            "previousOptionWhenEmpty"
+          ],
+          "properties": {
+            "submit": {
+              "$ref": "#/$defs/binding",
+              "description": "Submit custom answer",
+              "default": [
+                "enter"
+              ]
+            },
+            "close": {
+              "$ref": "#/$defs/binding",
+              "description": "Close editor and preserve draft",
+              "default": [
+                "esc"
+              ]
+            },
+            "nextTabWhenEmpty": {
+              "$ref": "#/$defs/binding",
+              "description": "Switch to next tab when editor is empty",
+              "default": [
+                "tab",
+                "right"
+              ]
+            },
+            "previousTabWhenEmpty": {
+              "$ref": "#/$defs/binding",
+              "description": "Switch to previous tab when editor is empty",
+              "default": [
+                "shift+tab",
+                "left"
+              ]
+            },
+            "nextOptionWhenEmpty": {
+              "$ref": "#/$defs/binding",
+              "description": "Move to next option when editor is empty",
+              "default": [
+                "down"
+              ]
+            },
+            "previousOptionWhenEmpty": {
+              "$ref": "#/$defs/binding",
+              "description": "Move to previous option when editor is empty",
+              "default": [
+                "up"
+              ]
+            }
+          },
+          "default": {
+            "submit": [
+              "enter"
+            ],
+            "close": [
+              "esc"
+            ],
+            "nextTabWhenEmpty": [
+              "tab",
+              "right"
+            ],
+            "previousTabWhenEmpty": [
+              "shift+tab",
+              "left"
+            ],
+            "nextOptionWhenEmpty": [
+              "down"
+            ],
+            "previousOptionWhenEmpty": [
+              "up"
+            ]
+          }
+        },
+        "noteEditor": {
+          "type": "object",
+          "description": "Question and option note editor.",
+          "required": [
+            "save",
+            "close",
+            "nextTabWhenEmpty",
+            "previousTabWhenEmpty",
+            "nextOptionWhenEmpty",
+            "previousOptionWhenEmpty"
+          ],
+          "properties": {
+            "save": {
+              "$ref": "#/$defs/binding",
+              "description": "Save note",
+              "default": [
+                "enter"
+              ]
+            },
+            "close": {
+              "$ref": "#/$defs/binding",
+              "description": "Close note editor",
+              "default": [
+                "esc"
+              ]
+            },
+            "nextTabWhenEmpty": {
+              "$ref": "#/$defs/binding",
+              "description": "Switch to next tab when editor is empty",
+              "default": [
+                "tab",
+                "right"
+              ]
+            },
+            "previousTabWhenEmpty": {
+              "$ref": "#/$defs/binding",
+              "description": "Switch to previous tab when editor is empty",
+              "default": [
+                "shift+tab",
+                "left"
+              ]
+            },
+            "nextOptionWhenEmpty": {
+              "$ref": "#/$defs/binding",
+              "description": "Move to next option when editor is empty",
+              "default": [
+                "down"
+              ]
+            },
+            "previousOptionWhenEmpty": {
+              "$ref": "#/$defs/binding",
+              "description": "Move to previous option when editor is empty",
+              "default": [
+                "up"
+              ]
+            }
+          },
+          "default": {
+            "save": [
+              "enter"
+            ],
+            "close": [
+              "esc"
+            ],
+            "nextTabWhenEmpty": [
+              "tab",
+              "right"
+            ],
+            "previousTabWhenEmpty": [
+              "shift+tab",
+              "left"
+            ],
+            "nextOptionWhenEmpty": [
+              "down"
+            ],
+            "previousOptionWhenEmpty": [
+              "up"
+            ]
+          }
+        },
+        "settingsModal": {
+          "type": "object",
+          "description": "The settings list.",
+          "required": [
+            "close",
+            "nextOption",
+            "previousOption",
+            "toggle"
+          ],
+          "properties": {
+            "close": {
+              "$ref": "#/$defs/binding",
+              "description": "Close settings",
+              "default": [
+                "esc",
+                "ctrl+c",
+                "?"
+              ]
+            },
+            "nextOption": {
+              "$ref": "#/$defs/binding",
+              "description": "Move to next setting",
+              "default": [
+                "down"
+              ]
+            },
+            "previousOption": {
+              "$ref": "#/$defs/binding",
+              "description": "Move to previous setting",
+              "default": [
+                "up"
+              ]
+            },
+            "toggle": {
+              "$ref": "#/$defs/binding",
+              "description": "Toggle selected setting",
+              "default": [
+                "enter",
+                "space"
+              ]
+            }
+          },
+          "default": {
+            "close": [
+              "esc",
+              "ctrl+c",
+              "?"
+            ],
+            "nextOption": [
+              "down"
+            ],
+            "previousOption": [
+              "up"
+            ],
+            "toggle": [
+              "enter",
+              "space"
+            ]
+          }
+        }
+      },
+      "default": {
+        "global": {
+          "dismiss": [
+            "ctrl+c"
+          ],
+          "settings": [
+            "?"
+          ]
+        },
+        "main": {
+          "confirm": [
+            "enter"
+          ],
+          "cancel": [
+            "esc"
+          ],
+          "changeQuestionType": [
+            "t"
+          ],
+          "toggle": [
+            "space"
+          ],
+          "nextTab": [
+            "tab",
+            "right"
+          ],
+          "previousTab": [
+            "shift+tab",
+            "left"
+          ],
+          "nextOption": [
+            "down"
+          ],
+          "previousOption": [
+            "up"
+          ],
+          "optionNote": [
+            "n"
+          ],
+          "questionNote": [
+            "shift+n"
+          ]
+        },
+        "editor": {
+          "submit": [
+            "enter"
+          ],
+          "close": [
+            "esc"
+          ],
+          "nextTabWhenEmpty": [
+            "tab",
+            "right"
+          ],
+          "previousTabWhenEmpty": [
+            "shift+tab",
+            "left"
+          ],
+          "nextOptionWhenEmpty": [
+            "down"
+          ],
+          "previousOptionWhenEmpty": [
+            "up"
+          ]
+        },
+        "noteEditor": {
+          "save": [
+            "enter"
+          ],
+          "close": [
+            "esc"
+          ],
+          "nextTabWhenEmpty": [
+            "tab",
+            "right"
+          ],
+          "previousTabWhenEmpty": [
+            "shift+tab",
+            "left"
+          ],
+          "nextOptionWhenEmpty": [
+            "down"
+          ],
+          "previousOptionWhenEmpty": [
+            "up"
+          ]
+        },
+        "settingsModal": {
+          "close": [
+            "esc",
+            "ctrl+c",
+            "?"
+          ],
+          "nextOption": [
+            "down"
+          ],
+          "previousOption": [
+            "up"
+          ],
+          "toggle": [
+            "enter",
+            "space"
+          ]
+        }
+      }
+    },
+    "notifications": {
+      "type": "object",
+      "description": "Best-effort notifications when an ask form opens and waits for input.",
+      "properties": {
+        "channels": {
+          "type": "array",
+          "description": "Channels run in order. Invalid channels are skipped; with none valid, the bell is used.",
+          "items": {
+            "$ref": "#/$defs/channel"
+          },
+          "default": [
+            "bell"
+          ]
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Send notifications.",
+          "default": true
+        }
+      },
+      "default": {
+        "channels": [
+          "bell"
+        ],
+        "enabled": true
+      }
+    }
+  },
+  "$defs": {
+    "binding": {
+      "description": "A pi-tui key ID (e.g. \"ctrl+c\", \"shift+tab\", \"pageUp\") or an array of aliases.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "channel": {
+      "anyOf": [
+        {
+          "const": "bell",
+          "description": "Terminal BEL."
+        },
+        {
+          "const": "osc9",
+          "description": "OSC 9 notification."
+        },
+        {
+          "const": "osc777",
+          "description": "OSC 777 title/body notification."
+        },
+        {
+          "type": "object",
+          "description": "Shell command; receives ASK_NOTIFY_EVENT, ASK_NOTIFY_TITLE and ASK_NOTIFY_MESSAGE.",
+          "required": [
+            "type",
+            "command"
+          ],
+          "properties": {
+            "type": {
+              "const": "command",
+              "description": "Channel kind."
+            },
+            "command": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Shell command to run."
+            }
+          }
+        }
+      ]
+    }
+  }
+}

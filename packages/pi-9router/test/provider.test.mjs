@@ -136,8 +136,8 @@ test('legacy configs migrate to a secret-free file plus an auth.json credential'
     }
   }
 
-  // The @haoyiyin legacy file migrates the same way but is retained —
-  // published pi-vision releases still read it until they update.
+  // The @haoyiyin legacy file migrates the same way and is removed with its
+  // emptied directory — a one-time move.
   {
     const dir = tempAgentDir();
     const prev = process.env.PI_CODING_AGENT_DIR;
@@ -151,7 +151,8 @@ test('legacy configs migrate to a secret-free file plus an auth.json credential'
       assert.equal(migrated.baseUrl, 'https://legacy.example/v1');
       assert.equal('apiKey' in migrated, false, 'no API key in the config file');
       assert.equal(JSON.parse(readFileSync(join(dir, 'auth.json'), 'utf8'))['9router'].access, 'legacy');
-      assert.equal(existsSync(join(dir, 'haoyiyin', '9router.json')), true);
+      assert.equal(existsSync(join(dir, 'haoyiyin', '9router.json')), false, 'legacy file removed');
+      assert.equal(existsSync(join(dir, 'haoyiyin')), false, 'empty legacy dir removed');
       // Second run is a no-op, and the new file is never overwritten.
       writeFileSync(join(dir, 'extensions', '9router.json'), JSON.stringify({ baseUrl: 'https://new.example/v1' }));
       assert.equal(c.migrateLegacyConfig(), false);
@@ -171,11 +172,38 @@ test('legacy configs migrate to a secret-free file plus an auth.json credential'
       mkdirSync(join(dir, 'haoyiyin'), { recursive: true });
       writeFileSync(join(dir, 'haoyiyin', '9router.json'), JSON.stringify({ baseUrl: 'https://legacy.example/v1', apiKey: 'legacy-key' }));
       writeFileSync(join(dir, 'auth.json'), JSON.stringify({ '9router': { type: 'oauth', access: 'live-key', refresh: 'live-key', expires: 1 } }));
+      writeFileSync(join(dir, 'haoyiyin', 'other.json'), '{}'); // unrelated file keeps the dir
       assert.equal(c.migrateLegacyConfig(), true);
+      assert.equal(existsSync(join(dir, 'haoyiyin', '9router.json')), false);
+      assert.equal(existsSync(join(dir, 'haoyiyin', 'other.json')), true);
       assert.equal(JSON.parse(readFileSync(join(dir, 'auth.json'), 'utf8'))['9router'].access, 'live-key');
     } finally {
       if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
     }
+  }
+});
+
+test('schema properties match the saved config keys plus $schema, and saving keeps a foreign $schema', () => {
+  const dir = tempAgentDir();
+  const prev = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = dir;
+  try {
+    const c = loadExtension(configPathSource);
+    const schema = JSON.parse(readFileSync(new URL('../schemas/9router.schema.json', import.meta.url), 'utf8'));
+    assert.equal(c.SCHEMA_URL, 'https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-9router/schemas/9router.schema.json');
+    assert.equal(schema.$id, c.SCHEMA_URL);
+    const file = join(dir, 'extensions', '9router.json');
+    c.saveConfig({ baseUrl: 'https://r.example/v1', apiKey: 'secret', comboReasoning: true, tools: {} });
+    const saved = JSON.parse(readFileSync(file, 'utf8'));
+    assert.deepEqual(Object.keys(schema.properties).sort(), Object.keys(saved).sort());
+    assert.equal(saved.$schema, c.SCHEMA_URL);
+    // An existing $schema is kept.
+    writeFileSync(file, JSON.stringify({ $schema: './local.schema.json' }));
+    c.saveConfig({ baseUrl: '', apiKey: '' });
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).$schema, './local.schema.json');
+    assert.equal(host(c.loadConfig()).baseUrl, '', '$schema is ignored by the loader');
+  } finally {
+    if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
   }
 });
 

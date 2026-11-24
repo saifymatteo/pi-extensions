@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-9router/schemas/9router.schema.json",
+  "title": "pi-9router config",
+  "description": "<agent-dir>/extensions/9router.json. Secret-free: the API key lives in auth.json as the 9router login credential (ROUTER_API_KEY overrides it).",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Editor JSON Schema reference; not a runtime setting."
+    },
+    "baseUrl": {
+      "type": "string",
+      "description": "9Router OpenAI-compatible base URL, e.g. https://router.example/v1. A trailing slash is stripped. When absent, ROUTER_API_BASE is used; there is no built-in endpoint.",
+      "default": ""
+    },
+    "comboReasoning": {
+      "description": "Reasoning for combo models (owned_by \"combo\"), which carry no capabilities from the router. true enables the full off..max range, false disables reasoning, an object overrides the thinking level map.",
+      "default": true,
+      "oneOf": [
+        { "type": "boolean" },
+        {
+          "type": "object",
+          "properties": {
+            "thinkingLevelMap": {
+              "type": "object",
+              "description": "Pi thinking level to the router's reasoning_effort value; null hides that level. Omitted uses {\"xhigh\": \"xhigh\", \"max\": \"max\"}.",
+              "additionalProperties": { "type": ["string", "null"] },
+              "default": { "xhigh": "xhigh", "max": "max" }
+            }
+          }
+        }
+      ]
+    },
+    "tools": {
+      "type": "object",
+      "description": "Per-tool switches for the bundled tools; each defaults to on, set false to disable.",
+      "properties": {
+        "fetch": { "type": "boolean", "description": "Register the fetch tool.", "default": true },
+        "search": { "type": "boolean", "description": "Register the search tool.", "default": true },
+        "transcribe": { "type": "boolean", "description": "Register the transcribe tool.", "default": true }
+      }
+    }
+  }
+}

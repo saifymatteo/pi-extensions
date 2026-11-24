@@ -1,4 +1,8 @@
 {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-orchestrator/schemas/orchestrator.schema.json",
+  "title": "pi-orchestrator configuration",
+  "description": "Settings for orchestrator.jsonc or legacy orchestrator.json. All settings are optional. Described defaults apply when omitted; editor diagnostics do not change runtime normalization or fallback behavior.",
   "type": "object",
   "properties": {
     "$schema": {
@@ -200,8 +204,5 @@
       "default": true
     }
   },
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "pi-orchestrator configuration",
-  "description": "Settings for orchestrator.jsonc or legacy orchestrator.json. All settings are optional. Described defaults apply when omitted; editor diagnostics do not change runtime normalization or fallback behavior.",
   "additionalProperties": false
 }

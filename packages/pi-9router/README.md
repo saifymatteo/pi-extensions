@@ -25,7 +25,15 @@ The two halves live in different files, both under `<agent-dir>` (`PI_CODING_AGE
 
 `ROUTER_API_BASE` / `ROUTER_API_KEY` environment variables override the config file and the credential respectively.
 
-Migrating from `@haoyiyin/9router`: on first launch the extension reads the old `haoyiyin/9router.json` (or the intermediate `saifymatteo/9router.json` from 0.1.0 dev builds), writes the new secret-free config, and moves the key into the `auth.json` credential. The old file is left in place because published pi-vision releases still read it; delete it once your pi-vision version resolves the new location.
+Migrating from `@haoyiyin/9router`: on first launch the extension reads the old `haoyiyin/9router.json` (or the intermediate `saifymatteo/9router.json` from 0.1.0 dev builds), writes the new secret-free config, and moves the key into the `auth.json` credential. The old file is then removed (and the `haoyiyin/` directory, once empty), so the move happens once.
+
+For editor completion, the config's first line is:
+
+```json
+"$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-9router/schemas/9router.schema.json"
+```
+
+`/login` adds it when the key is absent and keeps any other `$schema` you set; the loader ignores it.
 
 ## Model discovery
 

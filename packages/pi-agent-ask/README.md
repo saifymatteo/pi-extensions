@@ -30,7 +30,7 @@ Differences from upstream:
 - integrated clipboard providers: compatible clipboard extensions can serve image pastes in answers and notes, with built-in clipboard reading as fallback
 - guided agents to use `previewFile` for long previews already on disk instead of copying the text into tool calls
 
-Fork-specific docs: [configuration](docs/configuration.md), [tool contract](docs/contract.md), [integration events](docs/remote-events.md).
+Fork-specific docs: [configuration](docs/configuration.md) (config JSON schema: `"$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-agent-ask/schemas/pi-agent-ask.schema.json"`), [tool contract](docs/contract.md), [integration events](docs/remote-events.md).
 
 ## Long previews
 

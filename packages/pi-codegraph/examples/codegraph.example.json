@@ -1,4 +1,5 @@
 {
+  "$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-codegraph/schemas/codegraph.schema.json",
   "autoInit": false,
   "syncOnSettle": false
 }

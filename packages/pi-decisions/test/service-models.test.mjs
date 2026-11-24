@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -68,4 +68,14 @@ test('environment resolution, missing environment, explicit keyless and auth fal
   assert.throws(() => serviceApiKey(dir, 'local', '$PI_TEST_KEY'), /Missing API key environment/);
   writeFileSync(join(dir, 'auth.json'), JSON.stringify({ local: { key: 'fixture-key' } }));
   assert.equal(serviceApiKey(dir, 'local', undefined), 'fixture-key');
+});
+
+test('example registry loads and its top-level keys are schema properties', t => {
+  const { dir } = fixture(t);
+  const read = path => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
+  const example = read('../examples/service-models.example.json');
+  const schema = read('../schemas/service-models.schema.json');
+  assert.deepEqual(Object.keys(example).filter(key => !(key in schema.properties)), []);
+  writeFileSync(join(dir, 'extensions', 'service-models.json'), JSON.stringify(example));
+  assert.equal(helper().loadServiceConfig(dir, 'classifier').providers['example-services'].models.length, 1);
 });

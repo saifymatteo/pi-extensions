@@ -28,7 +28,10 @@
 // Config (merged, later wins; both default true):
 //   1. Global : $PI_CODING_AGENT_DIR/extensions/codegraph.json (fallback ~/.pi/agent/extensions/codegraph.json)
 //               — auto-created with defaults when missing.
-//   2. Project: <project-root>/.pi/codegraph.json — opt-in per-project overrides.
+//   2. Project: <project-root>/.pi/extensions/codegraph.json — opt-in per-project overrides.
+//               Falls back to the older <project-root>/.pi/codegraph.json only when
+//               the new file is absent; repo files are never moved.
+//   A top-level "$schema" key is ignored; the auto-created global file gets it.
 //   Keys: { "autoInit": boolean, "syncOnSettle": boolean }
 //   Edits are picked up on /reload or the next session start.
 //
@@ -80,7 +83,10 @@ interface ProjectState {
 	indexed: boolean;
 }
 
-const DEFAULTS: CgConfig = { autoInit: true, syncOnSettle: true };
+// Exported for the schema drift test.
+export const SCHEMA_URL =
+	"https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-codegraph/schemas/codegraph.schema.json";
+export const DEFAULTS: CgConfig = { autoInit: true, syncOnSettle: true };
 
 // Session-scoped module state. The factory re-runs (same module object) when
 // pi rebinds extensions for /new, /resume, /fork and /reload, so a generation
@@ -115,6 +121,14 @@ function globalConfigPath(): string {
 	return path.join(dir, "extensions", "codegraph.json");
 }
 
+// Project overrides: .pi/extensions/codegraph.json, else the older .pi/codegraph.json.
+// Exported for testing.
+export function projectConfigPath(root: string): string {
+	const preferred = path.join(root, ".pi", "extensions", "codegraph.json");
+	const legacy = path.join(root, ".pi", "codegraph.json");
+	return !existsSync(preferred) && existsSync(legacy) ? legacy : preferred;
+}
+
 async function readConfigFile(p: string): Promise<Partial<CgConfig>> {
 	try {
 		const parsed = JSON.parse(await readFile(p, "utf8"));
@@ -132,7 +146,7 @@ async function ensureGlobalConfig(): Promise<void> {
 	if (existsSync(p)) return;
 	try {
 		await mkdir(path.dirname(p), { recursive: true });
-		await writeFile(p, `${JSON.stringify(DEFAULTS, null, 2)}\n`, "utf8");
+		await writeFile(p, `${JSON.stringify({ $schema: SCHEMA_URL, ...DEFAULTS }, null, 2)}\n`, "utf8");
 	} catch {
 		// read-only dir etc. → defaults stay in memory only
 	}
@@ -557,7 +571,7 @@ export default function codegraph(pi: ExtensionAPI) {
 		const projectRoot = indexedRoot ?? ctx.cwd;
 		const [globalCfg, projectCfg] = await Promise.all([
 			readConfigFile(globalConfigPath()),
-			readConfigFile(path.join(projectRoot, ".pi", "codegraph.json")),
+			readConfigFile(projectConfigPath(projectRoot)),
 		]);
 		const config: CgConfig = {
 			autoInit: boolOr(projectCfg, globalCfg, "autoInit"),

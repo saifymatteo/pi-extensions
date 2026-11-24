@@ -21,11 +21,17 @@ export function formatLineSpan(range: SelectionRange): string {
   return `#${formatLineRange(range)}`;
 }
 
+// Agent-facing path: relative to the agent's cwd when the file is inside it, else absolute.
+// Never relative to the IDE workspace, which can be a parent of cwd (Zed opened on a monorepo root).
+function agentFilePath(snapshot: EditorSelectionSnapshot, cwd: string | undefined, env?: NodeJS.ProcessEnv): string {
+  return toRelativeDisplayPath(snapshot.filePath, undefined, cwd, env);
+}
+
 export function formatRangeMention(
   snapshot: EditorSelectionSnapshot,
   options: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
 ): string {
-  const rel = toRelativeDisplayPath(snapshot.filePath, snapshot.workspaceFolder, options.cwd, options.env);
+  const rel = agentFilePath(snapshot, options.cwd, options.env);
   const first = snapshot.ranges[0];
   return first ? `@${rel}${formatLineSpan(first)}` : `@${rel}`;
 }
@@ -69,14 +75,9 @@ export function snapshotKey(snapshot: EditorSelectionSnapshot): string {
 
 export function formatEditorContextMessage(
   snapshot: EditorSelectionSnapshot,
-  options: { env?: NodeJS.ProcessEnv } = {},
+  options: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
 ): string {
-  const filePath = toRelativeDisplayPath(
-    snapshot.filePath,
-    snapshot.workspaceFolder,
-    undefined,
-    options.env,
-  ).replaceAll("`", "\\`");
+  const filePath = agentFilePath(snapshot, options.cwd, options.env).replaceAll("`", "\\`");
   const lines = ["### IDE Context", `- **IDE**: ${snapshot.source}`, `- **File**: \`${filePath}\``];
   if (snapshot.ranges.length > 0) {
     lines.push(`- **Selection**: ${snapshot.ranges.map(formatLineRange).join(", ")}`);
@@ -86,9 +87,9 @@ export function formatEditorContextMessage(
 
 export function formatEditorContext(
   snapshot: EditorSelectionSnapshot,
-  options: { maxChars?: number; env?: NodeJS.ProcessEnv } = {},
+  options: { maxChars?: number; cwd?: string; env?: NodeJS.ProcessEnv } = {},
 ): string {
-  const filePath = toRelativeDisplayPath(snapshot.filePath, undefined, undefined, options.env);
+  const filePath = agentFilePath(snapshot, options.cwd, options.env);
   const maxChars = options.maxChars ?? 24_000;
 
   if (snapshot.ranges.length === 0) {

@@ -35,14 +35,41 @@ export type { BuiltinFleetEntry, OrchestratorConfig };
 const CONFIG_FILENAME = "orchestrator.jsonc";
 const LEGACY_CONFIG_FILENAME = "orchestrator.json";
 
-/** Select one directory, never merge configs. Fresh installs keep the old default. */
+const CONFIG_NAMES = [CONFIG_FILENAME, LEGACY_CONFIG_FILENAME];
+
+function hasConfig(dir: string): boolean {
+	return CONFIG_NAMES.some((name) => fs.existsSync(path.join(dir, name)));
+}
+
+/** Move bare <agent-dir>/orchestrator.json(c) into <agent-dir>/extensions/ once,
+ *  when the new directory has no config. Writes the (symlink-followed) contents,
+ *  then unlinks the old path itself; a failure leaves the old file to be read. */
+function migrateUserConfig(agentDir: string, userDir: string): void {
+	if (hasConfig(userDir)) return;
+	for (const name of CONFIG_NAMES) {
+		const from = path.join(agentDir, name);
+		const to = path.join(userDir, name);
+		try {
+			if (!fs.lstatSync(from, { throwIfNoEntry: false })) continue;
+			const text = fs.readFileSync(from, "utf-8");
+			fs.mkdirSync(userDir, { recursive: true });
+			fs.writeFileSync(to, text, { encoding: "utf-8", flag: "wx" });
+			fs.unlinkSync(from);
+			console.error(`[pi-orchestrator] Moved config ${from} -> ${to}`);
+		} catch (err) {
+			console.error(`[pi-orchestrator] Could not move config ${from} -> ${to}; reading the old location:`, err);
+		}
+	}
+}
+
+/** Select one directory, never merge configs. The bare agent dir is read only
+ *  when moving its config into extensions/ failed. */
 export function getConfigPath(cwd: string = process.cwd()): string {
 	const agentDir = getAgentDir();
-	const directories = [path.join(cwd, ".pi", "extensions"), path.join(agentDir, "extensions"), agentDir];
-	const directory = directories.find((dir) =>
-		fs.existsSync(path.join(dir, CONFIG_FILENAME)) || fs.existsSync(path.join(dir, LEGACY_CONFIG_FILENAME)),
-	) ?? agentDir;
-	return path.join(directory, CONFIG_FILENAME);
+	const userDir = path.join(agentDir, "extensions");
+	migrateUserConfig(agentDir, userDir);
+	const directories = [path.join(cwd, ".pi", "extensions"), userDir, agentDir];
+	return path.join(directories.find(hasConfig) ?? userDir, CONFIG_FILENAME);
 }
 
 function getLegacyConfigPath(preferred: string): string {
@@ -225,6 +252,9 @@ function parseStallTimeoutMs(value: unknown): number | undefined {
 	return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
+const SCHEMA_URL =
+	"https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-orchestrator/schemas/orchestrator.schema.json";
+
 export function saveConfig(config: OrchestratorConfig, cwd: string = process.cwd()): void {
 	const preferred = getConfigPath(cwd);
 	const legacy = getLegacyConfigPath(preferred);
@@ -236,12 +266,12 @@ export function saveConfig(config: OrchestratorConfig, cwd: string = process.cwd
 	// there is nothing to edit) the config is written as formatted JSON.
 	const sourceText = readConfigText(preferred);
 	const current = sourceText === null ? null : jsonc.parse(sourceText, [], { allowTrailingComma: true }) as Record<string, unknown>;
-	const { version } = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-	const schemaUrl = `https://cdn.jsdelivr.net/npm/@saifymatteo/pi-orchestrator@${version}/schemas/orchestrator.schema.json`;
 	const document: Record<string, unknown> = { ...config };
-	const ownedSchema = typeof current?.$schema === "string" &&
+	// Write $schema only when absent; keep whatever the user has. Released
+	// versions wrote version-pinned jsdelivr URLs, so those are replaced.
+	const legacySchema = typeof current?.$schema === "string" &&
 		/^https:\/\/cdn\.jsdelivr\.net\/npm\/@saifymatteo\/pi-orchestrator@\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\/schemas\/orchestrator\.schema\.json$/.test(current.$schema);
-	if (current?.$schema === undefined || ownedSchema) document.$schema = schemaUrl;
+	if (current?.$schema === undefined || legacySchema) document.$schema = SCHEMA_URL;
 	let text: string;
 	if (sourceText !== null && sourceText.trim() !== "") {
 		const formatting: jsonc.FormattingOptions = { tabSize: 2, insertSpaces: true };

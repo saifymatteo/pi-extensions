@@ -43,8 +43,9 @@ type ModelEntry = { provider: string; id: string; thinking: Thinking; baseUrl?: 
 
 const text = (v: unknown) => typeof v === "string" && v.trim() ? v.trim() : undefined;
 
-// Read per request so config edits apply without a reload.
-function readConfig(): ModelEntry[] {
+// Read per request so config edits apply without a reload. Exported for the schema drift test;
+// a top-level "$schema" key is ignored.
+export function readConfig(): ModelEntry[] {
   let config: any;
   try {
     config = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));

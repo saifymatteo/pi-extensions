@@ -44,7 +44,7 @@ function harness(kind, { indexed = false, auto = false, windows = false, missing
           if (holdConfig) await config.promise;
           return JSON.stringify({ autoInit: auto, syncOnSettle: auto, embedding: 'fixture/global' });
         }
-        if (path === join(root, '.pi', `${kind}.json`) || path === join(cwd, '.pi', `${kind}.json`)) {
+        if (path === join(root, '.pi', 'extensions', `${kind}.json`) || path === join(cwd, '.pi', 'extensions', `${kind}.json`)) {
           return JSON.stringify({ embedding: 'fixture/project' });
         }
         throw Object.assign(new Error('missing fixture'), { code: 'ENOENT' });

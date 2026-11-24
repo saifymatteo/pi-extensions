@@ -12,10 +12,21 @@ Old `eko24ive-pi-ask.json` files are not loaded, moved, or deleted. There is no 
 
 Supported older schema versions migrate in memory. Keep `schemaVersion` at `5` when editing the current config.
 
+## JSON schema
+
+For editor completion and validation, the file's first key points at the package's JSON schema (`schemas/pi-agent-ask.schema.json`):
+
+```json
+"$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-agent-ask/schemas/pi-agent-ask.schema.json"
+```
+
+Pi ignores `$schema` at runtime; the schema is never a load gate. Saving from `/ask-settings` writes this URL when the key is absent or already a pi-agent-ask schema URL, and keeps any other value you set.
+
 ## Default config
 
 ```json
 {
+  "$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-agent-ask/schemas/pi-agent-ask.schema.json",
   "schemaVersion": 5,
   "behaviour": {
     "autoSubmitWhenAnsweredWithoutNotes": false,
@@ -130,4 +141,4 @@ For cmux:
 
 ## Editing for a user
 
-Preserve unrelated fields and notification channels. Only change notification enablement unless the user asks to change targets. Avoid duplicate bindings and fixed numeric shortcuts. Keep schema version `5`. After manual editing, ask the user to reload or restart Pi.
+Preserve unrelated fields and notification channels. Only change notification enablement unless the user asks to change targets. Avoid duplicate bindings and fixed numeric shortcuts. Keep schema version `5` and any `$schema` line. After manual editing, ask the user to reload or restart Pi.

@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Pi service models registry",
+  "description": "Shared <agent-dir>/extensions/service-models.json registry read by @saifymatteo/pi-decisions (classifier models) and @saifymatteo/pi-tts (tts models). A missing file or no model of a package's type leaves that package's tool unregistered.",
+  "type": "object",
+  "required": ["providers"],
+  "properties": {
+    "$schema": {
+      "description": "Editor schema URL, ignored at runtime. Point it at https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-decisions/schemas/service-models.schema.json or the same path under packages/pi-tts.",
+      "type": "string"
+    },
+    "providers": {
+      "description": "Service providers keyed by provider id. Tools address models as provider/model-id, so ids must not contain '/'.",
+      "type": "object",
+      "propertyNames": { "minLength": 1, "pattern": "^[^/]*\\S[^/]*$" },
+      "additionalProperties": { "$ref": "#/$defs/provider" }
+    }
+  },
+  "$defs": {
+    "provider": {
+      "description": "An OpenAI-compatible service endpoint and the models it serves.",
+      "type": "object",
+      "required": ["baseUrl", "models"],
+      "properties": {
+        "baseUrl": {
+          "description": "Versioned http(s) base URL, e.g. http://localhost:8000/v1. Requests go to decisions (classifier) or audio/speech (tts) under it. Must not contain credentials, a query string or a fragment.",
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://[^@?#]+$"
+        },
+        "apiKey": {
+          "description": "API key, or an environment reference written as $NAME or ${NAME} (preferred over an embedded key). An empty string \"\" means keyless access (pi-tts; pi-decisions currently rejects an empty key). When omitted, the key comes from the provider id's entry in <agent-dir>/auth.json.",
+          "type": "string"
+        },
+        "models": {
+          "description": "Models served by this provider. Model ids must be unique within the provider.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/model" }
+        }
+      }
+    },
+    "model": {
+      "description": "One model. type selects the package that uses it; api must match type.",
+      "type": "object",
+      "required": ["id", "type", "api"],
+      "properties": {
+        "id": {
+          "description": "Model id sent to the service and shown as provider/id.",
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "type": {
+          "description": "classifier models are used by pi-decisions; tts models by pi-tts.",
+          "enum": ["classifier", "tts"]
+        },
+        "api": {
+          "description": "Wire protocol: openai-decisions for classifier models, openai-audio-speech for tts models.",
+          "enum": ["openai-decisions", "openai-audio-speech"]
+        },
+        "name": {
+          "description": "Optional display name.",
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "description": {
+          "description": "Optional one-line strength hint shown to the agent in the tool's model parameter.",
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "contextWindow": {
+          "description": "Context window in tokens. Required for classifier models.",
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "input": {
+          "description": "Accepted input kinds, non-empty and without duplicates. Required for classifier models.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["text", "image"] }
+        },
+        "cost": {
+          "description": "Optional per-token pricing; all values are finite non-negative numbers.",
+          "type": "object",
+          "required": ["input", "output"],
+          "additionalProperties": false,
+          "properties": {
+            "input": { "description": "Input token cost.", "type": "number", "minimum": 0 },
+            "output": { "description": "Output token cost.", "type": "number", "minimum": 0 },
+            "cacheRead": { "description": "Cache-read token cost.", "type": "number", "minimum": 0 },
+            "cacheWrite": { "description": "Cache-write token cost.", "type": "number", "minimum": 0 }
+          }
+        },
+        "voice": {
+          "description": "Default voice for tts models; requests may override it. Not allowed on classifier models.",
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "language": {
+          "description": "Default language for tts models; requests may override it. Not allowed on classifier models.",
+          "type": "string",
+          "pattern": "\\S"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "classifier" } } },
+          "then": {
+            "required": ["contextWindow", "input"],
+            "properties": { "api": { "const": "openai-decisions" } },
+            "not": { "anyOf": [{ "required": ["voice"] }, { "required": ["language"] }] }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "tts" } } },
+          "then": { "properties": { "api": { "const": "openai-audio-speech" } } }
+        }
+      ]
+    }
+  }
+}

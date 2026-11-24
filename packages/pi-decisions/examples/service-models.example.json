@@ -1,4 +1,5 @@
 {
+  "$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-decisions/schemas/service-models.schema.json",
   "providers": {
     "example-services": {
       "baseUrl": "http://localhost:8000/v1",

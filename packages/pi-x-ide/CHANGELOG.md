@@ -4,6 +4,15 @@ Release notes are recorded from 1.21.0 onward. Earlier fork history: [saifymatte
 
 ## [Unreleased]
 
+### Changed
+
+- Config moved to `<agent-dir>/extensions/pi-x-ide.json` (`$PI_CODING_AGENT_DIR` or `~/.pi/agent`) and `<project>/.pi/extensions/pi-x-ide.json`. An existing `~/.pi/pi-x-ide/config.json` is moved there once on the next start; an old project `.pi/pi-x-ide/config.json` is still read when the new file is absent.
+- The schema `$id` is now `https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-x-ide/schemas/pi-x-ide.schema.json`; `/ide settings` adds that `$schema` when the file has none. The example file is now `examples/pi-x-ide.example.json`.
+
+### Fixed
+
+- IDE context file paths (the IDE Context message, the attach `@path` mention, and selected-context reminders) are relative to Pi's working directory, or absolute when the file is outside it. They were relative to the IDE workspace folder, which was wrong when the IDE had a parent folder open.
+
 ## [1.22.0] - 2026-11-24
 
 ### Changed

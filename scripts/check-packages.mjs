@@ -39,6 +39,7 @@ for (const { directory } of inventory.extensions) {
   assert.equal(readFileSync(resolve(root, 'collection', `${directory}.ts`), 'utf8'), `import extension from "../packages/${directory}/src/index.ts";\nimport { gate } from "./gate.ts";\n\nexport default gate("${directory}", extension);\n`, `collection/${directory}.ts: wrapper drift`);
 }
 assert.deepEqual(json(resolve(root, 'schemas/pi-extensions.schema.json')).properties.disabled.items.enum, inventory.extensions.map(e => e.directory), 'Collection schema drift');
+assert.equal(readFileSync(resolve(root, 'packages/pi-decisions/schemas/service-models.schema.json'), 'utf8'), readFileSync(resolve(root, 'packages/pi-tts/schemas/service-models.schema.json'), 'utf8'), 'service-models schema copies drift');
 for (const skillPath of manifest.pi.skills ?? []) {
   assert.ok(existsSync(resolve(root, skillPath)), `root: skill path not found: ${skillPath}`);
 }

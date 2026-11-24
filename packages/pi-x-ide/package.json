@@ -43,8 +43,7 @@
     "@types/ws": "^8.18.1"
   },
   "scripts": {
-    "test": "node scripts/generate-config-schema.cjs --check && node --test --experimental-strip-types tests/*.test.ts",
-    "schema:generate": "node scripts/generate-config-schema.cjs"
+    "test": "node --test --experimental-strip-types tests/*.test.ts"
   },
   "engines": {
     "node": ">=24"

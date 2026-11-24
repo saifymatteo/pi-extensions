@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The user config now lives in `~/.pi/agent/extensions/orchestrator.jsonc`. An existing `~/.pi/agent/orchestrator.jsonc` (or legacy `.json`) moves there once on load, symlink-safe; if the move fails, the old file is read for that session. Fresh installs save into `extensions/`.
+- The editor JSON Schema is now hand-written and carries an `$id` pointing at its unversioned GitHub raw URL (`https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-orchestrator/schemas/orchestrator.schema.json`); saving replaces a version-pinned jsdelivr `$schema` written by earlier releases with it. The `schema:generate` script is gone; a test keeps schema defaults in step with the runtime defaults.
+
 ## [0.12.0] - 2026-11-24
 
 ### Changed

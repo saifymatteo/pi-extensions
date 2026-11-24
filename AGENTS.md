@@ -8,6 +8,17 @@ At release, move the changes into a `## [x.y.z]` section matching that package's
 
 Pi records a package's version silently on first discovery and shows newer released entries on a fresh launch after a version increase, not on `/reload`. Unreleased entries are ignored; `/changelog` shows Pi's own notes, not package notes.
 
+## Package JSON config
+
+Every package that reads a JSON config follows one layout:
+
+- User file: `<agent-dir>/extensions/<name>.json`. When it is missing and a file exists at an older location, move it once on load: write the old file's contents (following a symlink) to the new path, then remove the old path (the link itself, never its target). Notify or log one line naming both paths; a failed move leaves the old file in place and reads it for that session.
+- Project file: `<cwd>/.pi/extensions/<name>.json`, read only when the project is trusted where the package already gates on trust. Read an older project path only as a fallback; never move files inside a user's repo.
+- Schema: hand-written `packages/<pkg>/schemas/<name>.schema.json` (draft 2020-12), listed in the manifest `files`. Its `$id` and the `$schema` value users write is the unversioned `https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/<pkg>/schemas/<name>.schema.json`, matching the root `schemas/pi-extensions.schema.json`; it needs no bump at release. Every property carries a `description`, and a `default` when one exists.
+- Runtime: the loader accepts and ignores a top-level `$schema`. A package that saves its config sets `$schema` to that URL only when the key is absent and keeps any existing value; the URL is a constant, never read from `package.json`. Exception: pi-orchestrator also replaces a version-pinned jsdelivr URL that its released versions wrote.
+- Drift: a package test asserts that the schema's top-level properties equal the default-config keys plus `$schema`. Schemas are never a runtime validation gate.
+- `service-models.json` is shared by pi-decisions and pi-tts; each ships an identical copy of its schema, and `scripts/check-packages.mjs` asserts the copies match.
+
 ## Agent skills
 
 ### Issue tracker

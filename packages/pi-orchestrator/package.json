@@ -42,8 +42,7 @@
     "jsonc-parser": "^3.3.1"
   },
   "scripts": {
-    "test": "node --test --experimental-strip-types --import ./tests/register-stubs.mjs tests/*.test.ts",
-    "schema:generate": "node --experimental-strip-types scripts/generate-config-schema.mts"
+    "test": "node --test --experimental-strip-types --import ./tests/register-stubs.mjs tests/*.test.ts"
   },
   "engines": {
     "node": ">=24"

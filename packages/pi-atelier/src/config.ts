@@ -1,4 +1,4 @@
-import { mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
 	applyDisplayTemplate,
@@ -63,6 +63,10 @@ export interface LoadConfigOptions {
 	userPath: string;
 	projectPath: string;
 	projectTrusted: boolean;
+	/** Pre-`extensions/` user file, moved once to `userPath` when only it exists. */
+	legacyUserPath?: string;
+	/** Pre-`extensions/` project file, read (never moved) when `projectPath` is absent. */
+	legacyProjectPath?: string;
 	/** Session layer input; Pi does not persist one, so only direct callers supply it. */
 	session?: unknown;
 }
@@ -492,11 +496,51 @@ async function readJson(path: string): Promise<{ value?: unknown; warning?: stri
 	}
 }
 
+const exists = (path: string): Promise<boolean> =>
+	lstat(path).then(
+		() => true,
+		(error: unknown) => {
+			if (isEnoent(error)) return false;
+			throw error;
+		},
+	);
+
+/**
+ * Move the pre-`extensions/` user file to its new path once. The old file's contents are copied
+ * (following a symlink), then the old path itself is removed, never a symlink's target.
+ * Returns the path to read this session and the one line to report.
+ */
+async function migrateUserConfig(userPath: string, legacyPath: string): Promise<{ path: string; notice?: string }> {
+	try {
+		if ((await exists(userPath)) || !(await exists(legacyPath))) return { path: userPath };
+		const contents = await readFile(legacyPath, "utf8");
+		await mkdir(dirname(userPath), { recursive: true });
+		await writeFile(userPath, contents, { encoding: "utf8", mode: 0o600, flag: "wx" });
+		await rm(legacyPath);
+		return { path: userPath, notice: `Moved Pi Atelier config from ${legacyPath} to ${userPath}` };
+	} catch (error) {
+		return {
+			path: legacyPath,
+			notice: `Cannot move Pi Atelier config from ${legacyPath} to ${userPath}: ${errorMessage(error)}; reading the old file this session`,
+		};
+	}
+}
+
 export async function loadConfig(options: LoadConfigOptions): Promise<ConfigLoadResult> {
-	const user = await readJson(options.userPath);
-	const project = options.projectTrusted ? await readJson(options.projectPath) : {};
+	const migration = options.legacyUserPath
+		? await migrateUserConfig(options.userPath, options.legacyUserPath)
+		: { path: options.userPath };
+	const user = await readJson(migration.path);
+	let project: { value?: unknown; warning?: string } = {};
+	if (options.projectTrusted) {
+		project = await readJson(options.projectPath);
+		const missing = project.value === undefined && project.warning === undefined;
+		if (missing && options.legacyProjectPath) project = await readJson(options.legacyProjectPath);
+	}
 	const resolved = resolveConfig({ user: user.value, project: project.value, session: options.session });
-	const fileWarnings = [user.warning, project.warning].filter((item): item is string => item !== undefined);
+	const fileWarnings = [migration.notice, user.warning, project.warning].filter(
+		(item): item is string => item !== undefined,
+	);
 	return { ...resolved, warnings: [...fileWarnings, ...resolved.warnings] };
 }
 
@@ -522,8 +566,13 @@ async function applyUserConfigPatch(path: string, patch: Partial<AtelierConfig>)
 	} catch (error) {
 		if (!isEnoent(error)) throw error;
 	}
-	await writeJsonAtomic(path, { ...current, ...patch });
+	const document: Record<string, unknown> = { ...current, ...patch };
+	if (current.$schema === undefined) document.$schema = SCHEMA_URL;
+	await writeJsonAtomic(path, document);
 }
+
+const SCHEMA_URL =
+	"https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-atelier/schemas/pi-atelier.schema.json";
 
 async function writeJsonAtomic(linkPath: string, value: unknown): Promise<void> {
 	// Write through a symlink (dotfile-managed configs) instead of replacing it with a regular file.

@@ -42,3 +42,24 @@ test('index success counters and output freshness are interpreted correctly', ()
   assert.equal(summary.hits, 3);
   assert.equal(summary.fresh, 'possibly_stale');
 });
+
+test('schema properties match the default config keys plus $schema', async () => {
+  const { readFileSync, mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const T = new Proxy({}, { get: () => () => ({}) });
+  const m = loadExtension(fileURLToPath(new URL('../src/index.ts', import.meta.url)), { typebox: { Type: T } });
+  const schema = JSON.parse(readFileSync(new URL('../schemas/zvec.schema.json', import.meta.url), 'utf8'));
+  assert.deepEqual(Object.keys(schema.properties).sort(), [...Object.keys(m.DEFAULTS), '$schema'].sort());
+  assert.equal(schema.$id, m.SCHEMA_URL);
+  assert.equal(m.SCHEMA_URL, 'https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-zvec/schemas/zvec.schema.json');
+
+  // Project config: .pi/extensions/ wins; the older .pi/ path is a read-only fallback.
+  const root = mkdtempSync(join(tmpdir(), 'pi-zvec-cfg-'));
+  assert.equal(m.projectConfigPath(root), join(root, '.pi', 'extensions', 'zvec.json'));
+  mkdirSync(join(root, '.pi', 'extensions'), { recursive: true });
+  writeFileSync(join(root, '.pi', 'zvec.json'), '{}');
+  assert.equal(m.projectConfigPath(root), join(root, '.pi', 'zvec.json'));
+  writeFileSync(join(root, '.pi', 'extensions', 'zvec.json'), '{}');
+  assert.equal(m.projectConfigPath(root), join(root, '.pi', 'extensions', 'zvec.json'));
+});

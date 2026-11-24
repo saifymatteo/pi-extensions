@@ -198,14 +198,14 @@ describe("extension registration", () => {
 
 		await command(h, "sidebar tools on");
 
-		expect(h.saveConfigPatch).toHaveBeenLastCalledWith(expect.stringContaining("pi-atelier.json"), {
+		expect(h.saveConfigPatch).toHaveBeenLastCalledWith(expect.stringMatching(/[\\/]extensions[\\/]pi-atelier\.json$/), {
 			showSidebarToolNames: true,
 		});
 		expect(renderOverlayText(h, 0, 44)).toMatch(toolNameRow);
 		expect(h.ctx.ui.notify).toHaveBeenLastCalledWith("Sidebar tool list expanded", "info");
 
 		await command(h, "sidebar tools off");
-		expect(h.saveConfigPatch).toHaveBeenLastCalledWith(expect.stringContaining("pi-atelier.json"), {
+		expect(h.saveConfigPatch).toHaveBeenLastCalledWith(expect.stringMatching(/[\\/]extensions[\\/]pi-atelier\.json$/), {
 			showSidebarToolNames: false,
 		});
 		expect(h.ctx.ui.notify).toHaveBeenLastCalledWith("Sidebar tool list collapsed", "info");

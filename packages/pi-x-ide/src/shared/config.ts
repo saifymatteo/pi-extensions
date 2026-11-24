@@ -1,6 +1,6 @@
 // ABOUTME: Resolves and reads/writes pi-x-ide config under global and project scopes.
 // ABOUTME: Merges env overlays and top-level options like status_display and fixPrompt.
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import {
@@ -12,7 +12,9 @@ import {
 
 export const EXT_CONFIG_NAME = "pi-x-ide";
 export const CONFIG_DIR_NAME = ".pi";
-export const PI_CONFIG_FILE = "config.json";
+export const PI_CONFIG_FILE = `${EXT_CONFIG_NAME}.json`;
+/** Legacy file name under `.pi/pi-x-ide/`. */
+export const LEGACY_PI_CONFIG_FILE = "config.json";
 export const STATUS_DISPLAY_CONFIG_KEY = "status_display";
 export const AUTO_INSTALL_ENV_KEY = "PI_X_IDE_AUTO_INSTALL";
 
@@ -45,17 +47,72 @@ export interface IdeConfigSettingsResolution {
 const processEnvOverlays = new WeakSet<NodeJS.ProcessEnv>();
 const AUTO_INSTALL_DISABLED_VALUES = new Set(["0", "false", "off"]);
 
-export function resolvePiConfigPath(home: string = homedir()): string {
-  return resolvePiGlobalConfigPath(home);
+/**
+ * Pi agent dir: `$PI_CODING_AGENT_DIR`, else `~/.pi/agent`.
+ * An explicit `home` (tests) always derives `<home>/.pi/agent` so the real agent dir is never touched.
+ */
+export function resolveAgentDir(home?: string): string {
+  if (home !== undefined) return resolve(home, CONFIG_DIR_NAME, "agent");
+  return process.env.PI_CODING_AGENT_DIR || resolve(homedir(), CONFIG_DIR_NAME, "agent");
 }
 
-export function resolvePiGlobalConfigPath(home: string = homedir()): string {
-  return resolve(home, CONFIG_DIR_NAME, EXT_CONFIG_NAME, PI_CONFIG_FILE);
+/** Global config path for reads; falls back to the legacy file while it has not been moved. */
+export function resolvePiConfigPath(home?: string): string {
+  return readablePath(resolvePiGlobalConfigPath(home), resolveLegacyPiGlobalConfigPath(home));
 }
 
+/** `<agent-dir>/extensions/pi-x-ide.json`. */
+export function resolvePiGlobalConfigPath(home?: string): string {
+  return resolve(resolveAgentDir(home), "extensions", PI_CONFIG_FILE);
+}
+
+/** Legacy global file: `~/.pi/pi-x-ide/config.json`. */
+export function resolveLegacyPiGlobalConfigPath(home: string = homedir()): string {
+  return resolve(home, CONFIG_DIR_NAME, EXT_CONFIG_NAME, LEGACY_PI_CONFIG_FILE);
+}
+
+/** `<project>/.pi/extensions/pi-x-ide.json`. */
 export function resolvePiProjectConfigPath(projectDir: string): string {
-  return resolve(projectDir, CONFIG_DIR_NAME, EXT_CONFIG_NAME, PI_CONFIG_FILE);
+  return resolve(projectDir, CONFIG_DIR_NAME, "extensions", PI_CONFIG_FILE);
 }
+
+/** Legacy project file: `<project>/.pi/pi-x-ide/config.json`; read only as a fallback, never moved. */
+export function resolveLegacyPiProjectConfigPath(projectDir: string): string {
+  return resolve(projectDir, CONFIG_DIR_NAME, EXT_CONFIG_NAME, LEGACY_PI_CONFIG_FILE);
+}
+
+function resolveReadableProjectConfigPath(projectDir: string): string {
+  return readablePath(resolvePiProjectConfigPath(projectDir), resolveLegacyPiProjectConfigPath(projectDir));
+}
+
+function readablePath(current: string, legacy: string): string {
+  return !existsSync(current) && existsSync(legacy) ? legacy : current;
+}
+
+/**
+ * Move the legacy global config to the agent-dir path once, when the new file is absent.
+ * Writes the old contents (following a symlink), then unlinks the old path itself, never its target.
+ * Returns the moved paths, or undefined when there was nothing to move. Throws when the move fails;
+ * the legacy file then stays in place and readers keep using it.
+ */
+export function migrateLegacyGlobalConfig(home?: string): { from: string; to: string } | undefined {
+  const to = resolvePiGlobalConfigPath(home);
+  const from = resolveLegacyPiGlobalConfigPath(home);
+  if (existsSync(to) || !existsSync(from)) return undefined;
+  const contents = readFileSync(from, "utf8");
+  mkdirSync(dirname(to), { recursive: true });
+  writeFileSync(to, contents, { encoding: "utf8", flag: "wx" });
+  unlinkSync(from);
+  try {
+    rmdirSync(dirname(from)); // Only succeeds when empty; the lock dir usually keeps it.
+  } catch {
+    // Not empty or already gone.
+  }
+  return { from, to };
+}
+
+export const SCHEMA_URL =
+  "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-x-ide/schemas/pi-x-ide.schema.json";
 
 export function readPiConfigFile(configPath: string): Record<string, unknown> | undefined {
   let parsed: unknown;
@@ -67,9 +124,19 @@ export function readPiConfigFile(configPath: string): Record<string, unknown> | 
   return isRecord(parsed) ? parsed : undefined;
 }
 
-export function writePiConfigFile(partial: Record<string, unknown>, configPath: string): void {
-  const existing = readPiConfigFile(configPath) ?? {};
-  const merged: Record<string, unknown> = { ...existing, ...partial };
+/** Merge `partial` into the file at `configPath`, seeding from `basePath` (a legacy file) when given. */
+export function writePiConfigFile(
+  partial: Record<string, unknown>,
+  configPath: string,
+  basePath: string = configPath,
+): void {
+  const existing = readPiConfigFile(basePath) ?? {};
+  // Write $schema (listed first) only when absent; keep whatever the user has.
+  const merged: Record<string, unknown> = {
+    ...(existing.$schema === undefined ? { $schema: SCHEMA_URL } : {}),
+    ...existing,
+    ...partial,
+  };
   // Deep-merge env so partial env keys do not wipe unrelated variables.
   if (isRecord(existing.env) || isRecord(partial.env)) {
     merged.env = {
@@ -107,8 +174,8 @@ export function resolvePiConfigEnv(
   const configEnv: NodeJS.ProcessEnv = options.configPath
     ? readPiConfigEnv(options.configPath)
     : {
-        ...readPiConfigEnv(resolvePiGlobalConfigPath(options.home)),
-        ...(options.projectDir ? readPiConfigEnv(resolvePiProjectConfigPath(options.projectDir)) : {}),
+        ...readPiConfigEnv(resolvePiConfigPath(options.home)),
+        ...(options.projectDir ? readPiConfigEnv(resolveReadableProjectConfigPath(options.projectDir)) : {}),
       };
 
   if (Object.keys(configEnv).length === 0) return env;
@@ -151,14 +218,14 @@ export function resolvePiConfigStatusDisplay(
 
   const projectDir = configPathOrOptions.projectDir;
   if (projectDir) {
-    const projectPath = resolvePiProjectConfigPath(projectDir);
+    const projectPath = resolveReadableProjectConfigPath(projectDir);
     const projectValue = readStatusDisplayFromFile(projectPath);
     if (projectValue !== undefined) {
       return { value: projectValue, scope: "project", path: projectPath };
     }
   }
 
-  const globalPath = resolvePiGlobalConfigPath(configPathOrOptions.home);
+  const globalPath = resolvePiConfigPath(configPathOrOptions.home);
   const globalValue = readStatusDisplayFromFile(globalPath);
   if (globalValue !== undefined) {
     return { value: globalValue, scope: "global", path: globalPath };
@@ -179,14 +246,14 @@ export function resolvePiConfigAutoInstall(
 
   const projectDir = configPathOrOptions.projectDir;
   if (projectDir) {
-    const projectPath = resolvePiProjectConfigPath(projectDir);
+    const projectPath = resolveReadableProjectConfigPath(projectDir);
     const projectRaw = readEnvValueFromFile(projectPath, AUTO_INSTALL_ENV_KEY);
     if (projectRaw !== undefined) {
       return { value: parseAutoInstallValue(projectRaw), scope: "project", path: projectPath };
     }
   }
 
-  const globalPath = resolvePiGlobalConfigPath(configPathOrOptions.home);
+  const globalPath = resolvePiConfigPath(configPathOrOptions.home);
   const globalRaw = readEnvValueFromFile(globalPath, AUTO_INSTALL_ENV_KEY);
   if (globalRaw !== undefined) {
     return { value: parseAutoInstallValue(globalRaw), scope: "global", path: globalPath };
@@ -222,10 +289,16 @@ export function writePiConfigSettings(
   settings: Partial<IdeConfigSettings>,
   options: { scope: ConfigScope; projectDir?: string; home?: string },
 ): { path: string; scope: ConfigScope } {
-  const path =
-    options.scope === "project"
-      ? resolvePiProjectConfigPath(requireProjectDir(options.projectDir))
-      : resolvePiGlobalConfigPath(options.home);
+  let path: string;
+  let basePath: string;
+  if (options.scope === "project") {
+    const projectDir = requireProjectDir(options.projectDir);
+    path = resolvePiProjectConfigPath(projectDir);
+    basePath = resolveReadableProjectConfigPath(projectDir);
+  } else {
+    path = resolvePiGlobalConfigPath(options.home);
+    basePath = resolvePiConfigPath(options.home);
+  }
 
   const partial: Record<string, unknown> = {};
   if (settings.display !== undefined) {
@@ -237,7 +310,7 @@ export function writePiConfigSettings(
     };
   }
 
-  writePiConfigFile(partial, path);
+  writePiConfigFile(partial, path, basePath);
   return { path, scope: options.scope };
 }
 
