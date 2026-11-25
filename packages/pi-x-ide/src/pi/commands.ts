@@ -6,7 +6,7 @@ import { formatRangeMention } from "../shared/format.ts";
 import type { LockFileCandidate } from "../shared/protocol.ts";
 import type { PiIdeRuntime } from "./state.ts";
 import { runPiBoundary, runPiBoundaryAsync } from "./safety.ts";
-import { buildWidget, updateIdeUi } from "./ui.ts";
+import { buildWidget, toggleSkipSelection, updateIdeUi } from "./ui.ts";
 
 // Note: early `/ide off` or disconnect may await the heavy runtime preload
 // (one cached promise) and must remain cancel-safe via session generation.
@@ -63,6 +63,7 @@ export function registerIdeCommand(
         { value: "auto", label: "auto", description: "Auto-connect to the most recent IDE" },
         { value: "off", label: "off", description: "Disable IDE integration" },
         { value: "attach", label: "attach", description: "Attach latest IDE selection to the prompt" },
+        { value: "skip", label: "skip", description: "Toggle skipping the queued IDE selection for the next prompt" },
         { value: "install", label: "install", description: "Install or update the IDE extension" },
         { value: "settings", label: "settings", description: "Open IDE settings (Display, AutoInstall, ...)" },
       ];
@@ -96,6 +97,9 @@ export function registerIdeCommand(
             case "attach":
               attachLatest(runtime, ctx);
               return;
+            case "skip":
+              skipLatest(runtime, ctx);
+              return;
             case "install":
               await actions.installExtension(ctx);
               return;
@@ -106,7 +110,7 @@ export function registerIdeCommand(
               return;
             }
             default:
-              ctx.ui.notify("Usage: /ide [status|list|auto|off|attach|install|settings]", "warning");
+              ctx.ui.notify("Usage: /ide [status|list|auto|off|attach|skip|install|settings]", "warning");
           }
         },
         ctx,
@@ -180,6 +184,14 @@ export function resolveAttachShortcut(env: NodeJS.ProcessEnv = process.env): Sho
   const normalized = value.trim().toLowerCase();
   if (DISABLED_ATTACH_SHORTCUT_VALUES.has(normalized)) return undefined;
   return normalized as ShortcutKey;
+}
+
+function skipLatest(runtime: PiIdeRuntime, ctx: ExtensionContext): void {
+  if (!toggleSkipSelection(runtime, ctx)) {
+    ctx.ui.notify("No queued IDE selection to skip.", "warning");
+    return;
+  }
+  ctx.ui.notify(runtime.attachState === "skipped" ? "IDE selection skipped for the next prompt." : "IDE selection queued again.", "info");
 }
 
 function attachLatest(runtime: PiIdeRuntime, ctx: ExtensionContext): void {

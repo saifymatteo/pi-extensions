@@ -11,6 +11,7 @@ connections.
 | `/ide auto`     | Re-attempt automatic matching by `cwd` and connect when matched.   |
 | `/ide off`      | Disconnect and disable automatic context attachment.               |
 | `/ide attach`   | Manually insert the latest selection range into the input box.     |
+| `/ide skip`     | Toggle holding the queued selection back from the next prompt.     |
 | `/ide install`  | Install or update `balaenis.pi-x-ide` through a supported IDE CLI. |
 | `/ide settings` | Open IDE settings (`Display`, `AutoInstall`, …).                   |
 
@@ -44,6 +45,15 @@ Keybindings:
 
 `Display` applies immediately in the current Pi session. See
 [Configuration](configuration.md).
+
+## Skip a queued selection
+
+While a selection is queued (`⇡` in the widget), `/ide skip` holds it back from the
+next prompt and shows `⊘`. Run it again to queue it back. After that prompt, or
+when you select something else in the IDE, the selection is queued as usual.
+
+In fullscreen mode (`"tuiMode": "fullscreen"`) you can also click anywhere on the
+IDE widget to toggle it. The `statusline` display is not clickable.
 
 ## The attach shortcut
 

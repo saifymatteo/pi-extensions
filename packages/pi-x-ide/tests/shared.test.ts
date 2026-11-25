@@ -1118,3 +1118,41 @@ void test("LockFileParseError carries Effect tag and readable message", () => {
   assert.match(error.message, /\/tmp\/x\.lock/);
 });
 
+
+void test("clicking the IDE widget toggles skip and shows the skip marker", () => {
+  const runtime = createRuntime();
+  runtime.connectionStatus = "connected";
+  setLatestSelection(runtime, { ...snapshot, ranges: [] });
+  let widgetFactory:
+    | ((
+        tui: { requestRender: () => void },
+        theme: { fg: (color: string, text: string) => string },
+      ) => {
+        render: (width: number) => string[];
+        handleMouse: (event: { type: string; button: string }) => { handled: boolean } | undefined;
+      })
+    | undefined;
+  const ctx = {
+    cwd: "/repo",
+    hasUI: true,
+    ui: {
+      setWidget: (_id: string, factory: typeof widgetFactory) => {
+        widgetFactory = factory;
+      },
+      setStatus: () => {},
+    },
+  } as unknown as NonNullable<typeof runtime.ctx>;
+  runtime.ctx = ctx;
+
+  updateIdeUi(runtime, ctx, "widget");
+  if (!widgetFactory) assert.fail("widget factory was not registered");
+  const widget = widgetFactory({ requestRender: () => undefined }, { fg: (_color, text) => text });
+  assert.match(widget.render(80)[0] ?? "", /⇡/);
+
+  assert.equal(widget.handleMouse({ type: "move", button: "none" }), undefined);
+  assert.deepEqual(widget.handleMouse({ type: "click", button: "left" }), { handled: true });
+  assert.equal(runtime.attachState, "skipped");
+  assert.match(widget.render(80)[0] ?? "", /⊘/);
+  widget.handleMouse({ type: "click", button: "left" });
+  assert.equal(runtime.attachState, "pending");
+});

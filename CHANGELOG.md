@@ -4,6 +4,14 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Added
+
+- pi-x-ide: `/ide skip` or a click on the IDE widget holds the queued selection back from the next prompt; `zedNested: "auto"` attaches to a Zed window opened below Pi's working directory.
+
+### Fixed
+
+- pi-x-ide: `/ide` attaches to a Zed window opened below Pi's working directory.
+
 ## [0.1.25]
 
 ### Added

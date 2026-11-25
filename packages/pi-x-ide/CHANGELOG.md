@@ -4,6 +4,11 @@ Release notes are recorded from 1.21.0 onward. Earlier fork history: [saifymatte
 
 ## [Unreleased]
 
+### Added
+
+- `/ide skip`, or clicking the IDE widget in fullscreen mode, holds the queued selection back from the next prompt (`⊘`). Toggle again to queue it back; a skip lasts one prompt.
+- `zedNested` config (`"manual"` default, `"auto"`): with `"auto"`, Pi also attaches automatically to a Zed window opened below its working directory, except from the home directory or filesystem root.
+
 ### Fixed
 
 - `/ide` now attaches to a Zed window opened on a folder below Pi's working directory (for example Zed on `repo/projects/app`, Pi on `repo`). Automatic connection at startup still requires the Zed window to contain Pi's working directory.

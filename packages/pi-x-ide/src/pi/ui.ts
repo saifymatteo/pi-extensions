@@ -93,6 +93,18 @@ export function clearIdeUi(runtime: PiIdeRuntime, ctx: ExtensionContext | undefi
   clearStatusline(uiContext);
 }
 
+/**
+ * Toggle skipping the queued selection for the next prompt. Only "pending" and "skipped" toggle;
+ * a new selection resets to "pending", so a skip never outlives the current selection.
+ */
+export function toggleSkipSelection(runtime: PiIdeRuntime, ctx?: ExtensionContext): boolean {
+  if (runtime.attachState === "pending") runtime.attachState = "skipped";
+  else if (runtime.attachState === "skipped") runtime.attachState = "pending";
+  else return false;
+  updateIdeUi(runtime, ctx);
+  return true;
+}
+
 function updateWidget(runtime: PiIdeRuntime, uiContext: ActiveUiContext): void {
   runReportingUiFailure("update IDE UI widget", () =>
     uiContext.ui.setWidget(
@@ -139,6 +151,11 @@ function updateWidget(runtime: PiIdeRuntime, uiContext: ActiveUiContext): void {
               animate(false);
               return [];
             }
+          },
+          // Fullscreen mode only: clicking anywhere on the widget toggles skipping the queued selection.
+          handleMouse(event: { type: string; button: string }) {
+            if (event.type !== "click" || event.button !== "left") return undefined;
+            return toggleSkipSelection(runtime, uiContext as ExtensionContext) ? { handled: true } : undefined;
           },
           invalidate() {},
           dispose() {
@@ -313,10 +330,11 @@ function buildConnectedSegments(runtime: PiIdeRuntime): StatusSegment[] {
 
   const rel = basename(selection.filePath);
   const range = describeRanges(selection.ranges);
-  // Pending selections are still queued for the next prompt (⇡, success); sent ones are attached (✓, dim).
-  const pending = runtime.attachState === "pending";
-  const marker = pending ? "⇡" : "✓";
-  const color: ThemeColor = pending ? "success" : "dim";
+  // Pending selections are queued for the next prompt (⇡, success); skipped ones are held back (⊘, warning);
+  // sent ones are attached (✓, dim).
+  const state = runtime.attachState;
+  const marker = state === "pending" ? "⇡" : state === "skipped" ? "⊘" : "✓";
+  const color: ThemeColor = state === "pending" ? "success" : state === "skipped" ? "warning" : "dim";
   const prefix = `${IDE_ICON} ${marker} `;
   if (range === "open file") return [{ text: `${prefix}${rel}`, color, shrink: true }];
   return [
