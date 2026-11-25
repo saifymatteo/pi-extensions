@@ -546,6 +546,7 @@ export function startZedWatch(
     env?: NodeJS.ProcessEnv;
     dbPath?: string;
     isAlive?: () => boolean;
+    includeNested?: boolean;
   },
 ): void {
   stopZedWatch(runtime);
@@ -566,7 +567,13 @@ export function startZedWatch(
     }
     if (walMtimeMs !== undefined && walMtimeMs === lastWalMtimeMs) return;
     lastWalMtimeMs = walMtimeMs;
-    startZedPolling(runtime, ctx, { dbPath, env, generation, isAlive: options?.isAlive });
+    startZedPolling(runtime, ctx, {
+      dbPath,
+      env,
+      generation,
+      isAlive: options?.isAlive,
+      includeNested: options?.includeNested,
+    });
   };
 
   const fiber = Effect.runFork(

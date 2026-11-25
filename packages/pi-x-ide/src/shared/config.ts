@@ -2,12 +2,15 @@
 // ABOUTME: Merges env overlays and top-level options like status_display and fixPrompt.
 import { existsSync, mkdirSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, resolve } from "node:path";
+import { dirname, parse, resolve } from "node:path";
 import {
   DEFAULT_STATUS_DISPLAY,
   isConfigEnvValue,
   STATUS_DISPLAY_VALUES,
   type StatusDisplay,
+  DEFAULT_ZED_NESTED,
+  ZED_NESTED_VALUES,
+  type ZedNested,
 } from "./config-options.ts";
 
 export const EXT_CONFIG_NAME = "pi-x-ide";
@@ -232,6 +235,29 @@ export function resolvePiConfigStatusDisplay(
   }
 
   return { value: DEFAULT_STATUS_DISPLAY, scope: "default" };
+}
+
+/** Read zedNested; project config overrides global; invalid or missing values fall back to "manual". */
+export function readPiConfigZedNested(options: { projectDir?: string; home?: string } = {}): ZedNested {
+  const paths = [
+    ...(options.projectDir ? [resolveReadableProjectConfigPath(options.projectDir)] : []),
+    resolvePiConfigPath(options.home),
+  ];
+  for (const path of paths) {
+    const value = readPiConfigFile(path)?.zedNested;
+    if (typeof value === "string" && (ZED_NESTED_VALUES as readonly string[]).includes(value)) {
+      return value as ZedNested;
+    }
+  }
+  return DEFAULT_ZED_NESTED;
+}
+
+/** Automatic Zed attach matches windows below cwd only with zedNested "auto", never from $HOME or the root. */
+// `home` is a test seam; without it the global config honours $PI_CODING_AGENT_DIR.
+export function isAutoZedNestedEnabled(cwd: string, home?: string): boolean {
+  const dir = resolve(cwd);
+  if (dir === resolve(home ?? homedir()) || dir === parse(dir).root) return false;
+  return readPiConfigZedNested({ projectDir: dir, home }) === "auto";
 }
 
 export function resolvePiConfigAutoInstall(

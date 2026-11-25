@@ -1,6 +1,7 @@
 // ABOUTME: Implements Pi-side IDE discovery, connect, install, reconnect, and Zed lifecycle.
 // ABOUTME: Loaded once via the cached runtime-loader dynamic import after lightweight shell registration.
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { isAutoZedNestedEnabled } from "../shared/config.ts";
 import { logExtensionError } from "../shared/errors.ts";
 import { formatRangeMention } from "../shared/format.ts";
 import { hasDirectWorkspaceMatch } from "../shared/paths.ts";
@@ -54,7 +55,9 @@ export async function startSession(pi: ExtensionAPI, runtime: PiIdeRuntime, ctx:
   }
   void maybeAutoInstallAndReconnect(runtime, ctx, generation);
   await connectAutoWithZedFallback(runtime, ctx, generation);
-  if (runtime.sessionGeneration === generation) startZedWatch(runtime, ctx, { generation });
+  if (runtime.sessionGeneration === generation) {
+    startZedWatch(runtime, ctx, { generation, includeNested: isAutoZedNestedEnabled(ctx.cwd) });
+  }
 }
 
 /** Session shutdown cleanup after the shell has already bumped session generation. */
@@ -314,7 +317,7 @@ async function connectAutoWithZedFallback(
 ): Promise<void> {
   await connectAutoInternal(runtime, ctx, options);
   if (runtime.connectionStatus !== "connected") {
-    startZedPolling(runtime, ctx, { generation, includeNested: options.includeNestedZed });
+    startZedPolling(runtime, ctx, { generation, includeNested: options.includeNestedZed ?? isAutoZedNestedEnabled(ctx.cwd) });
   }
 }
 

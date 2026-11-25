@@ -58,6 +58,10 @@ export const STATUS_DISPLAY_VALUES = ["widget", "statusline"] as const;
 export type StatusDisplay = (typeof STATUS_DISPLAY_VALUES)[number];
 export const DEFAULT_STATUS_DISPLAY: StatusDisplay = "widget";
 
+export const ZED_NESTED_VALUES = ["manual", "auto"] as const;
+export type ZedNested = (typeof ZED_NESTED_VALUES)[number];
+export const DEFAULT_ZED_NESTED: ZedNested = "manual";
+
 export const CONFIG_OPTIONS = {
   fixPrompt: {
     type: ["string"],
@@ -71,5 +75,12 @@ export const CONFIG_OPTIONS = {
     enum: STATUS_DISPLAY_VALUES,
     description:
       'Where to show IDE connection status. Use "widget" for the above-editor widget (default), or "statusline" for the default footer status line.',
+  },
+  zedNested: {
+    type: ["string"],
+    default: DEFAULT_ZED_NESTED,
+    enum: ZED_NESTED_VALUES,
+    description:
+      'When Pi attaches to a Zed window opened on a folder below its working directory. "manual" (default): only via /ide. "auto": also at startup and while idle; never when Pi runs in the home directory or filesystem root.',
   },
 } as const satisfies Record<string, ConfigOption>;

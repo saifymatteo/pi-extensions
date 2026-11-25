@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { CONFIG_ENV_OPTIONS, CONFIG_OPTIONS } from "../src/shared/config-options.ts";
 import {
+  isAutoZedNestedEnabled,
   migrateLegacyGlobalConfig,
   readPiConfigStatusDisplay,
   resolveAgentDir,
@@ -132,4 +133,23 @@ void test("hand-written schema matches config options", () => {
     assert.equal(schema.properties[name]?.default, option.default, `default for ${name}`);
   }
   assert.deepEqual(Object.keys(schema.properties.env?.properties ?? {}).sort(), Object.keys(CONFIG_ENV_OPTIONS).sort());
+});
+
+void test("zedNested defaults to manual; auto applies below $HOME but never at $HOME or the root", async () => {
+  const home = await tempHome();
+  const project = join(home, "work");
+  assert.equal(isAutoZedNestedEnabled(project, home), false, "default manual");
+
+  await mkdir(dirname(resolvePiProjectConfigPath(project)), { recursive: true });
+  await writeFile(resolvePiProjectConfigPath(project), JSON.stringify({ zedNested: "auto" }));
+  assert.equal(isAutoZedNestedEnabled(project, home), true, "project auto");
+
+  await mkdir(dirname(resolvePiGlobalConfigPath(home)), { recursive: true });
+  await writeFile(resolvePiGlobalConfigPath(home), JSON.stringify({ zedNested: "auto" }));
+  assert.equal(isAutoZedNestedEnabled(home, home), false, "never at $HOME");
+  assert.equal(isAutoZedNestedEnabled("/", home), false, "never at root");
+  assert.equal(isAutoZedNestedEnabled(join(home, "other"), home), true, "global auto");
+
+  await writeFile(resolvePiProjectConfigPath(project), JSON.stringify({ zedNested: "manual" }));
+  assert.equal(isAutoZedNestedEnabled(project, home), false, "project overrides global");
 });

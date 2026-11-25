@@ -29,6 +29,11 @@ projects you closed are ignored. While no IDE is connected, Pi re-checks every
 5 seconds, so it attaches when you open the project in Zed after starting Pi, and
 reattaches after you quit and reopen Zed. Run `/ide` to attach immediately.
 
+If Pi runs in a parent folder of the Zed project (Zed on `~/repo/projects/app`, Pi
+on `~/repo`), only `/ide` attaches. To attach automatically there too, set
+`"zedNested": "auto"` in `~/repo/.pi/extensions/pi-x-ide.json`. Pi never does this
+automatically from your home directory or the filesystem root.
+
 On Linux, Pi checks that Zed is running through Zed's `zed-stable.sock`. On macOS,
 Windows, and WSL it relies on the current-session check alone. A widget appears above the Pi input box showing the
 active file and selection.

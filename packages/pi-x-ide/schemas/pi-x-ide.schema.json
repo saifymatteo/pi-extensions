@@ -24,6 +24,15 @@
         "statusline"
       ]
     },
+    "zedNested": {
+      "type": "string",
+      "description": "When Pi attaches to a Zed window opened on a folder below its working directory. \"manual\" (default): only via /ide. \"auto\": also at startup and while idle; never when Pi runs in the home directory or filesystem root.",
+      "default": "manual",
+      "enum": [
+        "manual",
+        "auto"
+      ]
+    },
     "env": {
       "type": "object",
       "description": "Pi-side environment variables. Real environment variables override these values.",
