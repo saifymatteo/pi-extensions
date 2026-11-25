@@ -75,8 +75,14 @@ function readZedSessionId(db: DatabaseSync): string | undefined {
 /**
  * Whether a window open in the current Zed session contains `cwd`.
  * Closing a window clears its workspace's session_id, so this tracks open windows.
+ * `includeNested` also accepts a window opened below `cwd` (manual `/ide` only).
  */
-export function zedSessionHasWorkspace(dbPath: string, cwd: string, env: NodeJS.ProcessEnv = process.env): boolean {
+export function zedSessionHasWorkspace(
+  dbPath: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv = process.env,
+  includeNested = false,
+): boolean {
   const configuredEnv = resolvePiConfigEnv(env);
   const handle = openZedDatabase(dbPath, configuredEnv);
   if (!handle) return false;
@@ -86,7 +92,7 @@ export function zedSessionHasWorkspace(dbPath: string, cwd: string, env: NodeJS.
     const rows = handle.db.prepare("SELECT paths FROM workspaces WHERE session_id = ?").all(sessionId) as Array<{
       paths: string | null;
     }>;
-    return rows.some((row) => scoreWorkspace(row.paths, cwd, configuredEnv) > 0);
+    return rows.some((row) => scoreWorkspace(row.paths, cwd, configuredEnv, includeNested) > 0);
   } catch {
     return false;
   } finally {
@@ -305,14 +311,21 @@ function byteOffsetToSelection(
 
 // ── SQLite query ───────────────────────────────────────────────
 
-function scoreWorkspace(workspacePaths: string | null, cwd: string, env: NodeJS.ProcessEnv): number {
+// A workspace containing cwd always outranks one nested below cwd (includeNested).
+function scoreWorkspace(
+  workspacePaths: string | null,
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  includeNested = false,
+): number {
   const normalizedCwd = normalizeZedPathForHost(cwd, env);
   return parseZedWorkspacePaths(workspacePaths).reduce((best, workspacePath) => {
     const normalizedWorkspacePath = normalizeZedPathForHost(workspacePath, env);
     if (isPathInsideOrEqual(normalizedWorkspacePath, normalizedCwd)) {
       const resolved = resolve(normalizedWorkspacePath);
-      return Math.max(best, resolved.length);
+      return Math.max(best, resolved.length + 10_000);
     }
+    if (includeNested && isPathInsideOrEqual(normalizedCwd, normalizedWorkspacePath)) return Math.max(best, 1);
     return best;
   }, 0);
 }
@@ -325,6 +338,8 @@ export interface ResolveZedSelectionOptions {
   env?: NodeJS.ProcessEnv;
   /** Only consider windows open in Zed's current session (out-of-terminal mode). */
   currentSessionOnly?: boolean;
+  /** Also match windows opened below `cwd` (manual `/ide` only). */
+  includeNested?: boolean;
 }
 
 export function resolveZedSelection(options: ResolveZedSelectionOptions): EditorSelectionSnapshot | undefined {
@@ -387,7 +402,7 @@ export function resolveZedSelection(options: ResolveZedSelectionOptions): Editor
       )
       .map((row) => ({
         ...row,
-        score: scoreWorkspace(row.workspace_paths, cwd, env),
+        score: scoreWorkspace(row.workspace_paths, cwd, env, options.includeNested),
       }))
       .filter((row) => row.score > 0);
 
@@ -478,7 +493,7 @@ function bestWorkspaceFolder(workspacePaths: string | null, cwd: string, env: No
   );
   const normalizedCwd = normalizeZedPathForHost(cwd, env);
   const matches = paths.filter((workspacePath) => isPathInsideOrEqual(workspacePath, normalizedCwd));
-  if (matches.length === 0) return paths[0];
+  if (matches.length === 0) return paths.find((path) => isPathInsideOrEqual(normalizedCwd, path)) ?? paths[0];
   return matches.sort((a, b) => resolve(b).length - resolve(a).length)[0];
 }
 
@@ -587,8 +602,11 @@ export function startZedPolling(
     env?: NodeJS.ProcessEnv;
     /** Test seam for the out-of-terminal Zed liveness probe. */
     isAlive?: () => boolean;
+    /** Also attach to a Zed window opened below cwd (manual `/ide` only). */
+    includeNested?: boolean;
   },
 ): boolean {
+  const includeNested = options?.includeNested ?? false;
   const env = resolvePiConfigEnv(options?.env ?? process.env);
   const inZedTerminal = isZedTerminal(env);
 
@@ -598,7 +616,7 @@ export function startZedPolling(
   // Outside Zed's terminal, attach only while a running Zed has this project
   // open — the same condition a VS Code/JetBrains lock file expresses.
   const isAlive = options?.isAlive ?? (() => isZedProcessAlive(dbPath, env));
-  if (!inZedTerminal && !(isAlive() && zedSessionHasWorkspace(dbPath, ctx.cwd, env))) return false;
+  if (!inZedTerminal && !(isAlive() && zedSessionHasWorkspace(dbPath, ctx.cwd, env, includeNested))) return false;
 
   const intervalMs = resolveZedPollIntervalMs(env, options?.intervalMs);
   const generation = options?.generation;
@@ -656,7 +674,13 @@ export function startZedPolling(
 
     let snapshot: EditorSelectionSnapshot | undefined;
     try {
-      snapshot = resolveZedSelection({ dbPath, cwd: ctx.cwd, env, currentSessionOnly: !inZedTerminal });
+      snapshot = resolveZedSelection({
+        dbPath,
+        cwd: ctx.cwd,
+        env,
+        currentSessionOnly: !inZedTerminal,
+        includeNested,
+      });
     } catch {
       snapshot = undefined;
     }
@@ -667,7 +691,7 @@ export function startZedPolling(
         runtime.zedPollSelectionKey = key;
         setLatestSelection(runtime, snapshot, ctx as ExtensionContext);
       }
-    } else if (!inZedTerminal && !zedSessionHasWorkspace(dbPath, ctx.cwd, env)) {
+    } else if (!inZedTerminal && !zedSessionHasWorkspace(dbPath, ctx.cwd, env, includeNested)) {
       // Detected (non-terminal) Zed closed this project's window; only checked
       // when no snapshot was found, so the common path opens the DB once.
       disconnectDetectedZed("Zed closed this project.");

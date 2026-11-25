@@ -821,6 +821,30 @@ void test("startZedPolling outside Zed terminal requires a live Zed with cwd ope
   stopZedPolling(runtime);
 });
 
+void test("Zed windows nested below cwd match only with includeNested (manual /ide)", async () => {
+  const { dir, dbPath, cleanup } = await createSessionFixture();
+  after(cleanup);
+  const nested = join(dir, "projects", "app");
+  insertSessionEditor(dbPath, 1, nested, "current", "hello world");
+
+  assert.equal(zedSessionHasWorkspace(dbPath, dir), false);
+  assert.equal(zedSessionHasWorkspace(dbPath, dir, {}, true), true);
+  assert.equal(resolveZedSelection({ dbPath, cwd: dir }), undefined);
+  const snapshot = resolveZedSelection({ dbPath, cwd: dir, includeNested: true });
+  assert.equal(snapshot?.workspaceFolder, resolve(nested));
+  assert.equal(snapshot?.ranges[0]?.text, "hello");
+
+  const runtime = createRuntime();
+  const ctx = createContext(dir);
+  assert.equal(startZedPolling(runtime, ctx, { dbPath, env: {}, isAlive: () => true }), false);
+  assert.equal(startZedPolling(runtime, ctx, { dbPath, env: {}, isAlive: () => true, includeNested: true }), true);
+  stopZedPolling(runtime);
+
+  // A window containing cwd outranks a nested one.
+  insertSessionEditor(dbPath, 2, dir, "current", "outer world");
+  assert.equal(resolveZedSelection({ dbPath, cwd: dir, includeNested: true })?.ranges[0]?.text, "outer");
+});
+
 void test("isZedProcessAlive checks the bound Zed socket on Linux", () => {
   const dbPath = "/home/u/.local/share/zed/db/0-stable/db.sqlite";
   const bound = "0000: 00000002 00000000 00000000 0002 03 72943 /home/u/.local/share/zed/zed-stable.sock\n";

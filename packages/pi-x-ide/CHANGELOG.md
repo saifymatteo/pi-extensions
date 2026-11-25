@@ -4,6 +4,10 @@ Release notes are recorded from 1.21.0 onward. Earlier fork history: [saifymatte
 
 ## [Unreleased]
 
+### Fixed
+
+- `/ide` now attaches to a Zed window opened on a folder below Pi's working directory (for example Zed on `repo/projects/app`, Pi on `repo`). Automatic connection at startup still requires the Zed window to contain Pi's working directory.
+
 ## [1.23.0] - 2026-11-25
 
 ### Changed

@@ -29,6 +29,8 @@ let activePi: ExtensionAPI | undefined;
 
 interface ConnectOptions {
   resetReconnectState?: boolean;
+  /** Manual `/ide`: also attach to a Zed window opened below cwd. */
+  includeNestedZed?: boolean;
 }
 
 function formatConnectTimeoutMessage(error: IdeConnectionTimeoutError): string {
@@ -79,14 +81,14 @@ export async function refreshCandidates(
   return runtime.candidates;
 }
 
-/** Auto-connect with Zed polling fallback (command and session paths). */
+/** Manual `/ide` connect with Zed polling fallback; also matches Zed windows below cwd. */
 export async function connectAuto(
   runtime: PiIdeRuntime,
   ctx: ExtensionContext | ExtensionCommandContext,
   pi?: ExtensionAPI,
 ): Promise<void> {
   if (pi) activePi = pi;
-  await connectAutoWithZedFallback(runtime, ctx);
+  await connectAutoWithZedFallback(runtime, ctx, runtime.sessionGeneration, { includeNestedZed: true });
 }
 
 export async function connectCandidate(
@@ -312,7 +314,7 @@ async function connectAutoWithZedFallback(
 ): Promise<void> {
   await connectAutoInternal(runtime, ctx, options);
   if (runtime.connectionStatus !== "connected") {
-    startZedPolling(runtime, ctx, { generation });
+    startZedPolling(runtime, ctx, { generation, includeNested: options.includeNestedZed });
   }
 }
 
