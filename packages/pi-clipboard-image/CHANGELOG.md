@@ -4,6 +4,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-11-25
+
 ### Fixed
 
 - Image paths and resize notes go in a separate custom message after the prompt, so the user message shows only what was typed. Each note is labelled with its marker (`[Image #2: original 2704x694, displayed at 2000x513. …]`) instead of core's unlabelled `[Image: …]`. Steer and follow-up messages sent while the agent is running keep them inline.
