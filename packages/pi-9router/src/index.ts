@@ -2,11 +2,42 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import registerFetch from "./fetch.ts";
 import registerSearch from "./search.ts";
 import registerTranscribe from "./transcribe.ts";
-import { ensureConfig, loadConfig, migrateLegacyConfig } from "./config.ts";
+import { configPath, ensureConfig, loadConfig, migrateLegacyConfig, SCHEMA_URL } from "./config.ts";
 import { readCache } from "./data.ts";
 import { registerProvider, registerModels, isStaleCtxError } from "./provider.ts";
 
+/** `/9router settings` fields; a comboReasoning thinking-level map stays JSON-only. Exported for tests. */
+export const SETTINGS_FIELDS = [
+	{ key: "baseUrl", label: "Base URL", type: "text", default: "", requiresReload: true,
+		description: "OpenAI-compatible base URL, e.g. https://router.example/v1. Empty falls back to ROUTER_API_BASE." },
+	{ key: "comboReasoning", label: "Combo reasoning", type: "boolean", default: true, requiresReload: true,
+		fromFile: (raw: unknown) => (typeof raw === "boolean" ? raw : raw && typeof raw === "object" ? true : undefined),
+		description: "Reasoning for combo models. Saving here replaces a custom thinkingLevelMap object with on/off." },
+	...(["fetch", "search", "transcribe"] as const).map((tool) => ({
+		key: `tools.${tool}`, label: `Tool: ${tool}`, type: "boolean" as const, default: true, requiresReload: true,
+		description: `Register the bundled ${tool} tool (needs a base URL and a 9router login).`,
+	})),
+] as const;
+
 export default async function (pi: ExtensionAPI): Promise<void> {
+	pi.registerCommand("9router", {
+		description: "9Router: /9router settings edits 9router.json",
+		getArgumentCompletions: (prefix: string) =>
+			"settings".startsWith(prefix) ? [{ value: "settings", label: "settings", description: "Edit global settings" }] : null,
+		handler: async (args, ctx) => {
+			if (args.trim() !== "settings") {
+				ctx.ui.notify("Usage: /9router settings", "warning");
+				return;
+			}
+			const { jsonFileScope, openSettingsDialog } = await import("./settings-dialog.ts");
+			await openSettingsDialog(ctx, {
+				title: "9Router settings",
+				scopes: [jsonFileScope("global", configPath(), SCHEMA_URL)],
+				fields: [...SETTINGS_FIELDS],
+				footnote: "The API key is the 9router login in auth.json (/login). comboReasoning.thinkingLevelMap stays JSON-only.",
+			});
+		},
+	});
 	migrateLegacyConfig();
 	ensureConfig();
 	const cfg = loadConfig();

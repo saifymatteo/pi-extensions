@@ -4,6 +4,10 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Added
+
+- `/codegraph settings`: Global / Project dialog for `autoInit` and `syncOnSettle`.
+
 ## [0.2.0] - 2026-11-25
 
 ### Added

@@ -338,7 +338,7 @@ test('startup registers cached models at once and never waits on the router', as
       '@xynogen/pix-runtime/io': any, '@xynogen/pix-runtime/collapse': any, '@xynogen/pix-pretty/utils': any,
     }, { fetch, console: { warn: () => {}, log: () => {} } });
     const registered = [];
-    const pi = { registerProvider: (_id, cfg) => registered.push(host(cfg.models).map(m => m.id)), unregisterProvider: () => {}, registerTool: () => {}, on: () => {} };
+    const pi = { registerProvider: (_id, cfg) => registered.push(host(cfg.models).map(m => m.id)), unregisterProvider: () => {}, registerTool: () => {}, registerCommand: () => {}, on: () => {} };
     const started = await Promise.race([ext.default(pi).then(() => 'returned'), new Promise(r => setTimeout(() => r('blocked'), 1000))]);
     assert.equal(started, 'returned');
     assert.deepEqual(registered, [['kr/stale']]);

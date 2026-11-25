@@ -4,6 +4,10 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Added
+
+- `/zvec settings`: Global / Project dialog for `autoInit`, `syncOnSettle` and `embedding`.
+
 ## [0.2.0] - 2026-11-25
 
 ### Added

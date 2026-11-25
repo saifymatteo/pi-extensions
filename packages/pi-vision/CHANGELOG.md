@@ -6,6 +6,7 @@ Release notes are recorded from 0.1.3 onward.
 
 ### Added
 
+- `/vision settings`: dialog for `imagePolicy` and `lang`.
 - A missing `extensions/vision-toolkit.json` is created once with only `$schema` for editor completion; image handling still needs a `model`. An existing file is never overwritten.
 
 ## [0.2.0] - 2026-11-25

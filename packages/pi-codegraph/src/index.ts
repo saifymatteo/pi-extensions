@@ -88,6 +88,15 @@ export const SCHEMA_URL =
 	"https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-codegraph/schemas/codegraph.schema.json";
 export const DEFAULTS: CgConfig = { autoInit: true, syncOnSettle: true };
 
+/** `/codegraph settings` fields: every key in codegraph.json. Exported for tests. */
+export const SETTINGS_FIELDS = [
+	{ key: "autoInit", label: "Auto init", type: "boolean", default: DEFAULTS.autoInit, requiresReload: true,
+		description: "Build an index in the background when none is found walking up from cwd (never in the home dir or a filesystem root)." },
+	{ key: "syncOnSettle", label: "Sync on settle", type: "boolean", default: DEFAULTS.syncOnSettle, requiresReload: true,
+		description: "Sync the index after each completed agent turn. Existing indexes still sync once at startup." },
+] as const;
+
+
 // Session-scoped module state. The factory re-runs (same module object) when
 // pi rebinds extensions for /new, /resume, /fork and /reload, so a generation
 // token invalidates UI writes from ops belonging to a replaced session.
@@ -411,6 +420,31 @@ export default function codegraph(pi: ExtensionAPI) {
 			},
 		});
 	}
+
+
+	// ── /codegraph settings ───────────────────────────────────────────────────
+	pi.registerCommand("codegraph", {
+		description: "CodeGraph: /codegraph settings edits global or project config",
+		getArgumentCompletions: (prefix: string) =>
+			"settings".startsWith(prefix) ? [{ value: "settings", label: "settings", description: "Edit global or project settings" }] : null,
+		handler: async (args, ctx) => {
+			if (args.trim() !== "settings") {
+				ctx.ui.notify("Usage: /codegraph settings", "warning");
+				return;
+			}
+			// Lazy: keeps pi-tui off the startup import graph.
+			const { jsonFileScope, openSettingsDialog } = await import("./settings-dialog.ts");
+			const root = findIndexRoot(ctx.cwd) ?? ctx.cwd;
+			await openSettingsDialog(ctx, {
+				title: "CodeGraph settings",
+				scopes: [
+					jsonFileScope("global", globalConfigPath(), SCHEMA_URL),
+					jsonFileScope("project", path.join(root, ".pi", "extensions", "codegraph.json"), SCHEMA_URL, { readPath: projectConfigPath(root) }),
+				],
+				fields: [...SETTINGS_FIELDS],
+			});
+		},
+	});
 
 	// ── /codegraph-init ────────────────────────────────────────────────────
 	registerCommand("codegraph-init", {

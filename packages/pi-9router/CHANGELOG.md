@@ -6,6 +6,7 @@ All notable changes to this package are documented here. Formats follow [Keep a 
 
 ### Added
 
+- `/9router settings`: dialog for the base URL, combo reasoning on/off and the tool switches.
 - A missing `extensions/9router.json` is created once with `$schema`, `comboReasoning` and the tool switches (no `baseUrl`, so `ROUTER_API_BASE` still applies). An existing file is never overwritten.
 
 ## [0.2.0] - 2026-11-25

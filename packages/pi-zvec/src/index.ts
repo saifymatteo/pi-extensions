@@ -116,6 +116,18 @@ export const DEFAULTS: ZvecConfig = {
 	embedding: DEFAULT_EMBEDDING,
 };
 
+/** `/zvec settings` fields: every key in zvec.json. Exported for tests. */
+export const SETTINGS_FIELDS = [
+	{ key: "autoInit", label: "Auto init", type: "boolean", default: DEFAULTS.autoInit, requiresReload: true,
+		description: "Build an index in the background when none is found walking up from cwd (never in the home dir or a filesystem root)." },
+	{ key: "syncOnSettle", label: "Sync on settle", type: "boolean", default: DEFAULTS.syncOnSettle, requiresReload: true,
+		description: "Run an incremental index after each completed agent turn. Existing indexes still sync once at startup." },
+	{ key: "embedding", label: "Embedding", type: "text", default: DEFAULTS.embedding, requiresReload: true,
+		fromFile: (raw: unknown) => (typeof raw === "string" && raw.trim() ? raw.trim() : undefined),
+		description: "zg embedding model used to build and query the index. Changing it needs /zvec-init." },
+] as const;
+
+
 // Session-scoped module state. The factory re-runs (same module object) when
 // pi rebinds extensions for /new, /resume, /fork and /reload, so a generation
 // token invalidates UI writes from ops belonging to a replaced session.
@@ -618,6 +630,31 @@ export default function zvec(pi: ExtensionAPI) {
 			},
 		});
 	}
+
+
+	// ── /zvec settings ───────────────────────────────────────────────────
+	pi.registerCommand("zvec", {
+		description: "Zvec: /zvec settings edits global or project config",
+		getArgumentCompletions: (prefix: string) =>
+			"settings".startsWith(prefix) ? [{ value: "settings", label: "settings", description: "Edit global or project settings" }] : null,
+		handler: async (args, ctx) => {
+			if (args.trim() !== "settings") {
+				ctx.ui.notify("Usage: /zvec settings", "warning");
+				return;
+			}
+			// Lazy: keeps pi-tui off the startup import graph.
+			const { jsonFileScope, openSettingsDialog } = await import("./settings-dialog.ts");
+			const root = findIndexRoot(ctx.cwd) ?? ctx.cwd;
+			await openSettingsDialog(ctx, {
+				title: "Zvec settings",
+				scopes: [
+					jsonFileScope("global", globalConfigPath(), SCHEMA_URL),
+					jsonFileScope("project", path.join(root, ".pi", "extensions", "zvec.json"), SCHEMA_URL, { readPath: projectConfigPath(root) }),
+				],
+				fields: [...SETTINGS_FIELDS],
+			});
+		},
+	});
 
 	// ── /zvec-init ─────────────────────────────────────────────────────────
 	registerCommand("zvec-init", {

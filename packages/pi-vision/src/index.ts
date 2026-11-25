@@ -768,7 +768,34 @@ export async function handleContext(
   return changed ? { messages: event.messages } : undefined;
 }
 
+/** `/vision settings` fields; model chains and provider overrides stay JSON-only. Exported for tests. */
+export const SETTINGS_FIELDS = [
+  { key: "imagePolicy", label: "Image policy", type: "enum", options: IMAGE_POLICIES, default: DEFAULT_IMAGE_POLICY,
+    description: "Image-capable models: native keeps images; describe replaces all and describe-old only older ones with a description." },
+  { key: "lang", label: "Language", type: "enum", options: Object.keys(LANG_INSTRUCTIONS), default: undefined,
+    description: "Language for image descriptions. Unset adds no language instruction." },
+] as const;
+
 export default function (pi: any) {
   ensureConfig();
+  pi.registerCommand?.("vision", {
+    description: "Vision: /vision settings edits vision-toolkit.json",
+    getArgumentCompletions: (prefix: string) =>
+      "settings".startsWith(prefix) ? [{ value: "settings", label: "settings", description: "Edit global settings" }] : null,
+    handler: async (args: string, ctx: any) => {
+      if (args.trim() !== "settings") {
+        ctx.ui.notify("Usage: /vision settings", "warning");
+        return;
+      }
+      const { jsonFileScope, openSettingsDialog } = await import("./settings-dialog.ts");
+      const cfgPath = join(piAgentDir(), "extensions", "vision-toolkit.json");
+      await openSettingsDialog(ctx, {
+        title: "Vision settings",
+        scopes: [jsonFileScope("global", cfgPath, SCHEMA_URL)],
+        fields: [...SETTINGS_FIELDS],
+        footnote: `model, fallbackModels and providers stay JSON-only in ${cfgPath}.`,
+      });
+    },
+  });
   pi.on("context", (event: any, ctx: any) => handleContext(event, ctx));
 }
