@@ -16,7 +16,7 @@ function plainTheme() {
 	};
 }
 
-test("registers /ask-settings and opens the shared settings overlay", async () => {
+test("registers /ask settings and opens the shared settings overlay", async () => {
 	const agentDir = await mkdtemp(join(tmpdir(), "pi-ask-command-"));
 	process.env.PI_CODING_AGENT_DIR = agentDir;
 
@@ -33,10 +33,10 @@ test("registers /ask-settings and opens the shared settings overlay", async () =
 		},
 	} as never);
 
-	assert(commands.has("ask-settings"));
+	assert(commands.has("ask"));
 
 	const customCalls: Array<{ options: unknown; lines: string[] }> = [];
-	await commands.get("ask-settings")?.handler("", {
+	await commands.get("ask")?.handler("settings", {
 		mode: "tui",
 		ui: {
 			custom(callback: any, options: unknown) {
@@ -77,7 +77,7 @@ test("registers /ask-settings and opens the shared settings overlay", async () =
 	await rm(agentDir, { force: true, recursive: true });
 });
 
-test("/ask-settings notifies outside TUI instead of opening custom UI", async () => {
+test("/ask settings notifies outside TUI instead of opening custom UI", async () => {
 	const commands = new Map<
 		string,
 		{ handler: (args: string, ctx: any) => Promise<void> }
@@ -93,7 +93,7 @@ test("/ask-settings notifies outside TUI instead of opening custom UI", async ()
 
 	const notifications: Array<{ message: string; type: string }> = [];
 	let customOpened = false;
-	await commands.get("ask-settings")?.handler("", {
+	await commands.get("ask")?.handler("settings", {
 		mode: "rpc",
 		ui: {
 			custom() {
@@ -108,7 +108,7 @@ test("/ask-settings notifies outside TUI instead of opening custom UI", async ()
 	assert.equal(customOpened, false);
 	assert.deepEqual(notifications, [
 		{
-			message: "/ask-settings requires interactive TUI mode.",
+			message: "/ask settings requires interactive TUI mode.",
 			type: "error",
 		},
 	]);

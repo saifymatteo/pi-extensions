@@ -127,7 +127,7 @@ for (const kind of ['zvec', 'codegraph']) {
   test(`${kind}: early manual init owns the writer slot and waits for project configuration`, async () => {
     const h = harness(kind, { auto: true });
     h.start();
-    const manual = h.commands[`${kind}-init`].handler('', h.ctx);
+    const manual = h.commands[kind].handler('init', h.ctx);
     await h.versionEntered.promise;
     h.version.resolve();
     await manual;
@@ -251,7 +251,7 @@ test('zvec: a manual init arriving during gitignore setup still excludes automat
   h.start();
   h.version.resolve();
   await h.gitignoreEntered.promise;
-  const manual = h.commands['zvec-init'].handler('', h.ctx);
+  const manual = h.commands.zvec.handler('init', h.ctx);
   h.gitignore.resolve();
   await manual;
   assert.equal(h.writers().length, 1);
@@ -298,9 +298,9 @@ test('zvec: CLI probe and manual management commands use zg 0.3 flags', async ()
   h.version.resolve();
   await h.tool();
   assert.deepEqual(h.versions()[0].args, ['--version']);
-  await h.commands['zvec-init'].handler('', h.ctx);
-  await h.commands['zvec-sync'].handler('', h.ctx);
-  await h.commands['zvec-status'].handler('', h.ctx);
+  await h.commands.zvec.handler('init', h.ctx);
+  await h.commands.zvec.handler('sync', h.ctx);
+  await h.commands.zvec.handler('status', h.ctx);
   assert.deepEqual(h.writers().map(call => call.args), [
     ['--index', h.cwd, '--embedding', 'fixture/project'],
     ['--index', h.cwd],
@@ -313,7 +313,7 @@ test('zvec: empty workspace sync succeeds without an error notification', async 
   const stdout = 'Workspace index\nfiles   0 scanned, 0 failed\ntip   No indexable files were found.';
   const h = harness('zvec', { result: { ...ok, stdout } });
   h.version.resolve();
-  await h.commands['zvec-sync'].handler('', h.ctx);
+  await h.commands.zvec.handler('sync', h.ctx);
   assert.deepEqual(h.notifications.filter(item => item.level === 'error'), []);
   assert.ok(h.notifications.some(item => item.text === 'Zvec synced.'));
   assert.equal(h.messages.at(-1).content, stdout);

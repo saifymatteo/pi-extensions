@@ -14,7 +14,7 @@
 //                        fts    → BM25 lexical ranking
 //                        vector → semantic-only
 //                        hybrid/auto → --hybrid query
-//   - /zvec-init /zvec-sync /zvec-status
+//   - /zvec init /zvec sync /zvec status
 //   - session_start : non-blocking CLI check (report once if missing), config setup,
 //                     index discovery by walking up from cwd for .zvec-grep/,
 //                     startup sync when indexed, auto-index when not (bounded
@@ -55,7 +55,7 @@
 //   - No MCP, no daemon: every call shells out to `zg`, which runs in-process
 //     in its default `auto` mode (uses a server only if one is already running).
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { appendFileSync, existsSync, realpathSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -124,7 +124,7 @@ export const SETTINGS_FIELDS = [
 		description: "Run an incremental index after each completed agent turn. Existing indexes still sync once at startup." },
 	{ key: "embedding", label: "Embedding", type: "text", default: DEFAULTS.embedding, requiresReload: true,
 		fromFile: (raw: unknown) => (typeof raw === "string" && raw.trim() ? raw.trim() : undefined),
-		description: "zg embedding model used to build and query the index. Changing it needs /zvec-init." },
+		description: "zg embedding model used to build and query the index. Changing it needs /zvec init." },
 ] as const;
 
 
@@ -513,7 +513,7 @@ export default function zvec(pi: ExtensionAPI) {
 			"Exact, ranked, and semantic workspace search (mode: auto|hybrid|fts|vector|exact)",
 		promptGuidelines: [
 			"Use zvec_search when the wording or location is unknown (semantic/hybrid), to rank known terms (fts), or for an exact literal or regex (mode:'exact').",
-			"The workspace index auto-builds and auto-syncs; /zvec-init forces a rebuild. mode:'exact' runs without the index.",
+			"The workspace index auto-builds and auto-syncs; /zvec init forces a rebuild. mode:'exact' runs without the index.",
 		],
 		parameters: Type.Object({
 			query: Type.String({
@@ -590,7 +590,7 @@ export default function zvec(pi: ExtensionAPI) {
 				const failOut = outputOf(result);
 				if (mode !== "exact" && NO_INDEX_RE.test(failOut)) {
 					return textResult(
-						`${failOut}\n\nThis workspace has no Zvec index yet. Build one with /zvec-init ` +
+						`${failOut}\n\nThis workspace has no Zvec index yet. Build one with /zvec init ` +
 							`(or run: zg --index "${root}"), or use mode:'exact' for index-free search.`,
 					);
 				}
@@ -601,15 +601,18 @@ export default function zvec(pi: ExtensionAPI) {
 	});
 
 	// Command exceptions use the same non-persistent notification as CLI failures.
-	function registerCommand(name: string, command: Parameters<ExtensionAPI["registerCommand"]>[1]) {
-		pi.registerCommand(name, {
-			...command,
+	// `/zvec <sub>` dispatches here. Indexing subcommands share the writer-slot guard.
+	type Subcommand = { description: string; handler: (args: string, ctx: ExtensionCommandContext) => Promise<void> };
+	const subcommands = new Map<string, Subcommand>();
+	function registerCommand(name: string, command: { description: string; handler: (args: string, ctx: ExtensionCommandContext) => Promise<void> }) {
+		subcommands.set(name, {
+			description: command.description,
 			handler: async (args, ctx) => {
 				const gen = sessionGen;
-				const indexes = name === "zvec-init" || name === "zvec-sync";
+				const indexes = name === "init" || name === "sync";
 				// A manual operation can replace a delayed retry, not a live writer.
 				if (indexes && currentOpToken !== 0 && retryTimer === null) {
-					if (ctx.hasUI) ctx.ui.notify(`Zvec: indexing already in progress. Try /${name} again when it finishes.`, "info");
+					if (ctx.hasUI) ctx.ui.notify(`Zvec: indexing already in progress. Try /zvec ${name} again when it finishes.`, "info");
 					return;
 				}
 				if (indexes) cancelRetry();
@@ -620,7 +623,7 @@ export default function zvec(pi: ExtensionAPI) {
 					if (gen !== sessionGen || runtimeAbort.signal.aborted) return;
 					await command.handler(args, ctx);
 				} catch (err) {
-					reportError(ctx, gen, `Zvec command /${name} failed`, err instanceof Error ? (err.stack ?? err.message) : String(err));
+					reportError(ctx, gen, `Zvec command /zvec ${name} failed`, err instanceof Error ? (err.stack ?? err.message) : String(err));
 				} finally {
 					if (token && gen === sessionGen && currentOpToken === token) {
 						currentOpToken = 0;
@@ -633,15 +636,9 @@ export default function zvec(pi: ExtensionAPI) {
 
 
 	// ── /zvec settings ───────────────────────────────────────────────────
-	pi.registerCommand("zvec", {
-		description: "Zvec: /zvec settings edits global or project config",
-		getArgumentCompletions: (prefix: string) =>
-			"settings".startsWith(prefix) ? [{ value: "settings", label: "settings", description: "Edit global or project settings" }] : null,
-		handler: async (args, ctx) => {
-			if (args.trim() !== "settings") {
-				ctx.ui.notify("Usage: /zvec settings", "warning");
-				return;
-			}
+	subcommands.set("settings", {
+		description: "Edit global or project settings",
+		handler: async (_args, ctx) => {
 			// Lazy: keeps pi-tui off the startup import graph.
 			const { jsonFileScope, openSettingsDialog } = await import("./settings-dialog.ts");
 			const root = findIndexRoot(ctx.cwd) ?? ctx.cwd;
@@ -656,8 +653,8 @@ export default function zvec(pi: ExtensionAPI) {
 		},
 	});
 
-	// ── /zvec-init ─────────────────────────────────────────────────────────
-	registerCommand("zvec-init", {
+	// ── /zvec init ─────────────────────────────────────────────────────────
+	registerCommand("init", {
 		description: "Build the Zvec index for the current project (zg --index)",
 		handler: async (args, ctx) => {
 			const sig = runtimeAbort.signal;
@@ -695,8 +692,8 @@ export default function zvec(pi: ExtensionAPI) {
 		},
 	});
 
-	// ── /zvec-sync ─────────────────────────────────────────────────────────
-	registerCommand("zvec-sync", {
+	// ── /zvec sync ─────────────────────────────────────────────────────────
+	registerCommand("sync", {
 		description: "Update the Zvec index for new/changed files (zg --index)",
 		handler: async (args, ctx) => {
 			const sig = runtimeAbort.signal;
@@ -722,8 +719,8 @@ export default function zvec(pi: ExtensionAPI) {
 		},
 	});
 
-	// ── /zvec-status ───────────────────────────────────────────────────────
-	registerCommand("zvec-status", {
+	// ── /zvec status ───────────────────────────────────────────────────────
+	registerCommand("status", {
 		description: "Show Zvec index status and statistics",
 		handler: async (args, ctx) => {
 			const sig = runtimeAbort.signal;
@@ -742,6 +739,25 @@ export default function zvec(pi: ExtensionAPI) {
 			}
 			if (ctx.hasUI) ctx.ui.notify(out, "info");
 			pi.sendMessage({ customType: "zvec-status", content: out, display: true }, { triggerTurn: false });
+		},
+	});
+
+	// ── /zvec <subcommand> ───────────────────────────────────────────────
+	pi.registerCommand("zvec", {
+		description: `Zvec: /zvec ${[...subcommands.keys()].join("|")}`,
+		getArgumentCompletions: (prefix: string) => {
+			if (prefix.includes(" ")) return null;
+			const items = [...subcommands].filter(([sub]) => sub.startsWith(prefix)).map(([sub, { description }]) => ({ value: sub, label: sub, description }));
+			return items.length > 0 ? items : null;
+		},
+		handler: async (args, ctx) => {
+			const [sub = "", ...rest] = args.trim().split(/\s+/);
+			const command = subcommands.get(sub);
+			if (!command) {
+				ctx.ui.notify(`Usage: /zvec <${[...subcommands.keys()].join("|")}> [path]`, "warning");
+				return;
+			}
+			await command.handler(rest.join(" "), ctx);
 		},
 	});
 

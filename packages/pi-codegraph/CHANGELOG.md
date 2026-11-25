@@ -4,6 +4,10 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `/codegraph-init`, `/codegraph-sync`, `/codegraph-status` and `/codegraph-unlock` are now `/codegraph init|sync|status|unlock`. The old names are gone.
+
 ### Added
 
 - `/codegraph settings`: Global / Project dialog for `autoInit` and `syncOnSettle`.

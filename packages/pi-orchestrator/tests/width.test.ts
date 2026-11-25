@@ -1,4 +1,4 @@
-// Unit tests for the visible-width helpers used by the /orchestrator-tools
+// Unit tests for the visible-width helpers used by the /orchestrator tools
 // header component (pi crashes on rendered lines wider than the terminal).
 import { test } from "node:test";
 import assert from "node:assert/strict";

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `/ask-settings` is now `/ask settings`. The old name is gone.
+
 ## [1.3.0] - 2026-11-25
 
 ### Added

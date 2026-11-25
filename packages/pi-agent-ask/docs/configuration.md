@@ -20,7 +20,7 @@ For editor completion and validation, the file's first key points at the package
 "$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-agent-ask/schemas/pi-agent-ask.schema.json"
 ```
 
-Pi ignores `$schema` at runtime; the schema is never a load gate. Saving from `/ask-settings` writes this URL when the key is absent or already a pi-agent-ask schema URL, and keeps any other value you set.
+Pi ignores `$schema` at runtime; the schema is never a load gate. Saving from `/ask settings` writes this URL when the key is absent or already a pi-agent-ask schema URL, and keeps any other value you set.
 
 ## Default config
 
@@ -87,7 +87,7 @@ Pi ignores `$schema` at runtime; the schema is never a load gate. Saving from `/
 - `presentSingleAsMulti`: present requested single-select questions as multi-select in new or restored flows. Results keep the requested type and report the changed presentation. This does not change an already-open form. Default `false`.
 - `showFooterHints`: show keyboard hints. Default `true`.
 
-Open `/ask-settings` or press `?` inside a form to toggle behaviour or notification enablement. Changes save immediately when possible; save failures revert the setting and show the path for manual editing. Reset-to-defaults requires a quick second press. Use it only when the user asks to reset.
+Open `/ask settings` or press `?` inside a form to toggle behaviour or notification enablement. Changes save immediately when possible; save failures revert the setting and show the path for manual editing. Reset-to-defaults requires a quick second press. Use it only when the user asks to reset.
 
 Saved runtime changes affect an open form, except `presentSingleAsMulti`, which applies when a form is created. For a live question-type change, use `main.changeQuestionType` (`t` by default). It toggles `single <-> multi`, or `preview <-> multi`. A multi-to-single change that would discard multiple choices requires another press, without a timeout.
 

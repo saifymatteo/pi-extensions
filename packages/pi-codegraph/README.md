@@ -6,7 +6,7 @@
 
 ## Purpose and registrations
 
-Registers `codegraph_explore`, `/codegraph-init`, `/codegraph-sync`, `/codegraph-status`, `/codegraph-unlock`, `/codegraph settings` (Global / Project dialog for both keys), session startup/shutdown and settle-sync hooks, and footer status.
+Registers `codegraph_explore`, `/codegraph init|sync|status|unlock|settings` (`settings` is a Global / Project dialog for both keys), session startup/shutdown and settle-sync hooks, and footer status.
 
 ## Configuration and external CLI
 

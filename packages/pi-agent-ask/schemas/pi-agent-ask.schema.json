@@ -19,7 +19,7 @@
     },
     "behaviour": {
       "type": "object",
-      "description": "Form behaviour toggles; also editable via /ask-settings.",
+      "description": "Form behaviour toggles; also editable via /ask settings.",
       "properties": {
         "autoSubmitWhenAnsweredWithoutNotes": {
           "type": "boolean",

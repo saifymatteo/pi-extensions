@@ -494,7 +494,7 @@ test("session config follows ctx.cwd and both commands save into the selected ex
 		assert.equal(fs.readFileSync(globalFile, "utf8"), globalSource, "neither command writes into the global fallback");
 
 		const notifications: string[] = [];
-		await (handlers as any).command["orchestrator-tools"]("", { mode: "rpc", ui: { notify: (message: string) => notifications.push(message) } });
+		await (handlers as any).command.orchestrator("tools", { mode: "rpc", ui: { notify: (message: string) => notifications.push(message) } });
 		assert.ok(notifications[0].includes(projectFile), "headless hint points at the selected config");
 		await handlers.session_start[0]({}, { cwd: projects[1] });
 		assert.equal(await handlers.before_agent_start[0]({ systemPrompt: "base" }, {}), undefined, "session replacement loads the other project's AUTO config");
@@ -613,7 +613,7 @@ function editableTools() {
 async function openToolEditor(handlers: any) {
 	let editor: any;
 	const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
-	await handlers.command["orchestrator-tools"]("", {
+	await handlers.command.orchestrator("tools", {
 		mode: "tui",
 		ui: { custom: async (build: any) => { editor = build({ requestRender() {} }, theme, {}, () => {}); } },
 	});

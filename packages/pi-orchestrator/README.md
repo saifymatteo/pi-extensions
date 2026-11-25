@@ -1,6 +1,6 @@
 # pi-orchestrator
 
-![/orchestrator-tools keep-list: every tool blocked except delegate while orchestrator mode is engaged](screenshot.png)
+![/orchestrator tools keep-list: every tool blocked except delegate while orchestrator mode is engaged](screenshot.png)
 
 A pi extension that turns the main agent into an orchestrator. While engaged, the parent keeps a configurable tool allow-list and delegates work to subagents with isolated contexts. You describe the task; the orchestrator picks agents, dispatches work, and receives their results.
 
@@ -44,7 +44,7 @@ Child tool policy applies to every delegated spawn in either mode. Workers do no
 
 - `/orchestrator` toggles engagement and persists it in the [selected configuration file](docs/configuration.md#configuration-locations); startup notifies when disengaged.
 - `/orchestrator settings` edits every on/off and numeric setting in the selected config file; lists and maps stay in JSON.
-- `/orchestrator-tools` opens the TUI's per-tool allowed/blocked editor. It saves individual overrides, never rewrites the baseline `keepTools`, and shows discovered extension groups read-only. Choosing the baseline result removes the override. Long lists truncate to terminal width (at most 6 names plus `+N more`).
+- `/orchestrator tools` opens the TUI's per-tool allowed/blocked editor. It saves individual overrides, never rewrites the baseline `keepTools`, and shows discovered extension groups read-only. Choosing the baseline result removes the override. Long lists truncate to terminal width (at most 6 names plus `+N more`).
 
 See [parent tool access](docs/configuration.md#engagement-and-parent-tool-access) for matching rules, overrides, and safety caveats.
 

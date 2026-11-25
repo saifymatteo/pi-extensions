@@ -135,7 +135,7 @@ Baseline matchers, all case-insensitive:
 - **Empty**: auto-keeps every discovered non-builtin extension, each contributing an `ext:<id>` matcher each turn. Extensions that re-register a builtin tool name contribute only their non-colliding tools, kept by exact name.
 - **Non-empty** (the default): only matching tools stay, plus `delegate`, before per-tool overrides.
 
-Discovered extension groups appear read-only in `/orchestrator-tools`; individual tools can be toggled without changing the baseline. Stale `ext:` entries stay valid: they match nothing while the package is absent and match again when it returns.
+Discovered extension groups appear read-only in `/orchestrator tools`; individual tools can be toggled without changing the baseline. Stale `ext:` entries stay valid: they match nothing while the package is absent and match again when it returns.
 
 **Builtin-shadowing:** extensions that re-register a builtin tool name (`read`, `bash`, `powershell`, `edit`, `write`, `grep`, `find`, `ls`) are excluded from auto-keep unless explicitly listed as `ext:<id>`. Registration replaces the builtin wholesale, so auto-keeping the shadow would resurrect a core tool the config never listed. An explicit `ext:<id>` entry re-enables the whole extension; a per-tool override can allow just one tool.
 
@@ -151,7 +151,7 @@ Discovered extension groups appear read-only in `/orchestrator-tools`; individua
 }
 ```
 
-`/orchestrator-tools` offers a binary allowed/blocked choice per tool. It writes only that tool's override, never `keepTools`; choosing the baseline result removes the tool's override instead. Automatic discovery and group matchers keep governing siblings and future tools, so toggling one tool never freezes the discovered tool list or rewrites a group rule. A successful manual edit refreshes the cached policy on the next engaged turn so its advertised allow-list matches the new permissions; ordinary turns and background discovery retain the existing cache (ADR-0013). If saving fails, the editor restores the previous choice and leaves permissions unchanged.
+`/orchestrator tools` offers a binary allowed/blocked choice per tool. It writes only that tool's override, never `keepTools`; choosing the baseline result removes the tool's override instead. Automatic discovery and group matchers keep governing siblings and future tools, so toggling one tool never freezes the discovered tool list or rewrites a group rule. A successful manual edit refreshes the cached policy on the next engaged turn so its advertised allow-list matches the new permissions; ordinary turns and background discovery retain the existing cache (ADR-0013). If saving fails, the editor restores the previous choice and leaves permissions unchanged.
 
 ## Child tool policy
 
@@ -269,7 +269,7 @@ Common goals and the config that expresses each:
 
 The parent column applies only while orchestration is engaged: availability follows the baseline plus per-tool overrides, with `delegate` always allowed. Omitting a matcher blocks a tool only if no other baseline rule keeps it (including automatic discovery with `keepTools: []`) and no override allows it. AUTO mode (via `/orchestrator`) exposes all tools again. The child column applies on every `delegate` spawn regardless of engagement. To exclude an extension's code from children entirely, not just its tools, see [Child extension control](#child-extension-control).
 
-To find the id a tool actually derives, run `/orchestrator-tools`: every discovered extension group appears read-only as `ext:<id>` with the tool names it registered; individual tool choices write per-tool overrides.
+To find the id a tool actually derives, run `/orchestrator tools`: every discovered extension group appears read-only as `ext:<id>` with the tool names it registered; individual tool choices write per-tool overrides.
 
 ## Child extension control
 

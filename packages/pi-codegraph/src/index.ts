@@ -11,7 +11,7 @@
 //
 // Provides:
 //   - codegraph_explore tool : symbol source + call paths from the .codegraph/ index
-//   - /codegraph-init /codegraph-sync /codegraph-status /codegraph-unlock
+//   - /codegraph init /codegraph sync /codegraph status /codegraph unlock
 //   - session_start : non-blocking CLI check (report once if missing), config setup, auto-init
 //                     when no index is found walking up from cwd (bounded by home
 //                     dir / filesystem root), and startup sync when indexed
@@ -44,7 +44,7 @@
 // Notes:
 //   - Background ops (auto-init, startup sync, settle sync) only spawn when
 //     ctx.hasUI (TUI/RPC). In print/JSON mode pi can exit mid-write and leave
-//     a stale lock (that is what /codegraph-unlock is for). Config setup and
+//     a stale lock (that is what /codegraph unlock is for). Config setup and
 //     command-driven ops still happen in all modes.
 //   - The startup sync targets the index owner found by walking up from cwd,
 //     not cwd itself, so subdirectories of an indexed repo sync the right db.
@@ -52,7 +52,7 @@
 //     (mirrors the CLI's own guard). Sync is allowed even if the index lives
 //     in the home dir; disable via config if unwanted.
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { existsSync, realpathSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -66,8 +66,8 @@ const STATUS_KEY = "codegraph";
 const CLI_CHECK_TIMEOUT_MS = 10_000;
 const RETRY_DELAYS_MS = [5_000, 15_000, 30_000];
 const EXPLORE_TIMEOUT_MS = 120_000;
-const SYNC_TIMEOUT_MS = 5 * 60_000; // matches /codegraph-sync
-const INIT_TIMEOUT_MS = 30 * 60_000; // matches /codegraph-init
+const SYNC_TIMEOUT_MS = 5 * 60_000; // matches /codegraph sync
+const INIT_TIMEOUT_MS = 30 * 60_000; // matches /codegraph init
 const STATUS_TIMEOUT_MS = 30_000;
 const UNLOCK_TIMEOUT_MS = 10_000;
 const FAILURE_RE = /✗|not initialized|stale lock|already locked|lock file/i;
@@ -350,7 +350,7 @@ export default function codegraph(pi: ExtensionAPI) {
 			"Symbol source + call paths from the project's CodeGraph index",
 		promptGuidelines: [
 			"Use codegraph_explore for structural questions: who calls a symbol, what it calls, what a symbol depends on, the call path between two symbols, or the blast radius of a change.",
-			"The index auto-initializes and auto-syncs; /codegraph-init forces a full rebuild.",
+			"The index auto-initializes and auto-syncs; /codegraph init forces a full rebuild.",
 		],
 		parameters: Type.Object({
 			query: Type.String({
@@ -391,15 +391,18 @@ export default function codegraph(pi: ExtensionAPI) {
 	});
 
 	// Command exceptions use the same non-persistent notification as CLI failures.
-	function registerCommand(name: string, command: Parameters<ExtensionAPI["registerCommand"]>[1]) {
-		pi.registerCommand(name, {
-			...command,
+	// `/codegraph <sub>` dispatches here. Indexing subcommands share the writer-slot guard.
+	type Subcommand = { description: string; handler: (args: string, ctx: ExtensionCommandContext) => Promise<void> };
+	const subcommands = new Map<string, Subcommand>();
+	function registerCommand(name: string, command: { description: string; handler: (args: string, ctx: ExtensionCommandContext) => Promise<void> }) {
+		subcommands.set(name, {
+			description: command.description,
 			handler: async (args, ctx) => {
 				const gen = sessionGen;
-				const indexes = name === "codegraph-init" || name === "codegraph-sync";
+				const indexes = name === "init" || name === "sync";
 				// A manual operation can replace a delayed retry, not a live writer.
 				if (indexes && currentOpToken !== 0 && retryTimer === null) {
-					if (ctx.hasUI) ctx.ui.notify(`CodeGraph: indexing already in progress. Try /${name} again when it finishes.`, "info");
+					if (ctx.hasUI) ctx.ui.notify(`CodeGraph: indexing already in progress. Try /codegraph ${name} again when it finishes.`, "info");
 					return;
 				}
 				if (indexes) cancelRetry();
@@ -410,7 +413,7 @@ export default function codegraph(pi: ExtensionAPI) {
 					if (gen !== sessionGen || runtimeAbort.signal.aborted) return;
 					await command.handler(args, ctx);
 				} catch (err) {
-					reportError(ctx, gen, `CodeGraph command /${name} failed`, err instanceof Error ? (err.stack ?? err.message) : String(err));
+					reportError(ctx, gen, `CodeGraph command /codegraph ${name} failed`, err instanceof Error ? (err.stack ?? err.message) : String(err));
 				} finally {
 					if (token && gen === sessionGen && currentOpToken === token) {
 						currentOpToken = 0;
@@ -423,15 +426,9 @@ export default function codegraph(pi: ExtensionAPI) {
 
 
 	// ── /codegraph settings ───────────────────────────────────────────────────
-	pi.registerCommand("codegraph", {
-		description: "CodeGraph: /codegraph settings edits global or project config",
-		getArgumentCompletions: (prefix: string) =>
-			"settings".startsWith(prefix) ? [{ value: "settings", label: "settings", description: "Edit global or project settings" }] : null,
-		handler: async (args, ctx) => {
-			if (args.trim() !== "settings") {
-				ctx.ui.notify("Usage: /codegraph settings", "warning");
-				return;
-			}
+	subcommands.set("settings", {
+		description: "Edit global or project settings",
+		handler: async (_args, ctx) => {
 			// Lazy: keeps pi-tui off the startup import graph.
 			const { jsonFileScope, openSettingsDialog } = await import("./settings-dialog.ts");
 			const root = findIndexRoot(ctx.cwd) ?? ctx.cwd;
@@ -446,8 +443,8 @@ export default function codegraph(pi: ExtensionAPI) {
 		},
 	});
 
-	// ── /codegraph-init ────────────────────────────────────────────────────
-	registerCommand("codegraph-init", {
+	// ── /codegraph init ────────────────────────────────────────────────────
+	registerCommand("init", {
 		description: "Build the CodeGraph index for the current project (codegraph init)",
 		handler: async (args, ctx) => {
 			const gen = sessionGen;
@@ -484,8 +481,8 @@ export default function codegraph(pi: ExtensionAPI) {
 		},
 	});
 
-	// ── /codegraph-sync ────────────────────────────────────────────────────
-	registerCommand("codegraph-sync", {
+	// ── /codegraph sync ────────────────────────────────────────────────────
+	registerCommand("sync", {
 		description: "Sync CodeGraph changes since last index (codegraph sync)",
 		handler: async (args, ctx) => {
 			const gen = sessionGen;
@@ -519,8 +516,8 @@ export default function codegraph(pi: ExtensionAPI) {
 		},
 	});
 
-	// ── /codegraph-status ──────────────────────────────────────────────────
-	registerCommand("codegraph-status", {
+	// ── /codegraph status ──────────────────────────────────────────────────
+	registerCommand("status", {
 		description: "Show CodeGraph index status and statistics",
 		handler: async (args, ctx) => {
 			const gen = sessionGen;
@@ -545,8 +542,8 @@ export default function codegraph(pi: ExtensionAPI) {
 		},
 	});
 
-	// ── /codegraph-unlock ──────────────────────────────────────────────────
-	registerCommand("codegraph-unlock", {
+	// ── /codegraph unlock ──────────────────────────────────────────────────
+	registerCommand("unlock", {
 		description: "Release stale CodeGraph database lock (codegraph unlock)",
 		handler: async (args, ctx) => {
 			const gen = sessionGen;
@@ -569,6 +566,25 @@ export default function codegraph(pi: ExtensionAPI) {
 				{ customType: "codegraph-unlock", content: out, display: true },
 				{ triggerTurn: false },
 			);
+		},
+	});
+
+	// ── /codegraph <subcommand> ───────────────────────────────────────────────
+	pi.registerCommand("codegraph", {
+		description: `CodeGraph: /codegraph ${[...subcommands.keys()].join("|")}`,
+		getArgumentCompletions: (prefix: string) => {
+			if (prefix.includes(" ")) return null;
+			const items = [...subcommands].filter(([sub]) => sub.startsWith(prefix)).map(([sub, { description }]) => ({ value: sub, label: sub, description }));
+			return items.length > 0 ? items : null;
+		},
+		handler: async (args, ctx) => {
+			const [sub = "", ...rest] = args.trim().split(/\s+/);
+			const command = subcommands.get(sub);
+			if (!command) {
+				ctx.ui.notify(`Usage: /codegraph <${[...subcommands.keys()].join("|")}> [path]`, "warning");
+				return;
+			}
+			await command.handler(rest.join(" "), ctx);
 		},
 	});
 

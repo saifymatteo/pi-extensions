@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `/orchestrator-tools` is now `/orchestrator tools`. The old name is gone.
+
 ### Added
 
 - `/orchestrator settings`: dialog for every on/off and numeric setting in the selected config file.

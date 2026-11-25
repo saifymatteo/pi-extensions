@@ -6,7 +6,7 @@
 
 ## Purpose and registrations
 
-Registers `zvec_search` (exact/fts/vector/hybrid/auto), `/zvec-init`, `/zvec-sync`, `/zvec-status`, `/zvec settings` (Global / Project dialog for every key), session and settle-sync hooks, and footer status.
+Registers `zvec_search` (exact/fts/vector/hybrid/auto), `/zvec init|sync|status|settings` (`settings` is a Global / Project dialog for every key), session and settle-sync hooks, and footer status.
 
 ## Configuration and external CLI
 

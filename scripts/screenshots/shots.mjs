@@ -363,7 +363,7 @@ export const SHOTS = {
   },
   'pi-orchestrator': async () => {
     const snap = await run({ extensions: ['pi-bg-bash', 'pi-wait', 'pi-orchestrator'], cols: 92, rows: 34 }, async s => {
-      await s.type('/orchestrator-tools'); s.key(KEY.enter); await s.waitFor('discovered extensions'); await s.settle(500);
+      await s.type('/orchestrator tools'); s.key(KEY.enter); await s.waitFor('discovered extensions'); await s.settle(500);
     });
     return { panels: [solo(rows(snap, { from: /orchestrator|keep/i }), { highlight: [/delegate/] })],
       caption: 'Orchestrator mode blocks the main agent\'s tools except a keep-list; work goes to subagents through delegate.' };

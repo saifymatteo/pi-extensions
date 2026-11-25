@@ -6,7 +6,7 @@ export async function showAskSettings(
 	ctx: Pick<ExtensionContext, "mode" | "ui">
 ): Promise<void> {
 	if (ctx.mode !== "tui") {
-		ctx.ui.notify("/ask-settings requires interactive TUI mode.", "error");
+		ctx.ui.notify("/ask settings requires interactive TUI mode.", "error");
 		return;
 	}
 	const store = getAskConfigStore();

@@ -4,6 +4,10 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `/zvec-init`, `/zvec-sync` and `/zvec-status` are now `/zvec init|sync|status`. The old names are gone.
+
 ### Added
 
 - `/zvec settings`: Global / Project dialog for `autoInit`, `syncOnSettle` and `embedding`.

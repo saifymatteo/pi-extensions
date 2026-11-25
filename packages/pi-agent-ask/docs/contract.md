@@ -303,7 +303,7 @@ Ordinary and background tool calls are captured. Recovering an interrupted tool 
 
 ## Product identity
 
-The npm package and product name are `pi-agent-ask`. Settings use `extensions/pi-agent-ask.json` under Pi's agent directory; upstream settings files are not read or changed. Local integration events use `pi-agent-ask:*` without old-name aliases. The only slash command is `/ask-settings`; agents ask through `ask_user`, not chat extraction or manual replay.
+The npm package and product name are `pi-agent-ask`. Settings use `extensions/pi-agent-ask.json` under Pi's agent directory; upstream settings files are not read or changed. Local integration events use `pi-agent-ask:*` without old-name aliases. The only slash command is `/ask settings`; agents ask through `ask_user`, not chat extraction or manual replay.
 
 ## Supported UX
 
@@ -322,7 +322,7 @@ The npm package and product name are `pi-agent-ask`. Settings use `extensions/pi
 - transcript-friendly call and result rendering
 - automatic recovery of the newest unresolved `ask_user` form on startup, resume, or fork
 - ask settings list with binary behaviour/notification toggles and a guarded reset-to-defaults action
-- `?` in the ask flow and `/ask-settings` in pi open the same lightweight ask settings overlay
+- `?` in the ask flow and `/ask settings` in pi open the same lightweight ask settings overlay
 - settings attempt to persist immediately when changed: `Auto-submit when answered without notes`, `Confirm dismiss when dirty`, `Double-press review shortcuts`, `Notifications`, and `Show footer hints`; `Present single-select as multi-select` persists immediately when saving succeeds but applies only to new/recovered ask flows; save failures revert the setting and show a manual-edit message; resetting config to defaults requires pressing the reset action twice within a short confirmation window
 - `Keymaps` is a persisted, context-aware config section for global, main-flow, editor, note-editor, and settings-modal actions
 - the settings list shows the absolute config file path for customizing keymaps and notifications

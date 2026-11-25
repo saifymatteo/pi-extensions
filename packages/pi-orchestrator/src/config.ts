@@ -16,7 +16,7 @@
  * discovered non-builtin extension (old ADR-0004 behavior; extensions that
  * re-register builtin tool names stay excluded from that auto-keep unless
  * explicitly listed as `ext:<id>` in keepTools). `discoverKeptTools` still
- * discovers non-builtin tools at runtime for the /orchestrator-tools display
+ * discovers non-builtin tools at runtime for the /orchestrator tools display
  * and the policy text.
  */
 
@@ -522,7 +522,7 @@ export function effectiveKeepTools(configKeepTools: string[], discovered: Discov
 	return Array.from(matchers);
 }
 
-/** Matchers currently responsible for keeping a tool (used by the /orchestrator-tools UI). */
+/** Matchers currently responsible for keeping a tool (used by the /orchestrator tools UI). */
 export function matchersForTool(
 	tool: { name: string; sourceInfo?: { path?: string; source?: string } },
 	keepTools: string[],

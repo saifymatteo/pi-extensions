@@ -560,14 +560,23 @@ ${policyCache.get()}` };
 
 	// ── Commands ────────────────────────────────────────────────────────────
 
+	const orchestratorSubcommands = [
+		{ value: "tools", label: "tools", description: "Edit the keep-list (checkbox UI)" },
+		{ value: "settings", label: "settings", description: "Edit orchestrator.jsonc" },
+	];
 	pi.registerCommand("orchestrator", {
-		description: "Toggle orchestrator mode (persisted to orchestrator.jsonc); /orchestrator settings edits the config",
-		getArgumentCompletions: (prefix: string) =>
-			"settings".startsWith(prefix) ? [{ value: "settings", label: "settings", description: "Edit orchestrator.jsonc" }] : null,
+		description: "Toggle orchestrator mode (persisted to orchestrator.jsonc); /orchestrator tools|settings",
+		getArgumentCompletions: (prefix: string) => {
+			const items = orchestratorSubcommands.filter((item) => item.value.startsWith(prefix));
+			return items.length > 0 ? items : null;
+		},
 		handler: async (args: string, ctx: any) => {
 			if (ctx?.ui) lastUi = ctx.ui;
-			if (args.trim() === "settings") {
-				await openOrchestratorSettings(ctx);
+			const sub = args.trim();
+			if (sub === "settings") return openOrchestratorSettings(ctx);
+			if (sub === "tools") return openToolEditor(ctx);
+			if (sub) {
+				ctx?.ui?.notify("Usage: /orchestrator [tools|settings] (no argument toggles orchestrator mode)", "warning");
 				return;
 			}
 			setEngaged(!engaged, ctx);
@@ -601,16 +610,16 @@ ${policyCache.get()}` };
 				},
 			],
 			fields: [...ORCHESTRATOR_SETTINGS_FIELDS],
-			footnote: "keepTools and overrides: /orchestrator-tools. childBlockedTools, childExtensions, modelOverrides and per-agent builtinFleet stay JSON-only.",
+			footnote: "keepTools and overrides: /orchestrator tools. childBlockedTools, childExtensions, modelOverrides and per-agent builtinFleet stay JSON-only.",
 		});
 	}
 
-	pi.registerCommand("orchestrator-tools", {
-		description: "Edit the orchestrator keep-list (checkbox UI)",
-		handler: async (_args: string, ctx: any) => {
+	// `/orchestrator tools`: the keep-list editor.
+	const openToolEditor = async (ctx: any): Promise<void> => {
+		{
 			if (ctx?.ui) lastUi = ctx.ui;
 			if (ctx?.mode !== "tui") {
-				ctx?.ui?.notify(`/orchestrator-tools requires TUI mode — edit ${getConfigPath(configCwd)} instead`, "warning");
+				ctx?.ui?.notify(`/orchestrator tools requires TUI mode — edit ${getConfigPath(configCwd)} instead`, "warning");
 				return;
 			}
 
@@ -694,6 +703,6 @@ ${policyCache.get()}` };
 					},
 				};
 			});
-		},
-	});
+		}
+	};
 }
