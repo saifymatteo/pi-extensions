@@ -13,7 +13,7 @@
       "type": "array",
       "uniqueItems": true,
       "default": [],
-      "description": "Packages to skip at load. Omitted or [] loads every package.",
+      "description": "Packages to skip at load; /pi-extensions settings edits it. Omitted or [] loads every package.",
       "items": {
         "enum": [
           "pi-9router",

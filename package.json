@@ -63,7 +63,8 @@
 			"./collection/pi-vision.ts",
 			"./collection/pi-wait.ts",
 			"./collection/pi-x-ide.ts",
-			"./collection/pi-zvec.ts"
+			"./collection/pi-zvec.ts",
+			"./collection/pi-extensions.ts"
 		],
 		"skills": [
 			"./packages/pi-vision/skills"

@@ -6,6 +6,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ### Added
 
+- `/pi-extensions` (collection only): pick any loaded package's settings; `/pi-extensions settings` turns packages on or off.
+- **Breaking:** hyphenated commands became subcommands: `/codegraph init|sync|status|unlock`, `/zvec init|sync|status`, `/orchestrator tools`, `/ask settings`. The `/session-*` commands keep their names because `/session` is a Pi built-in.
 - `/<command> settings` dialogs (modelled on pi-blackhole): `/ide`, `/codegraph`, `/zvec`, `/9router`, `/vision`, `/orchestrator`, plus pi-atelier Settings → Advanced…. Each lists every simple setting with Global / Project scope where the package reads a project file; lists and model chains stay JSON-only.
 - Every package with a JSON config creates its global `<agent-dir>/extensions/<name>.json` once when missing: `$schema` plus defaults (pi-9router, pi-atelier, pi-orchestrator, pi-x-ide; pi-codegraph, pi-zvec and pi-agent-ask already did), or `$schema` only where a model must be chosen (pi-session-rename, pi-vision, and `service-models.json` for pi-decisions and pi-tts). Existing files are never overwritten and project files are never created.
 - pi-x-ide: `/ide skip` or a click on the IDE widget pauses IDE context until toggled again; `zedNested: "auto"` attaches to a Zed window opened below Pi's working directory.

@@ -33,12 +33,20 @@ assert.equal(manifest.private, undefined, 'Root must stay publishable');
 assert.equal(manifest.license, 'AGPL-3.0-only');
 assert.deepEqual(manifest.publishConfig, { access: 'public' });
 assert.ok(manifest.files.includes('packages'), 'Root tarball must bundle the packages');
-assert.deepEqual([...manifest.pi.extensions].sort(), inventory.extensions.map(e => `./collection/${e.directory}.ts`).sort());
+// The collection adds one entry of its own: the /pi-extensions hub, loaded last.
+assert.deepEqual([...manifest.pi.extensions].sort(), [...inventory.extensions.map(e => `./collection/${e.directory}.ts`), './collection/pi-extensions.ts'].sort());
+assert.equal(manifest.pi.extensions.at(-1), './collection/pi-extensions.ts', 'The hub loads after every package');
 assert.equal(manifest.pi.extensions[0], './collection/pi-load-pi-dotenv.ts', 'Load environment before configured services');
 for (const { directory } of inventory.extensions) {
   assert.equal(readFileSync(resolve(root, 'collection', `${directory}.ts`), 'utf8'), `import extension from "../packages/${directory}/src/index.ts";\nimport { gate } from "./gate.ts";\n\nexport default gate("${directory}", extension);\n`, `collection/${directory}.ts: wrapper drift`);
 }
 assert.deepEqual(json(resolve(root, 'schemas/pi-extensions.schema.json')).properties.disabled.items.enum, inventory.extensions.map(e => e.directory), 'Collection schema drift');
+{
+  // /pi-extensions lists every package by gate name.
+  const hub = readFileSync(resolve(root, 'collection/pi-extensions.ts'), 'utf8');
+  const listed = [...hub.slice(hub.indexOf('const PACKAGES'), hub.indexOf('];', hub.indexOf('const PACKAGES'))).matchAll(/"(pi-[a-z0-9-]+)"/g)].map(m => m[1]);
+  assert.deepEqual(listed, inventory.extensions.map(e => e.directory), 'collection/pi-extensions.ts PACKAGES drift from inventory.json');
+}
 // Shared /<command> settings dialog: every package's copy must match pi-x-ide's.
 const dialogSource = readFileSync(resolve(root, 'packages/pi-x-ide/src/settings-dialog.ts'), 'utf8');
 for (const directory of actual) {

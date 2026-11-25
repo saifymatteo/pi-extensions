@@ -9,6 +9,6 @@
     "strict": false,
     "resolveJsonModule": true
   },
-  "include": ["packages/*/src/**/*.ts", "collection/gate.ts"],
+  "include": ["packages/*/src/**/*.ts", "collection/gate.ts", "collection/pi-extensions.ts"],
   "exclude": ["packages/pi-agent-ask/**", "packages/pi-atelier/**", "packages/pi-x-ide/**"]
 }

@@ -20,6 +20,12 @@ Every package that reads a JSON config follows one layout:
 - Drift: a package test asserts that the schema's top-level properties equal the default-config keys plus `$schema`. Schemas are never a runtime validation gate.
 - `service-models.json` is shared by pi-decisions and pi-tts; each ships an identical copy of its schema, and `scripts/check-packages.mjs` asserts the copies match.
 
+## Commands
+
+One command per package, with subcommands: `/codegraph init`, not `/codegraph-init`. Register a single `pi.registerCommand("<name>")`, dispatch on the first word of `args`, list every subcommand in `getArgumentCompletions`, and answer an unknown or missing subcommand with a usage line (unless the bare command already has a job, as `/orchestrator` toggles). Renames drop the old name without an alias and are listed in the changelog. Exception: a name that would sit under a Pi built-in (`/session` is built in, so the `/session-*` commands stay hyphenated).
+
+The root collection adds `collection/pi-extensions.ts` (never a standalone package): `/pi-extensions` opens a picker of loaded packages' settings commands (`SETTINGS_COMMANDS`), and `/pi-extensions settings` edits `disabled` in `pi-extensions.json`. When a package gains a settings command, add it to `SETTINGS_COMMANDS`; `check-packages` keeps the hub's `PACKAGES` list equal to `inventory.json`.
+
 ## Settings dialogs
 
 Every package whose JSON config has simple fields exposes them in a `/<command> settings` dialog, modelled on pi-blackhole's `/blackhole settings`.
@@ -31,7 +37,7 @@ Every package whose JSON config has simple fields exposes them in a `/<command> 
 - Fields: one exported `SETTINGS_FIELDS`-style list per package, with each description adapted from the schema. Set `requiresReload` on fields read only at startup; the save notice then says to `/reload`.
 - Tests: `test/settings-dialogs.test.mjs` drives each standalone dialog with real keys and asserts every simple schema property has a row. Packages with their own runner (pi-x-ide, pi-orchestrator, pi-atelier) carry the same two assertions in their tests. Adding a simple schema property without a row fails those tests.
 
-Current dialogs: `/ide settings`, `/codegraph settings`, `/zvec settings`, `/9router settings`, `/vision settings`, `/orchestrator settings`, pi-atelier Settings → Advanced…. pi-agent-ask keeps its own `/ask-settings` list. No dialog: pi-session-rename (only model chains and a deprecated key), pi-decisions and pi-tts (`service-models.json` is a provider list).
+Current dialogs: `/ide settings`, `/codegraph settings`, `/zvec settings`, `/9router settings`, `/vision settings`, `/orchestrator settings`, pi-atelier Settings → Advanced…. pi-agent-ask keeps its own list at `/ask settings`. No dialog: pi-session-rename (only model chains and a deprecated key), pi-decisions and pi-tts (`service-models.json` is a provider list).
 
 ## Agent skills
 
