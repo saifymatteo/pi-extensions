@@ -65,7 +65,7 @@ export function registerIdeCommand(
         { value: "attach", label: "attach", description: "Attach latest IDE selection to the prompt" },
         { value: "skip", label: "skip", description: "Pause or resume attaching IDE context to prompts" },
         { value: "install", label: "install", description: "Install or update the IDE extension" },
-        { value: "settings", label: "settings", description: "Open IDE settings (Display, AutoInstall, ...)" },
+        { value: "settings", label: "settings", description: "Edit global or project settings" },
       ];
       const filtered = subcommands.filter((s) => s.value.startsWith(argumentPrefix));
       return filtered.length > 0 ? filtered : null;
@@ -104,7 +104,7 @@ export function registerIdeCommand(
               await actions.installExtension(ctx);
               return;
             case "settings": {
-              // Keep SettingsList / pi-tui off the static shell import graph.
+              // Keep pi-tui off the static shell import graph.
               const { showIdeSettings } = await import("./config-ui.ts");
               await showIdeSettings(runtime, ctx);
               return;

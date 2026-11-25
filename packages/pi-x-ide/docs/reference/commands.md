@@ -13,37 +13,35 @@ connections.
 | `/ide attach`   | Manually insert the latest selection range into the input box.     |
 | `/ide skip`     | Pause or resume attaching IDE context to prompts.                  |
 | `/ide install`  | Install or update `balaenis.pi-x-ide` through a supported IDE CLI. |
-| `/ide settings` | Open IDE settings (`Display`, `AutoInstall`, …).                   |
+| `/ide settings` | Edit global or project settings.                                   |
 
 ### `/ide settings`
 
-Unified settings entry. Layout:
+Opens a picker for **Global** (`<agent-dir>/extensions/pi-x-ide.json`, from
+`$PI_CODING_AGENT_DIR` or `~/.pi/agent`) or **Project**
+(`<cwd>/.pi/extensions/pi-x-ide.json`, which overrides Global). Then it lists
+every setting for that file:
 
-```text
-Settings:
-→ Display       widget      IDE status placement: widget or statusline
-  AutoInstall   true        Auto-install VS Code-family extension on startup
-```
-
-| Setting       | Values                  | Config key / env            | Default  |
+| Setting       | Values                  | Config key                  | Default  |
 | ------------- | ----------------------- | --------------------------- | -------- |
 | `Display`     | `widget` / `statusline` | `status_display`            | `widget` |
-| `AutoInstall` | `true` / `false`        | `env.PI_X_IDE_AUTO_INSTALL` | `true`   |
+| `Zed nested`  | `manual` / `auto`       | `zedNested`                 | `manual` |
+| `AutoInstall` | on / off                | `env.PI_X_IDE_AUTO_INSTALL` | on       |
+| `Fix prompt`  | text (`\n` = newline)   | `fixPrompt`                 | built-in |
 
-Keybindings:
+A value not set in the open file shows dimmed as `default`, or as `inherited`
+from Global in the project file.
 
-| Key      | Action                              |
-| -------- | ----------------------------------- |
-| `↑`/`↓`  | Move between settings               |
-| `Space`  | Cycle the selected setting's value  |
-| `Ctrl+S` | Save all settings to global config  |
-| `Ctrl+P` | Save all settings to project config |
-| `Esc`    | Cancel without saving               |
+| Key             | Action                                              |
+| --------------- | --------------------------------------------------- |
+| `↑`/`↓`         | Move between settings                               |
+| `Space`/`Enter` | Toggle or cycle a value; edit text                  |
+| `x`             | Remove the key from this file (default / inherited) |
+| `Ctrl+S`        | Save this file                                      |
+| `Esc`           | Back to the picker (twice to discard changes)       |
 
-- **Global:** `<agent-dir>/extensions/pi-x-ide.json` (`$PI_CODING_AGENT_DIR` or `~/.pi/agent`)
-- **Project:** `<cwd>/.pi/extensions/pi-x-ide.json` (overrides global)
-
-`Display` applies immediately in the current Pi session. See
+`Display` applies immediately. `Zed nested` and `AutoInstall` apply after
+`/reload`. Other `env` overrides stay JSON-only. See
 [Configuration](configuration.md).
 
 ## Pause IDE context

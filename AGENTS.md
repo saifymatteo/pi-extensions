@@ -20,6 +20,19 @@ Every package that reads a JSON config follows one layout:
 - Drift: a package test asserts that the schema's top-level properties equal the default-config keys plus `$schema`. Schemas are never a runtime validation gate.
 - `service-models.json` is shared by pi-decisions and pi-tts; each ships an identical copy of its schema, and `scripts/check-packages.mjs` asserts the copies match.
 
+## Settings dialogs
+
+Every package whose JSON config has simple fields exposes them in a `/<command> settings` dialog, modelled on pi-blackhole's `/blackhole settings`.
+
+- Simple field: a boolean, enum, number or short string at the top level or one object level down (pi-9router `tools.fetch`). Arrays, maps, model chains, keymaps and provider lists stay JSON-only; the dialog's `footnote` names them and their file. Deprecated keys get no row.
+- Dialog: copy `packages/pi-x-ide/src/settings-dialog.ts` byte for byte into `<pkg>/src/settings-dialog.ts` and import it lazily inside the command handler, so pi-tui stays off the startup import graph. `scripts/check-packages.mjs` fails when a copy drifts; edit the pi-x-ide file, then copy it to every package that has one. A package using it lists `@earendil-works/pi-tui` and `@earendil-works/pi-coding-agent` as `*` peers.
+- Scopes: the dialog opens on a Global / Project picker when the package reads a project file (`jsonFileScope` for plain JSON), and goes straight to the fields when it reads only the global file. A package that selects one file instead of merging (pi-orchestrator) passes that file as its only scope with `inheritsGlobal: false`.
+- Command: `/<command> settings`, with `settings` in `getArgumentCompletions`. A package whose bare command already does something keeps it and adds the subcommand (`/orchestrator` still toggles). pi-atelier reaches the same dialog from its menu (Settings → Advanced…) because `/atelier` is a menu.
+- Fields: one exported `SETTINGS_FIELDS`-style list per package, with each description adapted from the schema. Set `requiresReload` on fields read only at startup; the save notice then says to `/reload`.
+- Tests: `test/settings-dialogs.test.mjs` drives each standalone dialog with real keys and asserts every simple schema property has a row. Packages with their own runner (pi-x-ide, pi-orchestrator, pi-atelier) carry the same two assertions in their tests. Adding a simple schema property without a row fails those tests.
+
+Current dialogs: `/ide settings`, `/codegraph settings`, `/zvec settings`, `/9router settings`, `/vision settings`, `/orchestrator settings`, pi-atelier Settings → Advanced…. pi-agent-ask keeps its own `/ask-settings` list. No dialog: pi-session-rename (only model chains and a deprecated key), pi-decisions and pi-tts (`service-models.json` is a provider list).
+
 ## Agent skills
 
 ### Issue tracker

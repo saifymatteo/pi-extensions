@@ -39,6 +39,12 @@ for (const { directory } of inventory.extensions) {
   assert.equal(readFileSync(resolve(root, 'collection', `${directory}.ts`), 'utf8'), `import extension from "../packages/${directory}/src/index.ts";\nimport { gate } from "./gate.ts";\n\nexport default gate("${directory}", extension);\n`, `collection/${directory}.ts: wrapper drift`);
 }
 assert.deepEqual(json(resolve(root, 'schemas/pi-extensions.schema.json')).properties.disabled.items.enum, inventory.extensions.map(e => e.directory), 'Collection schema drift');
+// Shared /<command> settings dialog: every package's copy must match pi-x-ide's.
+const dialogSource = readFileSync(resolve(root, 'packages/pi-x-ide/src/settings-dialog.ts'), 'utf8');
+for (const directory of actual) {
+  const copy = resolve(root, 'packages', directory, 'src/settings-dialog.ts');
+  if (existsSync(copy)) assert.equal(readFileSync(copy, 'utf8'), dialogSource, `${directory}: src/settings-dialog.ts drifted from pi-x-ide`);
+}
 assert.equal(readFileSync(resolve(root, 'packages/pi-decisions/schemas/service-models.schema.json'), 'utf8'), readFileSync(resolve(root, 'packages/pi-tts/schemas/service-models.schema.json'), 'utf8'), 'service-models schema copies drift');
 for (const skillPath of manifest.pi.skills ?? []) {
   assert.ok(existsSync(resolve(root, skillPath)), `root: skill path not found: ${skillPath}`);

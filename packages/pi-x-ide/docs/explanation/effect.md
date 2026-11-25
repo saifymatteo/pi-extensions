@@ -60,13 +60,13 @@ split guards if bundle size grows.
   (`runtime-services.ts`). The static shell must not import Effect.
 - `/ide settings` is a second lazy boundary: `commands.ts` dynamically imports
   `config-ui.ts` only when the settings subcommand runs. That keeps `pi-tui`
-  (SettingsList and friends) out of the static shell graph. The dialog seeds
-  pi-tui with the keybinding manager from `ctx.ui.custom()` so user remappings
-  apply.
+  out of the static shell graph. The dialog is the shared
+  `src/settings-dialog.ts` (identical copies in other packages; see the
+  collection `AGENTS.md`), which reads fixed keys (arrows, space, enter, x,
+  ctrl+s, esc) rather than Pi's remappable keybindings.
 - The diagnostic message renderer is a **local** Component-shaped helper
   (`render` / `invalidate`) so the shell never takes a runtime edge into
-  `@earendil-works/pi-tui`. Config UI uses a local `DynamicBorder` for the same
-  reason — no coding-agent value import for borders.
+  `@earendil-works/pi-tui`.
 - **Host packages come from Pi:** `@earendil-works/pi-coding-agent` and
   `@earendil-works/pi-tui` are peer dependencies that Pi supplies when it loads
   the extension, so value imports resolve to the host's own copies.
