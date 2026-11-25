@@ -27,7 +27,7 @@ import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { convertToPng, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { convertToPng, formatDimensionNote, resizeImage, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getNativeClipboard, type KeyId } from "@earendil-works/pi-tui";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024; // 20 MiB, matches the rest of the image pipeline
@@ -338,6 +338,7 @@ async function readClipboardImage(): Promise<ClipboardImage | null> {
 
 // Alt+V and Ctrl+Alt+V on every platform. Ctrl+V is deliberately left to the
 // terminal/built-in path paste so it can still forward non-image text.
+const ATTACHMENTS_TYPE = "clipboard-image-attachments";
 const PASTE_SHORTCUTS = ["alt+v", "ctrl+alt+v"] as KeyId[];
 
 export default function (pi: ExtensionAPI) {
@@ -473,32 +474,47 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	// Attach queued images on submit. Markers are the source of truth: delete
-	// `[Image #N]` and that image is not sent.
-	pi.on("input", (event) => {
+	// `[Image #N]` and that image is not sent. Resize here with core's limits so each
+	// coordinate note is labelled `[Image #N: ...]`; core then appends no unlabelled note.
+	pi.on("input", async (event, eventCtx) => {
 		if (event.source === "extension" || pending.length === 0) {
 			return { action: "continue" as const };
 		}
 
 		const images: Array<{ type: "image"; data: string; mimeType: string }> = [];
 		const pathLines: string[] = [];
-		for (const item of pending) {
+		const noteLines: string[] = [];
+		const items = pending;
+		pending = [];
+		nextIndex = 1;
+		const resizeOptions = (eventCtx ?? ctx)?.model?.inputLimits?.images?.resize;
+		for (const item of items) {
 			const label = item.marker.trim();
 			if (event.text.includes(label)) {
-				images.push({ type: "image" as const, data: item.base64, mimeType: item.mimeType });
+				const resized = await resizeImage(Buffer.from(item.base64, "base64"), item.mimeType, resizeOptions).catch(() => null);
+				// On failure, send the original and let core report or resize it.
+				images.push({ type: "image" as const, data: resized?.data ?? item.base64, mimeType: resized?.mimeType ?? item.mimeType });
 				// Reuse the marker's own number so `[Image #2]` maps to `Image #2: <path>`.
 				pathLines.push(`${label.slice(1, -1)}: ${item.path}`);
+				const note = resized && formatDimensionNote(resized);
+				if (note) noteLines.push(note.replace(/^\[Image: /, `[${label.slice(1, -1)}: `));
 			} else {
 				removeTempFile(item.path);
 			}
 		}
 
-		pending = [];
-		nextIndex = 1;
-
 		if (images.length === 0) {
 			return { action: "continue" as const };
 		}
-		return { action: "transform" as const, text: `${event.text}\n${pathLines.join("\n")}`, images };
+		const details = [...pathLines, ...(noteLines.length ? ["", ...noteLines] : [])].join("\n");
+		// Idle: keep the user's text clean and send paths/notes as a custom message right after it
+		// (nextTurn joins this run). While streaming a nextTurn message would wait for a later
+		// prompt, so steer/follow-up keeps them inline.
+		if (event.streamingBehavior) {
+			return { action: "transform" as const, text: `${event.text}\n${details}`, images };
+		}
+		pi.sendMessage({ customType: ATTACHMENTS_TYPE, content: details, display: true }, { deliverAs: "nextTurn" });
+		return { action: "transform" as const, text: event.text, images };
 	});
 
 	pi.on("session_start", (_event, sessionCtx) => {

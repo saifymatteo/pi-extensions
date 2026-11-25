@@ -102,17 +102,22 @@ test('image previews store only source references and do not duplicate model pay
   assert.equal(renderers['user-image-preview'](entries[1], {}, {}), undefined);
 });
 
-test('clipboard image path labels keep the marker number after an earlier image is removed', async () => {
+test('clipboard image path and resize-note labels keep the marker number after an earlier image is removed', async () => {
   const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
-  const hooks = {}; const shortcuts = {}; const pasted = [];
+  const hooks = {}; const shortcuts = {}; const pasted = []; const sent = [];
   const pi = {
     on: (name, fn) => { hooks[name] = fn; },
+    sendMessage: (message, options) => sent.push({ message, options }),
     registerShortcut: (key, { handler }) => { shortcuts[key] = handler; },
     events: { on: () => () => {}, emit: () => {} },
   };
   const fakeProcess = { ...process, platform: 'darwin', env: {} };
   loadExtension(source('pi-clipboard-image'), {
-    '@earendil-works/pi-coding-agent': { convertToPng: async () => null },
+    '@earendil-works/pi-coding-agent': {
+      convertToPng: async () => null,
+      resizeImage: async () => ({ data: 'c21hbGw=', mimeType: 'image/png', originalWidth: 2704, originalHeight: 694, width: 2000, height: 513, wasResized: true }),
+      formatDimensionNote: r => `[Image: original ${r.originalWidth}x${r.originalHeight}, displayed at ${r.width}x${r.height}. Multiply coordinates by 1.35 to map to original image.]`,
+    },
     '@earendil-works/pi-tui': { getNativeClipboard: () => ({ getImage: async () => png }) },
   }, { process: fakeProcess }).default(pi);
   hooks.session_start({}, { hasUI: true, ui: { pasteToEditor: text => pasted.push(text), notify: () => {} } });
@@ -121,9 +126,19 @@ test('clipboard image path labels keep the marker number after an earlier image 
   await shortcuts['alt+v']();
   assert.deepEqual(pasted, ['[Image #1] ', '[Image #2] ']);
 
-  const result = hooks.input({ source: 'interactive', text: 'look [Image #2]' });
+  const result = await hooks.input({ source: 'interactive', text: 'look [Image #2]' }, {});
   assert.equal(result.images.length, 1);
-  assert.match(result.text, /\nImage #2: .*clipboard-.*\.png$/);
-  assert.doesNotMatch(result.text, /Image #1:/);
+  assert.equal(result.images[0].data, 'c21hbGw=');
+  assert.equal(result.text, 'look [Image #2]');
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].options.deliverAs, 'nextTurn');
+  const details = sent[0].message.content;
+  assert.match(details, /^Image #2: .*clipboard-.*\.png\n\n\[Image #2: original 2704x694, displayed at 2000x513\./);
+  assert.doesNotMatch(details, /Image #1:|\[Image: /);
+
+  await shortcuts['alt+v']();
+  const steered = await hooks.input({ source: 'interactive', text: 'and [Image #1]', streamingBehavior: 'steer' }, {});
+  assert.match(steered.text, /^and \[Image #1\]\nImage #1: .*\n\n\[Image #1: original/);
+  assert.equal(sent.length, 1);
   hooks.session_shutdown();
 });

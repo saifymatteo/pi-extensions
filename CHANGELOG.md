@@ -4,6 +4,10 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Fixed
+
+- pi-clipboard-image: image paths and `[Image #N: original …]` resize notes move from the user message to a custom message.
+
 ## [0.1.26] - 2026-11-25
 
 ### Added
