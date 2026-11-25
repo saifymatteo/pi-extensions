@@ -34,6 +34,8 @@ import {
 	type OrchestratorConfig,
 } from "./config.ts";
 import * as fs from "node:fs";
+import * as path from "node:path";
+import { DEFAULT_CONFIG, ORCHESTRATOR_SETTINGS_FIELDS } from "./config-schema.ts";
 import { abortActiveRuns, clearFleetWidget, fleetTasksSnapshot, hasRunningTasks, idleFleetWidgetLines, registerDelegateTool, type DelegateDeps } from "./delegate.ts";
 import { createFleetPanel, renderFleetPanel } from "./fleet-panel.ts";
 import { buildPolicy } from "./policy.ts";
@@ -559,12 +561,49 @@ ${policyCache.get()}` };
 	// ── Commands ────────────────────────────────────────────────────────────
 
 	pi.registerCommand("orchestrator", {
-		description: "Toggle orchestrator mode (persisted to orchestrator.jsonc)",
-		handler: async (_args: string, ctx: any) => {
+		description: "Toggle orchestrator mode (persisted to orchestrator.jsonc); /orchestrator settings edits the config",
+		getArgumentCompletions: (prefix: string) =>
+			"settings".startsWith(prefix) ? [{ value: "settings", label: "settings", description: "Edit orchestrator.jsonc" }] : null,
+		handler: async (args: string, ctx: any) => {
 			if (ctx?.ui) lastUi = ctx.ui;
+			if (args.trim() === "settings") {
+				await openOrchestratorSettings(ctx);
+				return;
+			}
 			setEngaged(!engaged, ctx);
 		},
 	});
+
+	// One config file is selected (project, else user) and never merged, so the dialog edits exactly that file.
+	async function openOrchestratorSettings(ctx: any): Promise<void> {
+		const { openSettingsDialog } = await import("./settings-dialog.ts");
+		const file = getConfigPath(configCwd);
+		const project = file.startsWith(path.join(configCwd, ".pi") + path.sep);
+		await openSettingsDialog(ctx, {
+			title: "Orchestrator settings",
+			scopes: [
+				{
+					id: project ? "project" : "global",
+					path: file,
+					inheritsGlobal: false,
+					read: () => ({ ...config }),
+					save: (patch) => {
+						const next = { ...config, ...patch } as OrchestratorConfig;
+						for (const field of ORCHESTRATOR_SETTINGS_FIELDS) {
+							if (patch[field.key] === undefined && field.key in patch) (next as any)[field.key] = (DEFAULT_CONFIG as any)[field.key];
+						}
+						saveConfig(next, configCwd);
+						config = loadConfig(configCwd);
+						policyCache.invalidate();
+						if (engaged !== config.enabled) setEngaged(config.enabled, ctx, { persist: false, quiet: true });
+						else if (engaged) applyReduction();
+					},
+				},
+			],
+			fields: [...ORCHESTRATOR_SETTINGS_FIELDS],
+			footnote: "keepTools and overrides: /orchestrator-tools. childBlockedTools, childExtensions, modelOverrides and per-agent builtinFleet stay JSON-only.",
+		});
+	}
 
 	pi.registerCommand("orchestrator-tools", {
 		description: "Edit the orchestrator keep-list (checkbox UI)",

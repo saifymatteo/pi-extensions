@@ -57,3 +57,5 @@ export function truncateToWidth(text) {
 export function visibleWidth() {
 	return 0;
 }
+// Used by the shared settings dialog (src/settings-dialog.ts); re-exported from the real package.
+export { decodeKittyPrintable, Key, matchesKey } from "../../../../node_modules/@earendil-works/pi-tui/dist/index.js";

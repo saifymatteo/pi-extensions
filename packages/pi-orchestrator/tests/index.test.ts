@@ -21,6 +21,7 @@ import {
 	withParentPrompt,
 } from "../src/index.ts";
 import { DEFAULT_CONFIG, loadConfig, type OrchestratorConfig } from "../src/config.ts";
+import { ORCHESTRATOR_SETTINGS_FIELDS } from "../src/config-schema.ts";
 import { buildPolicy } from "../src/policy.ts";
 import type { AgentConfig } from "../src/agents.ts";
 
@@ -856,5 +857,41 @@ test("ENGAGED session_start still reduces to the keep-list (unchanged)", async (
 		assert.equal(calls.length, 1);
 		// DEFAULT_CONFIG.keepTools is ["delegate"] → keep-list-only leaves delegate.
 		assert.deepEqual(stub.getActiveTools(), ["delegate"]);
+	});
+});
+
+test("/orchestrator settings lists every simple key and saves into the selected config file", async () => {
+	await withAgentDir(true, async () => {
+		const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
+		const { stub, handlers } = toolsetPi(editableTools());
+		(await loadExtension())(stub);
+		await handlers.session_start[0]({}, {});
+		const notes: string[] = [];
+		let frame = "";
+		const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
+		await handlers.command.orchestrator("settings", {
+			mode: "tui",
+			hasUI: true,
+			ui: {
+				notify: (message: string) => notes.push(message),
+				custom: (build: any) =>
+					new Promise((resolve) => {
+						const dialog = build({ requestRender() {} }, theme, {}, resolve);
+						frame = dialog.render(200).join("\n");
+						// Engaged is first: toggle it off, then move to Max turns and set 7.
+						for (const key of [" ", ...Array(6).fill("\u001b[B"), "\r", "\u007f", "\u007f", "7", "\r", String.fromCharCode(19)]) dialog.handleInput(key);
+					}),
+			},
+		});
+		for (const key of ["enabled", "showFleetWidget", "async", "forwardParentPrompt", "childSessions", "maxTurns", "maxConcurrency", "maxQueuedRuns", "stallTimeoutMs"]) {
+			assert.ok(ORCHESTRATOR_SETTINGS_FIELDS.some((field) => field.key === key), `${key} missing from /orchestrator settings`);
+		}
+		assert.match(frame, /Orchestrator settings · Global/);
+		const saved = loadConfig();
+		assert.equal(saved.enabled, false);
+		assert.equal(saved.maxTurns, 7);
+		assert.deepEqual(saved.keepTools, DEFAULT_CONFIG.keepTools, "unedited keys keep their values");
+		assert.match(notes.at(-1)!, /Saved Global settings/);
+		assert.ok(fs.existsSync(path.join(dir, "extensions", "orchestrator.jsonc")));
 	});
 });
