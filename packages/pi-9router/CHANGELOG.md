@@ -4,6 +4,8 @@ All notable changes to this package are documented here. Formats follow [Keep a 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-25
+
 ### Added
 
 - `/9router settings`: dialog for the base URL, combo reasoning on/off and the tool switches.

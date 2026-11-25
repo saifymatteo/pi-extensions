@@ -4,6 +4,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-25
+
 ### Added
 
 - A missing `extensions/service-models.json` is created once as `$schema` plus empty `providers`; the tool stays disabled until a TTS model is added. An existing file is never overwritten.

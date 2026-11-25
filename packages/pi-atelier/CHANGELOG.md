@@ -4,6 +4,8 @@ Release notes are recorded from 0.20.1 onward. Earlier fork and upstream history
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-11-25
+
 ### Added
 
 - Settings → Advanced…: shortcuts, context thresholds, cost decimals and sidebar width.

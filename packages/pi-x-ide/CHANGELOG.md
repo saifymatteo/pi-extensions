@@ -4,6 +4,8 @@ Release notes are recorded from 1.21.0 onward. Earlier fork history: [saifymatte
 
 ## [Unreleased]
 
+## [1.24.0] - 2026-11-25
+
 ### Added
 
 - `/ide settings` opens a Global / Project picker and lists every setting, now including `Zed nested` and `Fix prompt`. `x` removes a key so the file inherits; `Ctrl+P` is gone (pick Project instead).

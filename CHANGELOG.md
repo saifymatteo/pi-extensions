@@ -4,6 +4,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.26] - 2026-11-25
+
 ### Added
 
 - `/pi-extensions` (collection only): pick any loaded package's settings; `/pi-extensions settings` turns packages on or off.

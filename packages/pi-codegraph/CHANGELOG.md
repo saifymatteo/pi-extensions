@@ -4,6 +4,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-25
+
 ### Changed
 
 - **Breaking:** `/codegraph-init`, `/codegraph-sync`, `/codegraph-status` and `/codegraph-unlock` are now `/codegraph init|sync|status|unlock`. The old names are gone.

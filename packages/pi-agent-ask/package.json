@@ -1,6 +1,6 @@
 {
   "name": "@saifymatteo/pi-agent-ask",
-  "version": "1.3.0",
+  "version": "2.0.0",
   "license": "AGPL-3.0-only",
   "type": "module",
   "description": "Let your Pi agent ask instead of guessing, and keep working while you answer",
