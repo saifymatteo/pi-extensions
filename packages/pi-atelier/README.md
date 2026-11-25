@@ -16,7 +16,7 @@ Published to npm as [`@saifymatteo/pi-atelier`](https://www.npmjs.com/package/@s
 
 ## Configuration
 
-Settings live in `~/.pi/agent/extensions/pi-atelier.json` (Pi's agent directory). A missing file is created once with every default. A trusted project can override them in `.pi/extensions/pi-atelier.json`. Add the `$schema` line for editor completion:
+Settings live in `~/.pi/agent/extensions/pi-atelier.json` (Pi's agent directory). `/atelier` → Settings edits them; Settings → Advanced… covers shortcuts, context thresholds, cost decimals and sidebar width. A missing file is created once with every default. A trusted project can override them in `.pi/extensions/pi-atelier.json`. Add the `$schema` line for editor completion:
 
 ```json
 {

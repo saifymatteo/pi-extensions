@@ -12,7 +12,7 @@ import {
 	Text,
 	truncateToWidth,
 } from "@earendil-works/pi-tui";
-import { saveUserConfigPatch } from "./config.js";
+import { DEFAULT_CONFIG, saveUserConfigPatch } from "./config.js";
 import { isLifetimeActive, openLifecycleOverlay, type OverlayLifetime } from "./overlay-lifecycle.js";
 import type { ThemeLike } from "./palette.js";
 import {
@@ -406,6 +406,28 @@ export async function openDisplaySettingsWorkspace(
 
 const onOff = (value: boolean): string => (value ? "On" : "Off");
 
+const shortcutField = (key: "shortcut" | "resizeShortcut" | "toggleShortcut", label: string, description: string) =>
+	({ key, label, description, type: "text", default: DEFAULT_CONFIG[key], requiresReload: true }) as const;
+
+/**
+ * Advanced settings: simple user-file keys with no dedicated menu row. Layouts and lists
+ * (segmentLayout, sidebarPanelLayout, prefillViews, prefillProviders, extensionStatusOrder) stay
+ * in the Display workspace or JSON. Exported for tests.
+ */
+export const ADVANCED_SETTINGS_FIELDS = [
+	shortcutField("shortcut", "Menu shortcut", "Shortcut that opens the Atelier menu."),
+	shortcutField("resizeShortcut", "Resize shortcut", "Shortcut that resizes the sidebar."),
+	shortcutField("toggleShortcut", "Toggle shortcut", "Shortcut that toggles the sidebar; empty leaves it unbound."),
+	{ key: "contextWarning", label: "Context warning %", type: "number", min: 0, max: 100, default: DEFAULT_CONFIG.contextWarning,
+		description: "Context usage percentage that shows the warning color; must be below Context danger %." },
+	{ key: "contextDanger", label: "Context danger %", type: "number", min: 0, max: 100, default: DEFAULT_CONFIG.contextDanger,
+		description: "Context usage percentage that shows the danger color; must be above Context warning %." },
+	{ key: "currencyDecimals", label: "Cost decimals", type: "number", integer: true, min: 0, max: 6, default: DEFAULT_CONFIG.currencyDecimals,
+		description: "Decimal places shown for costs." },
+	{ key: "sidebarWidth", label: "Sidebar width", type: "number", integer: true, min: 28, max: 72, default: DEFAULT_CONFIG.sidebarWidth,
+		description: "Sidebar width in columns (the resize shortcut also sets it)." },
+] as const;
+
 export async function openAtelierControlCenter(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
@@ -470,6 +492,11 @@ export async function openAtelierControlCenter(
 					description: "Show how far a local model has read the prompt (user preference)",
 				},
 				{
+					value: "advanced",
+					label: "Advanced…",
+					description: "Shortcuts, context thresholds, cost decimals and sidebar width",
+				},
+				{
 					value: "sidebar-tools",
 					label: `Sidebar tool list: ${sidebar.isToolListExpanded() ? "Expanded" : "Collapsed"}`,
 					description: "User preference",
@@ -509,6 +536,30 @@ export async function openAtelierControlCenter(
 				case "sidebar-tools":
 					await sidebar.toggleToolList();
 					break;
+				case "advanced": {
+					const { openSettingsDialog } = await import("./settings-dialog.js");
+					await openSettingsDialog(ctx, {
+						title: "Pi Atelier settings",
+						scopes: [
+							{
+								id: "global",
+								path: userConfigPath,
+								read: () => ({ ...runtime.getConfig() }),
+								save: async (patch) => {
+									const resolved = Object.fromEntries(
+										Object.entries(patch).map(([key, value]) => [key, value ?? DEFAULT_CONFIG[key as keyof typeof DEFAULT_CONFIG]]),
+									) as Partial<AtelierConfig>;
+									await savePatch(userConfigPath, resolved);
+									runtime.setConfig({ ...runtime.getConfig(), ...resolved });
+									requestAllRenders();
+								},
+							},
+						],
+						fields: [...ADVANCED_SETTINGS_FIELDS],
+						footnote: "Status Rail and sidebar layouts: Display. prefillViews, prefillProviders and extensionStatusOrder stay JSON-only.",
+					});
+					break;
+				}
 				default:
 					return;
 			}

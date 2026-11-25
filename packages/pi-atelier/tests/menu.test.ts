@@ -16,7 +16,10 @@ vi.mock("@earendil-works/pi-tui", async (importOriginal) => {
 	};
 });
 
+import { readFileSync } from "node:fs";
+const schema = JSON.parse(readFileSync(new URL("../schemas/pi-atelier.schema.json", import.meta.url), "utf8"));
 import {
+	ADVANCED_SETTINGS_FIELDS,
 	createMenuActions,
 	openAtelierControlCenter,
 	openDisplaySettingsWorkspace,
@@ -150,6 +153,7 @@ describe("Control Center presentation", () => {
 			"Sidebar on startup: On",
 			"Completion notifications: On",
 			"Prefill progress: On",
+			"Advanced…",
 			"Sidebar tool list: Collapsed",
 			"Back",
 		];
@@ -264,6 +268,40 @@ describe("Control Center presentation", () => {
 		workspace.handleInput("s");
 		expect(h.savePatch).toHaveBeenCalledOnce();
 		expect(requestAllRenders).toHaveBeenCalled();
+	});
+
+	it("Settings → Advanced edits every simple user key with no dedicated row and saves it", async () => {
+		const h = harness();
+		const components: any[] = [];
+		const ctx = { ...contextWithSelections(["settings", "advanced"], undefined, components), hasUI: true };
+		// The Advanced dialog resolves itself through done(); drive it before the menu reads back.
+		ctx.ui.custom = vi.fn((factory: (...args: any[]) => any) => {
+			if (components.length < 2) {
+				components.push(factory({ requestRender: vi.fn() }, { fg: (_c: string, t: string) => t, bold: (t: string) => t }, {}, vi.fn()));
+				return Promise.resolve(components.length === 1 ? "settings" : "advanced");
+			}
+			if (components.length === 2) {
+				return new Promise((resolve) => {
+					const dialog = factory({ requestRender: vi.fn() }, { fg: (_c: string, t: string) => t, bold: (t: string) => t }, {}, resolve);
+					components.push(dialog);
+					// Move to Cost decimals (6th row) and set it to 5.
+					for (const key of [...Array(5).fill("\u001b[B"), "\r", "\u007f", "5", "\r", String.fromCharCode(19)]) dialog.handleInput(key);
+				});
+			}
+			return Promise.resolve(undefined);
+		}) as never;
+		await openAtelierControlCenter(h.pi as never, ctx as never, h.runtime as never, "/tmp/user.json", sidebarControls(), undefined, h.savePatch);
+		expect(components[2].render(120).join("\n")).toContain("Pi Atelier settings · Global");
+		expect(h.savePatch).toHaveBeenCalledWith("/tmp/user.json", { currencyDecimals: 5 });
+		expect(h.runtime.getConfig().currencyDecimals).toBe(5);
+		const simple = Object.entries(schema.properties as Record<string, any>)
+			.filter(([key, prop]) => key !== "$schema" && !prop.deprecated && (["boolean", "integer", "number", "string"].includes(prop.type) || prop.enum))
+			.map(([key]) => key);
+		// Keys with a dedicated Settings row or the Display workspace.
+		const elsewhere = ["preset", "density", "nerdFont", "showFooter", "sidebarStyle", "showSidebarOnStartup", "completionNotifications", "prefillEnabled", "showSidebarToolNames"];
+		for (const key of simple) {
+			expect(elsewhere.includes(key) || ADVANCED_SETTINGS_FIELDS.some((field) => field.key === key), `${key} has no settings UI`).toBe(true);
+		}
 	});
 
 	it("toggles and persists Sidebar startup from Settings", async () => {

@@ -6,6 +6,7 @@ Release notes are recorded from 0.20.1 onward. Earlier fork and upstream history
 
 ### Added
 
+- Settings → Advanced…: shortcuts, context thresholds, cost decimals and sidebar width.
 - A missing `extensions/pi-atelier.json` is created once with `$schema` and every default. An existing file is never overwritten; project files are never created.
 
 ## [0.21.0] - 2026-11-25
