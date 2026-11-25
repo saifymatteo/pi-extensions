@@ -351,3 +351,29 @@ test('startup registers cached models at once and never waits on the router', as
     if (prevCache === undefined) delete process.env.XDG_CACHE_HOME; else process.env.XDG_CACHE_HOME = prevCache;
   }
 });
+
+test('missing 9router.json is created once with $schema and defaults (no baseUrl), never overwritten', () => {
+  const dir = tempAgentDir();
+  const prev = process.env.PI_CODING_AGENT_DIR;
+  const prevBase = process.env.ROUTER_API_BASE;
+  process.env.PI_CODING_AGENT_DIR = dir;
+  process.env.ROUTER_API_BASE = 'https://env.invalid/v1';
+  try {
+    const c = loadExtension(configPathSource);
+    c.ensureConfig();
+    const path = join(dir, 'extensions', '9router.json');
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), {
+      $schema: 'https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-9router/schemas/9router.schema.json',
+      comboReasoning: true,
+      tools: { fetch: true, search: true, transcribe: true },
+    });
+    assert.equal(c.loadConfig().baseUrl, 'https://env.invalid/v1', 'ROUTER_API_BASE still applies');
+    writeFileSync(path, '{"baseUrl":"https://file.invalid"}');
+    c.ensureConfig();
+    assert.equal(readFileSync(path, 'utf8'), '{"baseUrl":"https://file.invalid"}');
+  } finally {
+    prev === undefined ? delete process.env.PI_CODING_AGENT_DIR : process.env.PI_CODING_AGENT_DIR = prev;
+    prevBase === undefined ? delete process.env.ROUTER_API_BASE : process.env.ROUTER_API_BASE = prevBase;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

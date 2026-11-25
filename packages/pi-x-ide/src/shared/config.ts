@@ -8,6 +8,7 @@ import {
   isConfigEnvValue,
   STATUS_DISPLAY_VALUES,
   type StatusDisplay,
+  CONFIG_OPTIONS,
   DEFAULT_ZED_NESTED,
   ZED_NESTED_VALUES,
   type ZedNested,
@@ -112,6 +113,22 @@ export function migrateLegacyGlobalConfig(home?: string): { from: string; to: st
     // Not empty or already gone.
   }
   return { from, to };
+}
+
+/**
+ * Create the global config once when missing (and no legacy file waits to be moved), with `$schema`
+ * and every top-level default. Never overwrites and never writes project config; a failed write is ignored.
+ */
+export function ensureGlobalConfig(home?: string): void {
+  const path = resolvePiGlobalConfigPath(home);
+  if (existsSync(path) || existsSync(resolveLegacyPiGlobalConfigPath(home))) return;
+  const defaults = Object.fromEntries(Object.entries(CONFIG_OPTIONS).map(([key, option]) => [key, option.default]));
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, `${JSON.stringify({ $schema: SCHEMA_URL, ...defaults }, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+  } catch {
+    // Read-only agent dir, or created concurrently: defaults stay in memory.
+  }
 }
 
 export const SCHEMA_URL =

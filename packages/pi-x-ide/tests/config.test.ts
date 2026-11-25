@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { CONFIG_ENV_OPTIONS, CONFIG_OPTIONS } from "../src/shared/config-options.ts";
 import {
+  ensureGlobalConfig,
   isAutoZedNestedEnabled,
   migrateLegacyGlobalConfig,
   readPiConfigStatusDisplay,
@@ -152,4 +153,23 @@ void test("zedNested defaults to manual; auto applies below $HOME but never at $
 
   await writeFile(resolvePiProjectConfigPath(project), JSON.stringify({ zedNested: "manual" }));
   assert.equal(isAutoZedNestedEnabled(project, home), false, "project overrides global");
+});
+
+void test("ensureGlobalConfig creates the global file once with $schema and defaults, never over an existing or legacy file", async () => {
+  const home = await tempHome();
+  const path = resolvePiGlobalConfigPath(home);
+  ensureGlobalConfig(home);
+  const created = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+  assert.equal(created.$schema, SCHEMA_URL);
+  for (const [name, option] of Object.entries(CONFIG_OPTIONS)) assert.equal(created[name], option.default, name);
+
+  await writeFile(path, JSON.stringify({ status_display: "statusline" }));
+  ensureGlobalConfig(home);
+  assert.equal(readPiConfigStatusDisplay({ home }), "statusline", "existing file kept");
+
+  const legacyHome = await tempHome();
+  await mkdir(dirname(resolveLegacyPiGlobalConfigPath(legacyHome)), { recursive: true });
+  await writeFile(resolveLegacyPiGlobalConfigPath(legacyHome), "{}");
+  ensureGlobalConfig(legacyHome);
+  assert.equal(await exists(resolvePiGlobalConfigPath(legacyHome)), false, "legacy file is moved, not shadowed");
 });

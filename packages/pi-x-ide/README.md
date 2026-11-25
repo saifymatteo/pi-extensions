@@ -35,7 +35,7 @@ Upstream follows Zed only when Pi runs in Zed's own terminal. Here Pi attaches f
 
 ## Configuration
 
-`~/.pi/agent/extensions/pi-x-ide.json` (global; `$PI_CODING_AGENT_DIR/extensions/` when set) or `<project>/.pi/extensions/pi-x-ide.json`. An existing `~/.pi/pi-x-ide/config.json` moves to the global path on the next start. Set `"$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-x-ide/schemas/pi-x-ide.schema.json"` for editor completion; [`examples/pi-x-ide.example.json`](examples/pi-x-ide.example.json) shows every option. Full reference: [Configuration](docs/reference/configuration.md).
+`~/.pi/agent/extensions/pi-x-ide.json` (global; `$PI_CODING_AGENT_DIR/extensions/` when set) or `<project>/.pi/extensions/pi-x-ide.json`. An existing `~/.pi/pi-x-ide/config.json` moves to the global path on the next start; otherwise a missing global file is created with every default. Set `"$schema": "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-x-ide/schemas/pi-x-ide.schema.json"` for editor completion; [`examples/pi-x-ide.example.json`](examples/pi-x-ide.example.json) shows every option. Full reference: [Configuration](docs/reference/configuration.md).
 
 ## Documentation
 

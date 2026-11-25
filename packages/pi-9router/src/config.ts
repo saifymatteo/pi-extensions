@@ -197,6 +197,22 @@ function persisted(cfg: RouterConfig, currentSchema: unknown): Record<string, un
 	return out;
 }
 
+/**
+ * Create the global config once when missing, with every default except baseUrl (a written
+ * empty baseUrl would override ROUTER_API_BASE). Never overwrites; a failed write is ignored.
+ */
+export function ensureConfig(): void {
+	const path = configPath();
+	if (existsSync(path)) return;
+	const defaults = { $schema: SCHEMA_URL, comboReasoning: true, tools: { fetch: true, search: true, transcribe: true } };
+	try {
+		mkdirSync(dirname(path), { recursive: true });
+		writeFileSync(path, `${JSON.stringify(defaults, null, 2)}\n`, { mode: 0o600, flag: "wx" });
+	} catch {
+		// read-only agent dir, or created concurrently: defaults stay in memory
+	}
+}
+
 export function saveConfig(cfg: RouterConfig): void {
 	const path = configPath();
 	mkdirSync(dirname(path), { recursive: true });

@@ -15,6 +15,7 @@ import * as jsonc from "jsonc-parser";
 
 import {
 	builtinThinkingOverrides,
+	DEFAULT_CONFIG,
 	discoverKeptTools,
 	effectiveKeepTools,
 	getConfigPath,
@@ -582,11 +583,24 @@ test("saveConfig: replaces only legacy jsdelivr schema URLs and preserves commen
 	}
 });
 
-test("loadConfig: schema metadata neither changes normalization nor causes writes", () => {
+test("loadConfig: a missing user config is created once with $schema and defaults, never in the project", () => {
 	withConfigFiles({}, () => {
-		loadConfig();
-		assert.deepEqual(fs.readdirSync(process.env.PI_ORCH_TEST_AGENT_DIR!), []);
+		const dir = process.env.PI_ORCH_TEST_AGENT_DIR!;
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-orch-cwd-"));
+		const created = path.join(dir, "extensions", "orchestrator.jsonc");
+		assert.deepEqual(loadConfig(cwd), DEFAULT_CONFIG);
+		assert.deepEqual(JSON.parse(fs.readFileSync(created, "utf8")), { $schema: expectedSchemaUrl, ...DEFAULT_CONFIG });
+		assert.equal(fs.existsSync(path.join(cwd, ".pi")), false);
+		fs.writeFileSync(created, '{ "maxTurns": 9 }');
+		assert.equal(loadConfig(cwd).maxTurns, 9, "an existing file is never overwritten");
 	});
+	withConfigFiles({ "orchestrator.json": "{}" }, () => {
+		loadConfig();
+		assert.equal(fs.existsSync(path.join(process.env.PI_ORCH_TEST_AGENT_DIR!, "extensions", "orchestrator.jsonc")), false, "an unmoved legacy config suppresses creation");
+	});
+});
+
+test("loadConfig: schema metadata neither changes normalization nor causes writes", () => {
 	const source = JSON.stringify({ $schema: "https://example.invalid/custom.json", maxTurn: 7, maxTurns: 0, async: false, keepTools: ["todo", 42, " "] });
 	withConfigFiles({ "extensions/orchestrator.jsonc": source }, () => {
 		const config = loadConfig();

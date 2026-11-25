@@ -36,7 +36,20 @@ const FORK_PREFIX = "⑂ ";
 const STATE_FILE = path.join(os.homedir(), ".pi", "herdr-tab-state.json");
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent");
 const CONFIG_FILE = path.join(AGENT_DIR, "extensions", "session-rename.json");
+const SCHEMA_URL =
+  "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-session-rename/schemas/session-rename.schema.json";
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+
+// No usable default model exists, so a missing config is created once with only `$schema`
+// for editor completion. Never overwrites; a failed write is ignored.
+export function ensureConfig(): void {
+  try {
+    fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
+    fs.writeFileSync(CONFIG_FILE, `${JSON.stringify({ $schema: SCHEMA_URL }, null, 2)}\n`, { flag: "wx" });
+  } catch {
+    // exists already, or the agent dir is read-only
+  }
+}
 type Thinking = typeof THINKING_LEVELS[number];
 
 type ModelEntry = { provider: string; id: string; thinking: Thinking; baseUrl?: string };
@@ -248,6 +261,7 @@ function cleanTitle(text: string): string {
 
 export default function (pi: ExtensionAPI) {
   if (isSubSessionProcess()) return;
+  ensureConfig();
   const tabId = process.env.HERDR_ENV === "1" ? TAB_ID : undefined;
 
   let originalLabel: string | undefined;

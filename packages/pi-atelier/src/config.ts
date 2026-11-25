@@ -530,6 +530,7 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ConfigLoad
 	const migration = options.legacyUserPath
 		? await migrateUserConfig(options.userPath, options.legacyUserPath)
 		: { path: options.userPath };
+	if (migration.path === options.userPath) await ensureUserConfig(options.userPath);
 	const user = await readJson(migration.path);
 	let project: { value?: unknown; warning?: string } = {};
 	if (options.projectTrusted) {
@@ -542,6 +543,17 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ConfigLoad
 		(item): item is string => item !== undefined,
 	);
 	return { ...resolved, warnings: [...fileWarnings, ...resolved.warnings] };
+}
+
+/** Create the user config once when missing, with `$schema` and every default. Never overwrites; a failed write is ignored. */
+async function ensureUserConfig(path: string): Promise<void> {
+	try {
+		await mkdir(dirname(path), { recursive: true });
+		const document = { $schema: SCHEMA_URL, ...DEFAULT_CONFIG };
+		await writeFile(path, `${JSON.stringify(document, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+	} catch {
+		// Exists already, or the agent dir is read-only: defaults stay in memory.
+	}
 }
 
 /** Pending saves per path; each read-merge-write waits for the previous one. */

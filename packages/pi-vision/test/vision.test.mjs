@@ -89,3 +89,22 @@ test('schema properties match the config keys the loader reads plus $schema', as
   assert.equal(schema.$id, 'https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-vision/schemas/vision-toolkit.schema.json');
   assert.deepEqual(Object.keys(schema.properties).sort(), [...read, '$schema'].sort());
 });
+
+test('missing vision-toolkit.json is created once with only $schema; an existing file is kept', async () => {
+  const { mkdtempSync, readFileSync, writeFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'pi-vision-create-'));
+  const { ensureConfig, loadVisionChain } = loadExtension(fileURLToPath(new URL('../src/index.ts', import.meta.url)), {}, {
+    process: { ...process, env: { PI_CODING_AGENT_DIR: dir } },
+  });
+  const path = join(dir, 'extensions', 'vision-toolkit.json');
+  ensureConfig();
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), {
+    $schema: 'https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-vision/schemas/vision-toolkit.schema.json',
+  });
+  assert.match(loadVisionChain().error, /no usable "model"/, 'the $schema-only file still asks for a model');
+  writeFileSync(path, '{"model":{"provider":"a","id":"b"}}');
+  ensureConfig();
+  assert.equal(readFileSync(path, 'utf8'), '{"model":{"provider":"a","id":"b"}}');
+});

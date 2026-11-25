@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A missing `extensions/orchestrator.jsonc` is created once with `$schema` and every default. An existing file is never overwritten; project files are never created.
+
 ## [0.13.0] - 2026-11-25
 
 ### Changed

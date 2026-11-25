@@ -62,12 +62,27 @@ function migrateUserConfig(agentDir: string, userDir: string): void {
 	}
 }
 
+/** Create <agent-dir>/extensions/orchestrator.jsonc once with `$schema` and every default, unless a
+ *  config exists there or (after a failed move) in the bare agent dir. Never overwrites; a failed
+ *  write is ignored. Project directories are never written. */
+function ensureUserConfig(agentDir: string, userDir: string): void {
+	if (hasConfig(userDir) || hasConfig(agentDir)) return;
+	try {
+		fs.mkdirSync(userDir, { recursive: true });
+		const document = { $schema: SCHEMA_URL, ...DEFAULT_CONFIG };
+		fs.writeFileSync(path.join(userDir, CONFIG_FILENAME), `${JSON.stringify(document, null, 2)}\n`, { encoding: "utf-8", flag: "wx" });
+	} catch {
+		// read-only agent dir, or created concurrently: defaults stay in memory
+	}
+}
+
 /** Select one directory, never merge configs. The bare agent dir is read only
  *  when moving its config into extensions/ failed. */
 export function getConfigPath(cwd: string = process.cwd()): string {
 	const agentDir = getAgentDir();
 	const userDir = path.join(agentDir, "extensions");
 	migrateUserConfig(agentDir, userDir);
+	ensureUserConfig(agentDir, userDir);
 	const directories = [path.join(cwd, ".pi", "extensions"), userDir, agentDir];
 	return path.join(directories.find(hasConfig) ?? userDir, CONFIG_FILENAME);
 }

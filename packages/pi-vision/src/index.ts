@@ -25,10 +25,10 @@
  * one-file install.
  */
 
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 const ROLE_PROMPT =
   "You help a text-only coding assistant understand images.";
@@ -287,6 +287,21 @@ function bareSearchOrder(snap: { models: any; store: any; user: Record<string, a
     if (!order.includes(name)) order.push(name);
   }
   return order;
+}
+
+const SCHEMA_URL =
+  "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-vision/schemas/vision-toolkit.schema.json";
+
+/** No usable default model exists, so a missing config is created once with only `$schema`
+ *  for editor completion. Never overwrites; a failed write is ignored. */
+export function ensureConfig(): void {
+  const cfgPath = join(piAgentDir(), "extensions", "vision-toolkit.json");
+  try {
+    mkdirSync(dirname(cfgPath), { recursive: true });
+    writeFileSync(cfgPath, `${JSON.stringify({ $schema: SCHEMA_URL }, null, 2)}\n`, { flag: "wx" });
+  } catch {
+    // exists already, or the agent dir is read-only
+  }
 }
 
 export function loadVisionChain(): ChainResult | { error: string } {
@@ -754,5 +769,6 @@ export async function handleContext(
 }
 
 export default function (pi: any) {
+  ensureConfig();
   pi.on("context", (event: any, ctx: any) => handleContext(event, ctx));
 }

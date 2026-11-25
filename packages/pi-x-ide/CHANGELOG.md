@@ -6,6 +6,7 @@ Release notes are recorded from 1.21.0 onward. Earlier fork history: [saifymatte
 
 ### Added
 
+- A missing `extensions/pi-x-ide.json` is created once with `$schema` and every top-level default. An existing file is never overwritten; project files are never created.
 - `/ide skip`, or clicking the IDE widget in fullscreen mode, pauses IDE context (`⊘`) until you toggle it again; on resume the latest selection is attached to the next prompt.
 - `zedNested` config (`"manual"` default, `"auto"`): with `"auto"`, Pi also attaches automatically to a Zed window opened below its working directory, except from the home directory or filesystem root.
 

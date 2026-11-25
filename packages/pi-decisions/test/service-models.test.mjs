@@ -79,3 +79,19 @@ test('example registry loads and its top-level keys are schema properties', t =>
   writeFileSync(join(dir, 'extensions', 'service-models.json'), JSON.stringify(example));
   assert.equal(helper().loadServiceConfig(dir, 'classifier').providers['example-services'].models.length, 1);
 });
+
+test('missing registry is created once with $schema and empty providers, and still disables', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'pi-service-create-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const { loadServiceConfig } = helper();
+  assert.equal(loadServiceConfig(dir, 'classifier'), undefined);
+  const path = join(dir, 'extensions', 'service-models.json');
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), {
+    $schema: 'https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-decisions/schemas/service-models.schema.json',
+    providers: {},
+  });
+  assert.equal(loadServiceConfig(dir, 'tts'), undefined, 'the created empty registry loads without error');
+  writeFileSync(path, '{"providers":{}, "keep": true}');
+  loadServiceConfig(dir, 'tts');
+  assert.equal(JSON.parse(readFileSync(path, 'utf8')).keep, true, 'never overwritten');
+});

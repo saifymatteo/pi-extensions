@@ -1,5 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+
+const SCHEMA_URL = 'https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/packages/pi-decisions/schemas/service-models.schema.json'
 
 export interface ServiceModel {
   id: string
@@ -23,9 +25,23 @@ const object = (value: any): value is Record<string, any> => !!value && typeof v
 const text = (value: any): value is string => typeof value === 'string' && !!value.trim()
 
 /** Each extension uses every registry model of its `type`; a missing registry or no matching models disables the tool. */
+/** No usable default providers exist, so a missing registry is created once as `{ "$schema", "providers": {} }`
+ *  for editor completion; an empty registry still disables the tools. Never overwrites; a failed write is ignored. */
+function ensureServiceConfig(path: string): void {
+  try {
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, `${JSON.stringify({ $schema: SCHEMA_URL, providers: {} }, null, 2)}\n`, { flag: 'wx' })
+  } catch {
+    // created concurrently by the sibling package, or the agent dir is read-only
+  }
+}
+
 export function loadServiceConfig(piDir: string, type: ServiceModel['type']): { providers: Record<string, ServiceProvider> } | undefined {
   const path = join(piDir, 'extensions', 'service-models.json')
-  if (!existsSync(path)) return undefined
+  if (!existsSync(path)) {
+    ensureServiceConfig(path)
+    return undefined
+  }
   try {
     let registry: any
     try { registry = JSON.parse(readFileSync(path, 'utf8')) }

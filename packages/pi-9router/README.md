@@ -23,6 +23,8 @@ The two halves live in different files, both under `<agent-dir>` (`PI_CODING_AGE
 - `extensions/9router.json` — the base URL and options (mode `0600`); **no API key is stored here**. This is the same directory other packages use for their settings (typically a symlink into your dotfiles), so it can be versioned safely.
 - `auth.json` — the API key, stored by pi as the standard `9router` login credential; chat authentication reads it from there, and so do the bundled tools.
 
+A missing `extensions/9router.json` is created once with `$schema`, `comboReasoning` and the tool switches; `baseUrl` is left out so `ROUTER_API_BASE` still applies.
+
 `ROUTER_API_BASE` / `ROUTER_API_KEY` environment variables override the config file and the credential respectively.
 
 Migrating from `@haoyiyin/9router`: on first launch the extension reads the old `haoyiyin/9router.json` (or the intermediate `saifymatteo/9router.json` from 0.1.0 dev builds), writes the new secret-free config, and moves the key into the `auth.json` credential. The old file is then removed (and the `haoyiyin/` directory, once empty), so the move happens once.

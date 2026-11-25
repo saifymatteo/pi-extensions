@@ -2,12 +2,13 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import registerFetch from "./fetch.ts";
 import registerSearch from "./search.ts";
 import registerTranscribe from "./transcribe.ts";
-import { loadConfig, migrateLegacyConfig } from "./config.ts";
+import { ensureConfig, loadConfig, migrateLegacyConfig } from "./config.ts";
 import { readCache } from "./data.ts";
 import { registerProvider, registerModels, isStaleCtxError } from "./provider.ts";
 
 export default async function (pi: ExtensionAPI): Promise<void> {
 	migrateLegacyConfig();
+	ensureConfig();
 	const cfg = loadConfig();
 	// The bundled fetch/search/transcribe tools call the router API, so they
 	// only register when a base URL and a credential are both available (the

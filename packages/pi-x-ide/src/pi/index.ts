@@ -1,7 +1,7 @@
 // ABOUTME: Registers the pi-x-ide extension lifecycle, commands, and IDE connection callbacks.
 // ABOUTME: Keeps the static shell Effect-free and loads heavy runtime services through one cached import.
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { migrateLegacyGlobalConfig } from "../shared/config.ts";
+import { ensureGlobalConfig, migrateLegacyGlobalConfig } from "../shared/config.ts";
 import { logExtensionError } from "../shared/errors.ts";
 import { registerIdeCommand } from "./commands.ts";
 import { registerContextHandlers } from "./context.ts";
@@ -36,6 +36,7 @@ function moveLegacyGlobalConfig(ctx: ExtensionContext): void {
   } catch (error) {
     logExtensionError("move legacy config", error);
   }
+  ensureGlobalConfig();
 }
 
 export default function (pi: ExtensionAPI): void {

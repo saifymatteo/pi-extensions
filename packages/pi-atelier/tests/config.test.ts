@@ -300,7 +300,8 @@ describe("configuration files", () => {
 		const result = await loadConfig({ userPath, projectPath, projectTrusted: false });
 		expect(result.config).toEqual(DEFAULT_CONFIG);
 		expect(result.warnings).toEqual([]);
-		expect(result.displayProvenance.order).toBe("product");
+		// The auto-created user file now supplies the defaults; the project must never be credited.
+		expect(result.displayProvenance.order).toBe("user");
 	});
 
 	it("reports malformed JSON once and retains defaults", async () => {
@@ -430,6 +431,18 @@ describe("configuration paths", () => {
 
 	afterEach(async () => {
 		await rm(root, { recursive: true, force: true });
+	});
+
+	it("creates a missing user file once with $schema and defaults, never the project file", async () => {
+		const result = await load();
+		expect(result.warnings).toEqual([]);
+		expect(JSON.parse(await readFile(userPath, "utf8"))).toEqual({ $schema: SCHEMA_URL, ...JSON.parse(JSON.stringify(DEFAULT_CONFIG)) });
+		await expect(lstat(projectPath)).rejects.toMatchObject({ code: "ENOENT" });
+		expect(validateConfig(JSON.parse(await readFile(userPath, "utf8"))).warnings).toEqual([]);
+
+		await writeJson(userPath, { density: "compact" });
+		expect((await load()).config.density).toBe("compact");
+		expect(JSON.parse(await readFile(userPath, "utf8"))).toEqual({ density: "compact" });
 	});
 
 	it("moves the old user file once and reads the new one", async () => {

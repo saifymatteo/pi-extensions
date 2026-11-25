@@ -6,6 +6,7 @@ Release notes are recorded from 0.1.3 onward.
 
 ### Added
 
+- Every package with a JSON config creates its global `<agent-dir>/extensions/<name>.json` once when missing: `$schema` plus defaults (pi-9router, pi-atelier, pi-orchestrator, pi-x-ide; pi-codegraph, pi-zvec and pi-agent-ask already did), or `$schema` only where a model must be chosen (pi-session-rename, pi-vision, and `service-models.json` for pi-decisions and pi-tts). Existing files are never overwritten and project files are never created.
 - pi-x-ide: `/ide skip` or a click on the IDE widget pauses IDE context until toggled again; `zedNested: "auto"` attaches to a Zed window opened below Pi's working directory.
 
 ### Fixed

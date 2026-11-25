@@ -36,6 +36,8 @@ The agent directory comes from pi's `getAgentDir()`, so a custom `PI_CODING_AGEN
 
 A config in the old location, `<getAgentDir()>/orchestrator.jsonc` or `.json`, moves once into `<getAgentDir()>/extensions/` on load when that directory has no config yet. A symlinked old file is copied by content and the link itself removed; its target is left untouched. If the move fails, the old file stays in place and is read for that session.
 
+When neither `<getAgentDir()>/extensions/` nor the old location has a config, `<getAgentDir()>/extensions/orchestrator.jsonc` is created once on load with `$schema` and every default; project directories are never written.
+
 Saves stay in the selected directory. A legacy `.json` is migrated to `.jsonc` there only after a successful write; lower-priority files are left untouched. If no config exists in any location, the save target is `<getAgentDir()>/extensions/orchestrator.jsonc` (normally `~/.pi/agent/extensions/orchestrator.jsonc`).
 
 Configuration is loaded at extension initialization and on `session_start`, with no live file watcher. After moving a config or adding one in a higher-priority location, reload the extension or start a new session to select it.
