@@ -5,7 +5,7 @@ import test from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { registerContextHandlers, IDE_CONTEXT_MESSAGE_TYPE, setLatestSelection } from "../src/pi/context.ts";
 import { createRuntime } from "../src/pi/state.ts";
-import { toggleSkipSelection } from "../src/pi/ui.ts";
+import { toggleContextPaused } from "../src/pi/ui.ts";
 import { formatEditorContextMessage } from "../src/shared/format.ts";
 import type { EditorSelectionSnapshot } from "../src/shared/protocol.ts";
 
@@ -113,20 +113,18 @@ void test("skips IDE context when a custom diagnostic message starts the run", (
   );
 });
 
-void test("a skipped selection is held back from one prompt, then queued again", () => {
+void test("paused IDE context stays paused across prompts until toggled back", () => {
   const h = createHarness();
   setLatestSelection(h.runtime, snapshot);
-  assert.equal(toggleSkipSelection(h.runtime), true);
-  assert.equal(h.runtime.attachState, "skipped");
-  assert.equal(h.fire("before_agent_start", { messageType: "user", prompt: "unrelated" }), undefined);
-  assert.equal(h.runtime.attachState, "pending");
-  assert.ok(h.fire("before_agent_start", { messageType: "user", prompt: "next" }));
-  assert.equal(h.runtime.attachState, "sent");
-  assert.equal(toggleSkipSelection(h.runtime), false, "nothing queued to skip once sent");
+  assert.equal(toggleContextPaused(h.runtime), true);
+  assert.equal(h.fire("before_agent_start", { messageType: "user", prompt: "one" }), undefined);
+  assert.equal(h.fire("before_agent_start", { messageType: "user", prompt: "two" }), undefined);
 
   setLatestSelection(h.runtime, { ...snapshot, ranges: [] });
-  assert.equal(h.runtime.attachState, "pending", "a new selection queues again");
-  toggleSkipSelection(h.runtime);
-  toggleSkipSelection(h.runtime);
-  assert.equal(h.runtime.attachState, "pending", "second toggle re-queues");
+  assert.equal(h.runtime.contextPaused, true, "a new selection does not resume");
+  assert.equal(h.fire("before_agent_start", { messageType: "user", prompt: "three" }), undefined);
+
+  assert.equal(toggleContextPaused(h.runtime), false);
+  assert.ok(h.fire("before_agent_start", { messageType: "user", prompt: "four" }), "latest selection attaches after resume");
+  assert.equal(h.runtime.attachState, "sent");
 });

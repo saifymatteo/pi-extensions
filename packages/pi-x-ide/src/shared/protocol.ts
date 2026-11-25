@@ -158,4 +158,4 @@ export type IdeNotification =
   | JsonRpcNotification<AtMentionedParams>
   | JsonRpcNotification<DiagnosticFixRequestedParams>;
 
-export type AttachState = "pending" | "sent" | "skipped" | "idle";
+export type AttachState = "pending" | "sent" | "idle";

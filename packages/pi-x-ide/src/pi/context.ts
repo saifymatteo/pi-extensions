@@ -17,12 +17,8 @@ export function registerContextHandlers(pi: ExtensionAPI, runtime: PiIdeRuntime)
       runtime,
       () => {
         runtime.ctx = ctx;
-        // A skip holds the selection back from this prompt only; re-queue it for the next one.
-        if (runtime.attachState === "skipped") {
-          runtime.attachState = "pending";
-          updateIdeUi(runtime, ctx);
-          return;
-        }
+        // Paused: leave the selection queued so the latest one is attached after resuming.
+        if (runtime.contextPaused) return;
         if (!runtime.enabled || !runtime.latestSelection || runtime.attachState !== "pending") return;
         const snapshot = runtime.latestSelection;
         runtime.attachState = "sent";

@@ -6,7 +6,7 @@ Release notes are recorded from 1.21.0 onward. Earlier fork history: [saifymatte
 
 ### Added
 
-- `/ide skip`, or clicking the IDE widget in fullscreen mode, holds the queued selection back from the next prompt (`⊘`). Toggle again to queue it back; a skip lasts one prompt.
+- `/ide skip`, or clicking the IDE widget in fullscreen mode, pauses IDE context (`⊘`) until you toggle it again; on resume the latest selection is attached to the next prompt.
 - `zedNested` config (`"manual"` default, `"auto"`): with `"auto"`, Pi also attaches automatically to a Zed window opened below its working directory, except from the home directory or filesystem root.
 
 ### Fixed

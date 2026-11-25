@@ -24,6 +24,8 @@ export interface PiIdeRuntime {
   latestSelection?: EditorSelectionSnapshot;
   latestSelectionKey?: string;
   attachState: AttachState;
+  /** While true, IDE context is not attached to prompts; toggled by widget click or `/ide skip`. */
+  contextPaused: boolean;
   turnSelection?: EditorSelectionSnapshot;
   reconnectFiber?: RuntimeFiber<void, never>;
   reconnectAttempts: number;
@@ -54,6 +56,7 @@ export function createRuntime(): PiIdeRuntime {
     candidates: [],
     connectionStatus: "idle",
     attachState: "idle",
+    contextPaused: false,
     reconnectAttempts: 0,
     installingIdeIds: new Set<string>(),
     sessionGeneration: 0,

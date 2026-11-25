@@ -6,7 +6,7 @@ import { formatRangeMention } from "../shared/format.ts";
 import type { LockFileCandidate } from "../shared/protocol.ts";
 import type { PiIdeRuntime } from "./state.ts";
 import { runPiBoundary, runPiBoundaryAsync } from "./safety.ts";
-import { buildWidget, toggleSkipSelection, updateIdeUi } from "./ui.ts";
+import { buildWidget, toggleContextPaused, updateIdeUi } from "./ui.ts";
 
 // Note: early `/ide off` or disconnect may await the heavy runtime preload
 // (one cached promise) and must remain cancel-safe via session generation.
@@ -63,7 +63,7 @@ export function registerIdeCommand(
         { value: "auto", label: "auto", description: "Auto-connect to the most recent IDE" },
         { value: "off", label: "off", description: "Disable IDE integration" },
         { value: "attach", label: "attach", description: "Attach latest IDE selection to the prompt" },
-        { value: "skip", label: "skip", description: "Toggle skipping the queued IDE selection for the next prompt" },
+        { value: "skip", label: "skip", description: "Pause or resume attaching IDE context to prompts" },
         { value: "install", label: "install", description: "Install or update the IDE extension" },
         { value: "settings", label: "settings", description: "Open IDE settings (Display, AutoInstall, ...)" },
       ];
@@ -187,11 +187,8 @@ export function resolveAttachShortcut(env: NodeJS.ProcessEnv = process.env): Sho
 }
 
 function skipLatest(runtime: PiIdeRuntime, ctx: ExtensionContext): void {
-  if (!toggleSkipSelection(runtime, ctx)) {
-    ctx.ui.notify("No queued IDE selection to skip.", "warning");
-    return;
-  }
-  ctx.ui.notify(runtime.attachState === "skipped" ? "IDE selection skipped for the next prompt." : "IDE selection queued again.", "info");
+  const paused = toggleContextPaused(runtime, ctx);
+  ctx.ui.notify(paused ? "IDE context paused. Run /ide skip again to resume." : "IDE context resumed.", "info");
 }
 
 function attachLatest(runtime: PiIdeRuntime, ctx: ExtensionContext): void {

@@ -1119,7 +1119,7 @@ void test("LockFileParseError carries Effect tag and readable message", () => {
 });
 
 
-void test("clicking the IDE widget toggles skip and shows the skip marker", () => {
+void test("clicking the IDE widget toggles the context pause and shows the pause marker", () => {
   const runtime = createRuntime();
   runtime.connectionStatus = "connected";
   setLatestSelection(runtime, { ...snapshot, ranges: [] });
@@ -1151,8 +1151,9 @@ void test("clicking the IDE widget toggles skip and shows the skip marker", () =
 
   assert.equal(widget.handleMouse({ type: "move", button: "none" }), undefined);
   assert.deepEqual(widget.handleMouse({ type: "click", button: "left" }), { handled: true });
-  assert.equal(runtime.attachState, "skipped");
+  assert.equal(runtime.contextPaused, true);
   assert.match(widget.render(80)[0] ?? "", /⊘/);
   widget.handleMouse({ type: "click", button: "left" });
-  assert.equal(runtime.attachState, "pending");
+  assert.equal(runtime.contextPaused, false);
+  assert.match(widget.render(80)[0] ?? "", /⇡/);
 });

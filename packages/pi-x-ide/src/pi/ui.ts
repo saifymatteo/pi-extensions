@@ -94,15 +94,13 @@ export function clearIdeUi(runtime: PiIdeRuntime, ctx: ExtensionContext | undefi
 }
 
 /**
- * Toggle skipping the queued selection for the next prompt. Only "pending" and "skipped" toggle;
- * a new selection resets to "pending", so a skip never outlives the current selection.
+ * Toggle pausing IDE context for prompts. The pause holds until toggled again; new selections
+ * stay queued (attachState "pending") and the latest one is attached after resuming.
  */
-export function toggleSkipSelection(runtime: PiIdeRuntime, ctx?: ExtensionContext): boolean {
-  if (runtime.attachState === "pending") runtime.attachState = "skipped";
-  else if (runtime.attachState === "skipped") runtime.attachState = "pending";
-  else return false;
+export function toggleContextPaused(runtime: PiIdeRuntime, ctx?: ExtensionContext): boolean {
+  runtime.contextPaused = !runtime.contextPaused;
   updateIdeUi(runtime, ctx);
-  return true;
+  return runtime.contextPaused;
 }
 
 function updateWidget(runtime: PiIdeRuntime, uiContext: ActiveUiContext): void {
@@ -152,10 +150,12 @@ function updateWidget(runtime: PiIdeRuntime, uiContext: ActiveUiContext): void {
               return [];
             }
           },
-          // Fullscreen mode only: clicking anywhere on the widget toggles skipping the queued selection.
+          // Fullscreen mode only: clicking anywhere on the widget toggles pausing IDE context.
           handleMouse(event: { type: string; button: string }) {
             if (event.type !== "click" || event.button !== "left") return undefined;
-            return toggleSkipSelection(runtime, uiContext as ExtensionContext) ? { handled: true } : undefined;
+            if (runtime.connectionStatus !== "connected") return undefined;
+            toggleContextPaused(runtime, uiContext as ExtensionContext);
+            return { handled: true };
           },
           invalidate() {},
           dispose() {
@@ -326,15 +326,18 @@ function isThemeLike(value: unknown): value is { fg: (color: ThemeColor, text: s
 
 function buildConnectedSegments(runtime: PiIdeRuntime): StatusSegment[] {
   const selection = runtime.latestSelection;
-  if (!selection) return [{ text: `${IDE_ICON} ✓`, color: "dim" }];
+  if (!selection) {
+    return [runtime.contextPaused ? { text: `${IDE_ICON} ⊘`, color: "warning" } : { text: `${IDE_ICON} ✓`, color: "dim" }];
+  }
 
   const rel = basename(selection.filePath);
   const range = describeRanges(selection.ranges);
-  // Pending selections are queued for the next prompt (⇡, success); skipped ones are held back (⊘, warning);
-  // sent ones are attached (✓, dim).
-  const state = runtime.attachState;
-  const marker = state === "pending" ? "⇡" : state === "skipped" ? "⊘" : "✓";
-  const color: ThemeColor = state === "pending" ? "success" : state === "skipped" ? "warning" : "dim";
+  // Paused context is held back from prompts (⊘, warning); pending selections are queued for the next
+  // prompt (⇡, success); sent ones are attached (✓, dim).
+  const paused = runtime.contextPaused;
+  const pending = runtime.attachState === "pending";
+  const marker = paused ? "⊘" : pending ? "⇡" : "✓";
+  const color: ThemeColor = paused ? "warning" : pending ? "success" : "dim";
   const prefix = `${IDE_ICON} ${marker} `;
   if (range === "open file") return [{ text: `${prefix}${rel}`, color, shrink: true }];
   return [
@@ -366,7 +369,7 @@ export function buildWidget(runtime: PiIdeRuntime, cwd?: string): string[] | und
     const selection = runtime.latestSelection;
     lines.push(`File: ${toRelativeDisplayPath(selection.filePath, selection.workspaceFolder, cwd)}`);
     lines.push(`Range: ${describeRanges(selection.ranges)}`);
-    lines.push(`Attach: ${runtime.attachState}`);
+    lines.push(`Attach: ${runtime.contextPaused ? "paused" : runtime.attachState}`);
     if (selection.receivedAt) lines.push(`Updated: ${new Date(selection.receivedAt).toLocaleTimeString()}`);
   } else if (runtime.connectionMessage) {
     lines.push(runtime.connectionMessage);
