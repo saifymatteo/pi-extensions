@@ -4,6 +4,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.28] - 2026-11-26
+
 ### Added
 
 - pi-x-ide: `sendContext` (`Send context` in `/ide settings`) turns IDE context off by default for every session; `/ide skip` still toggles it per session.
