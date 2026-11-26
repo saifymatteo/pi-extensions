@@ -6,6 +6,7 @@ import {
   AUTO_INSTALL_ENV_KEY,
   parseAutoInstallValue,
   SCHEMA_URL,
+  readPiConfigSendContext,
   resolvePiConfigPath,
   resolvePiGlobalConfigPath,
   resolvePiProjectConfigPath,
@@ -56,6 +57,13 @@ export const IDE_SETTINGS_FIELDS: SettingsField[] = [
     type: "text",
     default: CONFIG_OPTIONS.fixPrompt.default,
   },
+  {
+    key: "sendContext",
+    label: "Send context",
+    description: "Attach IDE context to prompts. Off starts every session paused (⊘); /ide skip still toggles per session.",
+    type: "boolean",
+    default: CONFIG_OPTIONS.sendContext.default,
+  },
 ];
 
 export async function showIdeSettings(
@@ -76,6 +84,9 @@ export async function showIdeSettings(
     ],
     fields: IDE_SETTINGS_FIELDS,
     footnote: "Other env overrides (PI_X_IDE_*) stay JSON-only.",
-    onSaved: () => updateIdeUi(runtime, ctx),
+    onSaved: () => {
+      runtime.contextPaused = !readPiConfigSendContext({ projectDir: ctx.cwd, home: options.home });
+      updateIdeUi(runtime, ctx);
+    },
   });
 }

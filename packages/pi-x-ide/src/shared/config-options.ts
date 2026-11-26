@@ -50,7 +50,7 @@ export type ConfigEnvOptionName = keyof typeof CONFIG_ENV_OPTIONS;
 export interface ConfigOption {
   readonly type: readonly ConfigEnvValueType[];
   readonly description: string;
-  readonly default?: string;
+  readonly default?: string | boolean;
   readonly enum?: readonly string[];
 }
 
@@ -63,6 +63,12 @@ export type ZedNested = (typeof ZED_NESTED_VALUES)[number];
 export const DEFAULT_ZED_NESTED: ZedNested = "manual";
 
 export const CONFIG_OPTIONS = {
+  sendContext: {
+    type: ["boolean"],
+    default: true,
+    description:
+      "Attach IDE context to prompts. false starts every session paused (⊘); /ide skip or a widget click still toggles it for the current session.",
+  },
   fixPrompt: {
     type: ["string"],
     default: "Analyze the errors and warnings at the following location, and try to fix them:\n{DIAGNOSTIC}",

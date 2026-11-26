@@ -1,7 +1,7 @@
 // ABOUTME: Registers the pi-x-ide extension lifecycle, commands, and IDE connection callbacks.
 // ABOUTME: Keeps the static shell Effect-free and loads heavy runtime services through one cached import.
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { ensureGlobalConfig, migrateLegacyGlobalConfig } from "../shared/config.ts";
+import { ensureGlobalConfig, migrateLegacyGlobalConfig, readPiConfigSendContext } from "../shared/config.ts";
 import { logExtensionError } from "../shared/errors.ts";
 import { registerIdeCommand } from "./commands.ts";
 import { registerContextHandlers } from "./context.ts";
@@ -86,6 +86,8 @@ export function registerPiIdeExtension(pi: ExtensionAPI, options: RegisterPiIdeE
         bindPiUiContext(runtime, ctx);
         moveLegacyGlobalConfig(ctx);
         runtime.cwd = ctx.cwd;
+        // sendContext: false starts the session paused; /ide skip still toggles it for this session.
+        runtime.contextPaused = !readPiConfigSendContext({ projectDir: ctx.cwd });
         runtime.sessionStarting = true;
 
         const startupTask = (async () => {

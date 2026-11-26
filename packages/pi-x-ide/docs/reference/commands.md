@@ -28,6 +28,7 @@ every setting for that file:
 | `Zed nested`  | `manual` / `auto`       | `zedNested`                 | `manual` |
 | `AutoInstall` | on / off                | `env.PI_X_IDE_AUTO_INSTALL` | on       |
 | `Fix prompt`  | text (`\n` = newline)   | `fixPrompt`                 | built-in |
+| `Send context` | on / off               | `sendContext`               | on       |
 
 A value not set in the open file shows dimmed as `default`, or as `inherited`
 from Global in the project file.
@@ -50,6 +51,9 @@ from Global in the project file.
 widget shows `⊘`. The pause lasts until you run `/ide skip` again, even across
 prompts and new IDE selections. On resume, the latest selection is attached to the
 next prompt.
+
+To start every session paused, turn off `Send context` in `/ide settings`
+(`"sendContext": false`). `/ide skip` then resumes for the current session only.
 
 In fullscreen mode (`"tuiMode": "fullscreen"`) you can also click anywhere on the
 IDE widget to toggle the pause. The `statusline` display is not clickable.

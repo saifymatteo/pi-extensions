@@ -10,6 +10,11 @@
       "type": "string",
       "description": "JSON Schema URL for editor completion. Ignored at runtime."
     },
+    "sendContext": {
+      "type": "boolean",
+      "description": "Attach IDE context to prompts. false starts every session paused (⊘); /ide skip or a widget click still toggles it for the current session.",
+      "default": true
+    },
     "fixPrompt": {
       "type": "string",
       "description": "Custom prompt prefix when requesting a fix for IDE diagnostics. Use {DIAGNOSTIC} as a placeholder for the diagnostic context. If the placeholder is omitted, the diagnostic context is appended after your prompt.",

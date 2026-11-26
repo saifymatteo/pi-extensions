@@ -4,6 +4,10 @@ Release notes are recorded from 1.21.0 onward. Earlier fork history: [saifymatte
 
 ## [Unreleased]
 
+### Added
+
+- `sendContext` config (`Send context` in `/ide settings`, default on): off starts every session with IDE context paused (`⊘`). `/ide skip` or a widget click still toggles it for the current session.
+
 ## [1.24.0] - 2026-11-25
 
 ### Added

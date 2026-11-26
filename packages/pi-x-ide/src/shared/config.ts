@@ -269,6 +269,19 @@ export function readPiConfigZedNested(options: { projectDir?: string; home?: str
   return DEFAULT_ZED_NESTED;
 }
 
+/** Read sendContext; project config overrides global; missing or non-boolean values mean true. */
+export function readPiConfigSendContext(options: { projectDir?: string; home?: string } = {}): boolean {
+  const paths = [
+    ...(options.projectDir ? [resolveReadableProjectConfigPath(options.projectDir)] : []),
+    resolvePiConfigPath(options.home),
+  ];
+  for (const path of paths) {
+    const value = readPiConfigFile(path)?.sendContext;
+    if (typeof value === "boolean") return value;
+  }
+  return true;
+}
+
 /** Automatic Zed attach matches windows below cwd only with zedNested "auto", never from $HOME or the root. */
 // `home` is a test seam; without it the global config honours $PI_CODING_AGENT_DIR.
 export function isAutoZedNestedEnabled(cwd: string, home?: string): boolean {

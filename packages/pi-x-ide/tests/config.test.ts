@@ -10,6 +10,7 @@ import {
   ensureGlobalConfig,
   isAutoZedNestedEnabled,
   migrateLegacyGlobalConfig,
+  readPiConfigSendContext,
   readPiConfigStatusDisplay,
   resolveAgentDir,
   resolveLegacyPiGlobalConfigPath,
@@ -153,6 +154,23 @@ void test("zedNested defaults to manual; auto applies below $HOME but never at $
 
   await writeFile(resolvePiProjectConfigPath(project), JSON.stringify({ zedNested: "manual" }));
   assert.equal(isAutoZedNestedEnabled(project, home), false, "project overrides global");
+});
+
+void test("sendContext defaults to true; project overrides global; non-booleans are ignored", async () => {
+  const home = await tempHome();
+  const project = join(home, "work");
+  assert.equal(readPiConfigSendContext({ projectDir: project, home }), true, "default on");
+
+  await mkdir(dirname(resolvePiGlobalConfigPath(home)), { recursive: true });
+  await writeFile(resolvePiGlobalConfigPath(home), JSON.stringify({ sendContext: false }));
+  assert.equal(readPiConfigSendContext({ projectDir: project, home }), false, "global off");
+
+  await mkdir(dirname(resolvePiProjectConfigPath(project)), { recursive: true });
+  await writeFile(resolvePiProjectConfigPath(project), JSON.stringify({ sendContext: "no" }));
+  assert.equal(readPiConfigSendContext({ projectDir: project, home }), false, "invalid project value falls through");
+
+  await writeFile(resolvePiProjectConfigPath(project), JSON.stringify({ sendContext: true }));
+  assert.equal(readPiConfigSendContext({ projectDir: project, home }), true, "project overrides global");
 });
 
 void test("ensureGlobalConfig creates the global file once with $schema and defaults, never over an existing or legacy file", async () => {

@@ -24,7 +24,7 @@ export interface PiIdeRuntime {
   latestSelection?: EditorSelectionSnapshot;
   latestSelectionKey?: string;
   attachState: AttachState;
-  /** While true, IDE context is not attached to prompts; toggled by widget click or `/ide skip`. */
+  /** While true, IDE context is not attached to prompts; toggled by widget click or `/ide skip`; seeded from `sendContext` at session start. */
   contextPaused: boolean;
   turnSelection?: EditorSelectionSnapshot;
   reconnectFiber?: RuntimeFiber<void, never>;
