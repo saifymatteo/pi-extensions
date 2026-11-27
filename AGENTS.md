@@ -8,6 +8,21 @@ At release, move the changes into a `## [x.y.z]` section matching that package's
 
 Pi records a package's version silently on first discovery and shows newer released entries on a fresh launch after a version increase, not on `/reload`. Unreleased entries are ignored; `/changelog` shows Pi's own notes, not package notes.
 
+## Releasing ("deploy")
+
+A deploy request means a full release, run to the end without further prompting:
+
+1. Commit the work and push `main`.
+2. Bump each changed package's manifest version, plus the root for collection-visible changes; date the changelog sections; refresh the lockfile with `npm install --package-lock-only --ignore-scripts`. Commit as `[packages] chore(release): <pkg> <ver>, ..., collection <ver>`.
+3. Tag `<directory>-v<version>` for each bumped package and `pi-extensions-v<version>` for the root, then push the tags. `.github/workflows/publish.yml` publishes each tag through npm trusted publishing (OIDC).
+4. Watch the runs (`gh run list --workflow publish.yml`), then confirm each version is `latest` on the registry. npm can take a few minutes to list an accepted publish.
+
+CI is the publisher; a local `npm publish` is reserved for a package's first release. A new package name needs a one-time bootstrap, because npm can attach trusted publishing only to an existing package (its first tag run fails with `E404`):
+
+1. The user runs `npm login`, then `node scripts/publish-all.mjs --interactive`; it publishes the unpublished versions and skips the rest.
+2. Attach trust: `npm trust github @saifymatteo/<directory> --repo saifymatteo/pi-extensions --file publish.yml --allow-publish --yes` (or `node scripts/trust-all.mjs`). `npm trust list <name>` should match an existing package's entry.
+3. npm then holds the package pending validation until one release arrives through OIDC: bump a patch version, note "first release through trusted publishing" in its changelog, and release it by tag as above.
+
 ## Package JSON config
 
 Every package that reads a JSON config follows one layout:
