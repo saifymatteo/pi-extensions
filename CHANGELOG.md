@@ -4,6 +4,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.29] - 2026-11-27
+
 ### Added
 
 - pi-cell-actions (new): hover a paragraph, list, heading, code block or table of a message, or a tool call, in the fullscreen transcript for a `⋯` menu that copies it (tables as Markdown, TSV or CSV; tools as input or output) and runs `bash`/`sh`/`zsh` blocks after a confirmation. Works on stock Pi and Pi-Bolt.

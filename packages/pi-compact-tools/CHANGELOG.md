@@ -4,6 +4,8 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-11-27
+
 ### Added
 
 - With pi-cell-actions loaded, a grouped card's header copies every call in the card, and an expanded call copies itself or the whole group.
