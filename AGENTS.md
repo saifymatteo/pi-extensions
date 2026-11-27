@@ -14,7 +14,7 @@ A deploy request means a full release, run to the end without further prompting:
 
 1. Commit the work and push `main`.
 2. Bump each changed package's manifest version, plus the root for collection-visible changes; date the changelog sections; refresh the lockfile with `npm install --package-lock-only --ignore-scripts`. Commit as `[packages] chore(release): <pkg> <ver>, ..., collection <ver>`.
-3. Tag `<directory>-v<version>` for each bumped package and `pi-extensions-v<version>` for the root, then push the tags. `.github/workflows/publish.yml` publishes each tag through npm trusted publishing (OIDC).
+3. Tag `<directory>-v<version>` for each bumped package and `pi-extensions-v<version>` for the root, then push the tags. `.github/workflows/publish.yml` publishes each tag through npm trusted publishing (OIDC). GitHub starts no workflow runs for a push of more than 3 tags, so push 3 or fewer per `git push`, one at a time when in doubt. To re-trigger a tag that ran nothing: `git push origin :refs/tags/<tag> && git push origin <tag>`.
 4. Watch the runs (`gh run list --workflow publish.yml`), then confirm each version is `latest` on the registry. npm can take a few minutes to list an accepted publish.
 
 CI is the publisher; a local `npm publish` is reserved for a package's first release. A new package name needs a one-time bootstrap, because npm can attach trusted publishing only to an existing package (its first tag run fails with `E404`):
