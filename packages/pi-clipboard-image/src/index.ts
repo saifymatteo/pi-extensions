@@ -487,7 +487,9 @@ export default function (pi: ExtensionAPI) {
 		const items = pending;
 		pending = [];
 		nextIndex = 1;
-		const resizeOptions = (eventCtx ?? ctx)?.model?.inputLimits?.images?.resize;
+		// Typed explicitly: under strict: false, pi-schema's Static<> collapses inputLimits to unknown.
+		const limits = (eventCtx ?? ctx)?.model?.inputLimits as { images?: { resize?: Parameters<typeof resizeImage>[2] } } | undefined;
+		const resizeOptions = limits?.images?.resize;
 		for (const item of items) {
 			const label = item.marker.trim();
 			if (event.text.includes(label)) {

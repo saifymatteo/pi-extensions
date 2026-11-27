@@ -167,13 +167,13 @@ function drawCostPlot(
 	]);
 }
 
-const cache = new WeakMap<object, { imageId: number; signature: string; lines: string[] }>();
+const cache = new WeakMap<object, { imageId: number; signature: string; lines: readonly string[] }>();
 export function renderCostImage(
 	owner: object,
 	curves: readonly CostImageCurve[],
 	columns: number,
 	rows: number,
-): string[] | undefined {
+): readonly string[] | undefined {
 	// Kitty supports reliable placement replacement/deletion during overlay changes.
 	if (getCapabilities().images !== "kitty") return undefined;
 	const cell = getCellDimensions();

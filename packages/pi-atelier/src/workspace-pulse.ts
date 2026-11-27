@@ -8,7 +8,7 @@ const GIT_TIMEOUT_MS = 2_000;
 const EMPTY_TREE_HASH = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 /** Result reported for a command skipped because inspection was cancelled. */
-export const SKIPPED_EXEC_RESULT: ExecResult = { stdout: "", stderr: "", code: 1, killed: true };
+export const SKIPPED_EXEC_RESULT: ExecResult = { stdout: "", stderr: "", code: 1, killed: true, truncated: false };
 
 /** One changed path, relative to the repository root. Line counts are absent for new and binary files. */
 export interface ChangedFile {

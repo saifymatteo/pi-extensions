@@ -58,7 +58,7 @@ export async function showPersistentAsk(
 	};
 	const customOptions = {
 		overlay: false,
-		blocked: { kind: "question", message: "Waiting for user response" },
+		blocked: { kind: "question" as const, message: "Waiting for user response" },
 	};
 	try {
 		while (!result) {

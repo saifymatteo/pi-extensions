@@ -60,7 +60,7 @@ export interface SidebarControls {
 	getSidebarPanelSettings(): readonly SidebarPanelSetting[];
 }
 
-export function renderMenuFrame(theme: ThemeLike, lines: string[], width: number): string[] {
+export function renderMenuFrame(theme: ThemeLike, lines: readonly string[], width: number): string[] {
 	const border = (text: string) => theme.bold(theme.fg("borderAccent", text));
 	if (width <= 1) return [truncateToWidth(border("━"), Math.max(0, width), "")];
 	const innerWidth = width - 2;

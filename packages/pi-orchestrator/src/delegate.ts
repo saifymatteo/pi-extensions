@@ -1832,7 +1832,7 @@ export function registerDelegateTool(pi: any, deps: DelegateDeps): void {
 	// cut at terminal width with the same dim hint compact-tools/bg-bash use.
 	const MAX_RUN_RESULT_LINES = 1;
 
-	function capRunResultLines(text: string, maxLines: number, width: number, theme: any): string[] {
+	function capRunResultLines(text: string, maxLines: number, width: number, theme: any): readonly string[] {
 		const lines = new Text(text, 0, 0).render(width);
 		if (lines.length <= maxLines) return lines;
 		const hidden = lines.length - maxLines;
@@ -1853,7 +1853,7 @@ export function registerDelegateTool(pi: any, deps: DelegateDeps): void {
 	class RunResultRow {
 		private expanded: boolean;
 		private cachedWidth?: number;
-		private cachedLines?: string[];
+		private cachedLines?: readonly string[];
 		private message: any;
 		private theme: any;
 
@@ -1880,7 +1880,7 @@ export function registerDelegateTool(pi: any, deps: DelegateDeps): void {
 			return { handled: true };
 		}
 
-		render(width: number): string[] {
+		render(width: number): readonly string[] {
 			if (this.cachedLines === undefined || this.cachedWidth !== width) {
 				const theme = this.theme;
 				const details = (this.message?.details ?? {}) as SubagentDetails;

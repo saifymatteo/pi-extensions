@@ -1,4 +1,4 @@
-import { StringEnum } from "@earendil-works/pi-ai";
+import { StringEnum } from "./string-enum.ts";
 import { type Static, Type } from "typebox";
 import { QueuedAnswerSchema } from "./background-ask-state.ts";
 import { AskQuestionSchema } from "./schema.ts";

@@ -86,7 +86,7 @@ type RenderContext = {
 // Container, so anything with render(width): string[] works.
 // invalidate is required: pi wraps rows in a MouseRegion that calls
 // child.invalidate() unconditionally.
-type CallComponent = { render(width: number): string[]; invalidate(): void; setPaddingX?(paddingX: number): void; handleMouse?(event: any): any };
+type CallComponent = { render(width: number): readonly string[]; invalidate(): void; setPaddingX?(paddingX: number): void; handleMouse?(event: any): any };
 type ImageBlock = { type: "image"; data: string; mimeType: string };
 type ImageState = { source: ImageBlock; open: boolean; dimensions: ReturnType<typeof getImageDimensions>; preview?: Image; maxWidth?: number; theme?: RenderTheme; view?: CallComponent };
 type RenderResult = { content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>; isError?: boolean; details?: unknown };
@@ -134,7 +134,7 @@ const MAX_SHELL_CALL_LINES = 1;
 // since it renders on every frame.
 class ShellCallLine {
 	private cachedWidth?: number;
-	private cachedLines?: string[];
+	private cachedLines?: readonly string[];
 	private text: string;
 	private theme: RenderTheme;
 	private paddingX = 0;
@@ -150,7 +150,7 @@ class ShellCallLine {
 		this.invalidate();
 	}
 
-	render(width: number): string[] {
+	render(width: number): readonly string[] {
 		if (this.cachedLines === undefined || this.cachedWidth !== width) {
 			const lines = new Text(this.text, this.paddingX, 0).render(width);
 			this.hasMore = lines.length > MAX_SHELL_CALL_LINES;
@@ -537,7 +537,7 @@ type Card = CallComponent & { sectionAt(y: number): { y: number; height: number;
 function card(getSections: () => CallComponent[][], theme: RenderTheme, padding: number): Card {
 	let sections: {
 		content: CallComponent[]; box: Box; padding: number;
-		width?: number; edge?: string; rendered?: string[]; lines?: string[];
+		width?: number; edge?: string; rendered?: readonly string[]; lines?: string[];
 	}[] = [];
 	let layout: { box: Box; y: number; height: number; content: CallComponent[] }[] = [];
 	let output: { frame: string; lines: string[] } | undefined;

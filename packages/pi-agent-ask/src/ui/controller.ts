@@ -176,7 +176,7 @@ export async function runAskFlow(
 				});
 			const customOptions = {
 				overlay: false,
-				blocked: { kind: "question", message: "Waiting for user response" },
+				blocked: { kind: "question" as const, message: "Waiting for user response" },
 			};
 			return options.keepVisible
 				? await showPersistentAsk(ctx, factory)

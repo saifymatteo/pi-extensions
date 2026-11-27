@@ -23,7 +23,7 @@ interface ImageRenderer {
 interface ImageSidebarFrame {
 	column: number;
 	width: number;
-	lines: string[];
+	lines: readonly string[];
 }
 
 type SidebarFrameReader = (width: number) => ImageSidebarFrame | undefined;

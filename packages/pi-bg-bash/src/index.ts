@@ -835,7 +835,7 @@ const MAX_RESULT_LINES = 1;
 
 // Cut text to maxLines visual lines at the given width, appending the same
 // "… (+N more lines)" hint compact-tools uses.
-function capLines(text: string, maxLines: number, width: number, theme: any): string[] {
+function capLines(text: string, maxLines: number, width: number, theme: any): readonly string[] {
 	const lines = new Text(text, 0, 0).render(width);
 	if (lines.length <= maxLines) return lines;
 	const hidden = lines.length - maxLines;
@@ -866,7 +866,7 @@ interface BgResultDetails {
 class BgResultRow {
 	private expanded: boolean;
 	private cachedWidth?: number;
-	private cachedLines?: string[];
+	private cachedLines?: readonly string[];
 	private message: any;
 	private theme: any;
 
@@ -893,7 +893,7 @@ class BgResultRow {
 		return { handled: true };
 	}
 
-	render(width: number): string[] {
+	render(width: number): readonly string[] {
 		if (this.cachedLines === undefined || this.cachedWidth !== width) {
 			const theme = this.theme;
 			const d = (this.message.details ?? {}) as BgResultDetails;

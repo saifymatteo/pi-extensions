@@ -85,7 +85,7 @@ export default function (pi: ExtensionAPI) {
 	let sawCell = false;
 	let toolHover: ToolHover | undefined;
 	const restores: (() => void)[] = [];
-	const layoutCache = new WeakMap<object, { width: number; lines: string[]; text: string; blocks: LocatedBlock[] }>();
+	const layoutCache = new WeakMap<object, { width: number; lines: readonly string[]; text: string; blocks: LocatedBlock[] }>();
 
 	const options: OverlayOptions = { row: 0, col: 0, width: 3, nonCapturing: true, visible: () => !!hovered && !suppressed };
 	let buttons: { start: number; end: number; action: Action }[] = [];
@@ -174,7 +174,7 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	/** The first non-blank row from `top`, so the badge sits on the cell's text, not its padding. */
-	function firstText(lines: string[], top: number): number {
+	function firstText(lines: readonly string[], top: number): number {
 		let row = top;
 		while (row < lines.length - 1 && !stripTerminalSequences(lines[row] ?? "").trim()) row++;
 		return row;

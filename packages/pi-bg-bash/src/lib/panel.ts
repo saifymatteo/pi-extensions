@@ -110,7 +110,7 @@ export async function showJobPanel(ctx: ExtensionCommandContext, controls: Contr
 		else await ctx.ui.custom<void>((tui, theme, _keys, done) => {
 			let text = controls.output(job.id);
 			let top = Number.POSITIVE_INFINITY;
-			let rows: string[] = [];
+			let rows: readonly string[] = [];
 			let height = 1;
 			let disposed = false;
 			const dispose = () => {
