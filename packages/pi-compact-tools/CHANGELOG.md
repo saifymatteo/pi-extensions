@@ -4,6 +4,12 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-11-27
+
+### Changed
+
+- Builds and typechecks against Pi 1.6.1 host types (read-only `render()` lines and related type changes); no behaviour change.
+
 ## [0.1.6] - 2026-11-27
 
 ### Added

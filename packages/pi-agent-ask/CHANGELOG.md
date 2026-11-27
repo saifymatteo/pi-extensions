@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-11-27
+
+### Changed
+
+- Builds and typechecks against Pi 1.6.1 host types (read-only `render()` lines and related type changes); no behaviour change.
+
 ## [2.0.0] - 2026-11-25
 
 ### Changed

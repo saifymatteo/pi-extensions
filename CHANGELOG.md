@@ -4,6 +4,12 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+## [0.1.31] - 2026-11-27
+
+### Changed
+
+- Built and tested against Pi 1.6.1; type-only updates with no behaviour change in pi-agent-ask 2.0.1, pi-atelier 0.22.1, pi-bg-bash 0.1.6, pi-cell-actions 0.1.2, pi-clipboard-image 0.1.7, pi-compact-tools 0.1.7, pi-orchestrator 0.15.1.
+
 ## [0.1.30] - 2026-11-27
 
 ### Added
