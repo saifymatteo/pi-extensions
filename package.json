@@ -40,6 +40,7 @@
 			"./collection/pi-agent-ask.ts",
 			"./collection/pi-atelier.ts",
 			"./collection/pi-bg-bash.ts",
+			"./collection/pi-cell-actions.ts",
 			"./collection/pi-claude-usage.ts",
 			"./collection/pi-clipboard-image.ts",
 			"./collection/pi-codeblock-borders.ts",

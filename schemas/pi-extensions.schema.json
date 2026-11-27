@@ -20,6 +20,7 @@
           "pi-agent-ask",
           "pi-atelier",
           "pi-bg-bash",
+          "pi-cell-actions",
           "pi-claude-usage",
           "pi-clipboard-image",
           "pi-codeblock-borders",

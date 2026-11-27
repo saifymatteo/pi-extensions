@@ -11,7 +11,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 const SCHEMA_URL = "https://raw.githubusercontent.com/saifymatteo/pi-extensions/main/schemas/pi-extensions.schema.json";
 // Every collection package: its gate name is its wrapper file name (check-packages keeps them in sync).
 const PACKAGES: string[] = [
-	"pi-9router", "pi-agent-ask", "pi-atelier", "pi-bg-bash", "pi-claude-usage", "pi-clipboard-image",
+	"pi-9router", "pi-agent-ask", "pi-atelier", "pi-bg-bash", "pi-cell-actions", "pi-claude-usage", "pi-clipboard-image",
 	"pi-codeblock-borders", "pi-codegraph", "pi-compact-tools", "pi-decisions", "pi-draft", "pi-load-pi-dotenv",
 	"pi-model-go", "pi-orchestrator", "pi-prestart-working", "pi-root-guard", "pi-session-finder", "pi-session-id",
 	"pi-session-nav", "pi-session-rename", "pi-session-retention", "pi-skill-usage-log", "pi-tool-usage-log", "pi-tts",

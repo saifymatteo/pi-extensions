@@ -4,6 +4,11 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Added
+
+- pi-cell-actions (new): hover a paragraph, list, heading, code block or table of a message, or a tool call, in the fullscreen transcript for a `⋯` menu that copies it (tables as Markdown, TSV or CSV; tools as input or output) and runs `bash`/`sh`/`zsh` blocks after a confirmation. Works on stock Pi and Pi-Bolt.
+- pi-compact-tools: a grouped tool card tells pi-cell-actions which calls it draws and which call is under the pointer, so its menu copies one call or the whole group.
+
 ## [0.1.28] - 2026-11-26
 
 ### Added

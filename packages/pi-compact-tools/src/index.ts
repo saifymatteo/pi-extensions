@@ -63,6 +63,8 @@ import { homedir } from "os";
 
 const TUI_CONTEXT = Symbol.for("compact-tools.tuiContext");
 const OWN_IMAGES = Symbol.for("compact-tools.ownsImages");
+const TOOL_GROUP = Symbol.for("pi-cell-actions.toolGroup");
+const TOOL_HOVER = Symbol.for("pi-cell-actions.toolHover");
 
 type RenderArgs = Record<string, any>;
 type RenderOptions = { expanded: boolean; isPartial: boolean };
@@ -531,12 +533,13 @@ function opaque(text: string, paddingX: number): CallComponent {
 
 // A card is rendered by the head only: Pi inserts a blank line before every
 // non-empty tool row, so framing individual rows would leave gaps in the card.
-function card(getSections: () => CallComponent[][], theme: RenderTheme, padding: number): CallComponent {
+type Card = CallComponent & { sectionAt(y: number): { y: number; height: number; content: CallComponent[] } | undefined };
+function card(getSections: () => CallComponent[][], theme: RenderTheme, padding: number): Card {
 	let sections: {
 		content: CallComponent[]; box: Box; padding: number;
 		width?: number; edge?: string; rendered?: string[]; lines?: string[];
 	}[] = [];
-	let layout: { box: Box; y: number; height: number }[] = [];
+	let layout: { box: Box; y: number; height: number; content: CallComponent[] }[] = [];
 	let output: { frame: string; lines: string[] } | undefined;
 	let inset = 0;
 	let inner = 0;
@@ -585,15 +588,18 @@ function card(getSections: () => CallComponent[][], theme: RenderTheme, padding:
 			if (!changed) return output!.lines;
 			layout = [];
 			const lines = inset ? [rules[0]] : [];
-			for (const { box, lines: fitted } of sections) {
+			for (const { box, lines: fitted, content } of sections) {
 				if (!fitted?.length) continue;
 				if (layout.length && inset) lines.push(rules[1]);
-				layout.push({ box, y: lines.length, height: fitted.length });
+				layout.push({ box, y: lines.length, height: fitted.length, content });
 				for (const line of fitted) lines.push(line);
 			}
 			if (inset) lines.push(rules[2]);
 			output = { frame, lines };
 			return lines;
+		},
+		sectionAt(y: number) {
+			return layout.find((section) => y >= section.y && y < section.y + section.height);
 		},
 		handleMouse(event) {
 			if (event.x < inset || event.x >= inner + inset) return undefined;
@@ -794,6 +800,12 @@ export default function (pi: ExtensionAPI) {
 	absorbThinking();
 	markToolContexts();
 
+	// pi-cell-actions asks which calls a head's card draws, so its tool menu
+	// copies every call in the card, not just the head. Global, not an import:
+	// neither package depends on the other.
+	const groupMembers = (id: string) => retired ? undefined : groups().groupOf.get(id)?.members;
+	(globalThis as Record<symbol, unknown>)[TOOL_GROUP] = groupMembers;
+
 	pi.on("session_start", (_event, ctx) => {
 		retired = false;
 		running = false;
@@ -809,6 +821,7 @@ export default function (pi: ExtensionAPI) {
 	});
 	pi.on("session_shutdown", () => {
 		retired = true;
+		if ((globalThis as Record<symbol, unknown>)[TOOL_GROUP] === groupMembers) delete (globalThis as Record<symbol, unknown>)[TOOL_GROUP];
 		sessionManager = undefined;
 		live = undefined;
 		cache = undefined;
@@ -1064,6 +1077,18 @@ export default function (pi: ExtensionAPI) {
 			render: (width) => retired ? [] : frame.render(width),
 			handleMouse(event) {
 				if (retired) return;
+				// Tell pi-cell-actions which call's rows are under the pointer (the header: none).
+				const report = (globalThis as Record<symbol, unknown>)[TOOL_HOVER] as ((hover: unknown) => void) | undefined;
+				if (report && (event.type === "move" || event.type === "press")) {
+					const section = frame.sectionAt(event.y);
+					const owner = section && groups().groupOf.get(id)?.members.find((member) => {
+						const state = rows.get(member);
+						return !!state && section.content.some((c) => c === state.summary || c === state.resultView || c === state.error ||
+							state.images?.some((image) => image.view === c));
+					});
+					// Screen row of the hovered call's section, so the badge can sit on it.
+					report(owner ? { head: id, id: owner, top: event.screenY - event.y + section!.y, height: section!.height } : { head: id });
+				}
 				const result = frame.handleMouse?.(event);
 				return result?.handled ? result : event.type === "click" && event.button === "left" ? { handled: true } : result;
 			},

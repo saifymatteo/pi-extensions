@@ -447,6 +447,20 @@ export const SHOTS = {
     return { panels: [before(v(stock)), after('pi-load-pi-dotenv', v(withExt), { highlight: [/^\s*(DATABASE_URL|STRIPE_KEY)=\S/] })],
       caption: '~/.pi/agent/.env:  DB_USER=acme · DATABASE_URL=postgres://${DB_USER}@localhost:5432/acme · STRIPE_KEY=sk_test_51Hdemo' };
   },
+  'pi-cell-actions': async () => {
+    const reply = 'Here are the planets:\n\n| Planet | Moons | Notes, quirks |\n|---|---|---|\n| Earth | 1 | Only known life, liquid water |\n| Mars | 2 | Red, dusty, home to Olympus Mons |\n| Jupiter | 95 | Gas giant, Great Red Spot |\n\nWant me to add the rest?';
+    const sgr = (b, x, y, m = 'M') => `\x1b[<${b};${x + 1};${y + 1}${m}`;
+    const line = (s, re) => s.screen().split('\n').findIndex(l => re.test(l));
+    const snap = await run({ extensions: ['pi-cell-actions'], cols: 92, rows: 26, turns: [{ text: reply }], env: CLIP_ENV }, async s => {
+      await prompt(s, 'list three planets as a table', 'add the rest');
+      const y = line(s, /Mars/); s.key(sgr(35, 10, y)); await s.settle(300);
+      const by = line(s, /⋯/); const bx = s.screen().split('\n')[by].indexOf('⋯');
+      s.key(sgr(35, bx, by)); await s.settle(400);
+      const mx = s.screen().split('\n')[by].indexOf('copy markdown') + 2; s.key(sgr(35, mx, by)); await s.settle(400);
+    });
+    return { panels: [solo(rows(snap, { from: /list three planets/, to: /add the rest/ }), { highlight: [/copy markdown/] })],
+      caption: 'Hovering ⋯ on a table opens its menu: copy as Markdown, TSV or CSV. The hovered button drops its box.' };
+  },
   'pi-codeblock-borders': async () => {
     const reply = [
       'Add a health route:',
