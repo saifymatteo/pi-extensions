@@ -627,7 +627,7 @@ test("buildDelegateParams: empty fleet omits the enum (free-form, no empty-enum 
 
 test("buildDelegateParams: discovery/control actions include explicit Result retry", () => {
 	const params = buildDelegateParams(FLEET);
-	assert.deepEqual((params.properties.action as any).enum, ["list", "sessions", "status", "cancel", "retry-delivery"]);
+	assert.deepEqual((params.properties.action as any).enum, ["list", "sessions", "status", "steer", "cancel", "retry-delivery"]);
 });
 
 test("agentNameParam: description carries the valid names so models without enum support still see them", () => {
@@ -1028,6 +1028,7 @@ test("parallelProgress: finished run reports no running tasks", () => {
 
 type RecordedCall = {
 	agent: string;
+	steered: string[];
 	task: string;
 	maxTurns: number;
 	blockedTools: string[];
@@ -1082,8 +1083,10 @@ function dispatchHarness(agents: any[] | null = null, depsOverride: Record<strin
 	const pending = new Map<number, (result: SingleResult) => void>();
 	let nextRunKey = 1;
 	const runAgent = (call: any) => {
-		const record: RecordedCall = { agent: call.agentName, task: call.task, maxTurns: call.maxTurns, blockedTools: call.blockedTools, killCount: 0 };
+		const record: RecordedCall = { agent: call.agentName, task: call.task, maxTurns: call.maxTurns, blockedTools: call.blockedTools, killCount: 0, steered: [] };
 		call.registerKill?.(() => record.killCount++);
+		call.onProgress?.({ turns: 2, toolTurns: 2, contextTokens: 0, inputTokens: 0, outputTokens: 0, lastTool: "$ npm test" });
+		call.registerSteer?.(async (message: string) => { record.steered.push(message); return { ok: true }; });
 		calls.push(record);
 		const key = nextRunKey++;
 		return new Promise<SingleResult>((resolve) => {
@@ -1592,6 +1595,34 @@ test("sender throw preserves a visible delivery error rather than dropping the R
 	assert.equal((await h.execute({ action: "retry-delivery", runId: accepted.details.accepted[0].runId })).isError, undefined);
 	assert.equal(h.calls.length, 1);
 	assert.equal(h.sendCalls.length, 2);
+});
+
+test("steer reaches only a running Worker; status shows its turns and latest tool call", async () => {
+	const h = dispatchHarness(null, { getMaxConcurrency: () => 1 });
+	const running = (await h.execute({ agent: "scout", task: "running" })).details.accepted[0].runId;
+	const queued = (await h.execute({ agent: "worker", task: "queued" })).details.accepted[0].runId;
+	assert.match((await h.execute({ action: "status" })).content[0].text, /2 turns · last: \$ npm test/);
+	assert.match((await h.execute({ action: "steer", runId: queued, message: "x" })).content[0].text, /queued/);
+	assert.equal((await h.execute({ action: "steer", runId: running })).isError, true, "message is required");
+	const ok = await h.execute({ action: "steer", runId: running, message: "stay in src/" });
+	assert.equal(ok.isError, undefined);
+	assert.deepEqual(h.calls[0].steered, ["stay in src/"]);
+	h.resolveRun(); await flushD();
+	assert.equal((await h.execute({ action: "steer", runId: running, message: "late" })).isError, true);
+});
+
+test("cancelled and failed Results state the reason and session path once", async () => {
+	const once = (text: string, needle: string) => assert.equal(text.split(needle).length - 1, 1, `${needle} once in:\n${text}`);
+	const h = dispatchHarness();
+	const cancelled = (await h.execute({ agent: "scout", task: "to cancel" })).details.accepted[0].runId;
+	await h.execute({ action: "cancel", runId: cancelled });
+	h.resolveRun({ sessionFile: "/s/cancelled.jsonl" }); await flushD();
+	await h.execute({ agent: "scout", task: "to fail" });
+	h.resolveRun({ sessionFile: "/s/failed.jsonl", completedNormally: false, exitCode: 1, stopReason: "error", errorMessage: "boom" }); await flushD();
+	const [c, f] = h.sendCalls.map((s) => s.msg.content[0].text);
+	once(c, "Cancelled by orchestrator.");
+	once(c, "Subagent session: /s/cancelled.jsonl");
+	once(f, "Subagent session: /s/failed.jsonl");
 });
 
 test("queued Cancel delivers cancellation without a process start", async () => {

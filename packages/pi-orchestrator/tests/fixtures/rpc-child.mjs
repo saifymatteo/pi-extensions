@@ -57,6 +57,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
 	} else if (command.type === "steer") {
 		emit({ type: "response", id: command.id, success: true });
 		if (scenario === "budget") for (let i = 0; i < 5; i++) turn();
+		if (scenario === "steerable") { turn(); emit({ type: "agent_settled" }); }
 	} else if (command.type === "prompt") {
 		if (scenario === "rejected") {
 			emit({ type: "response", id: command.id, success: false, error: "fixture rejection" });
@@ -65,7 +66,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
 		emit({ type: "response", id: command.id, success: true });
 		if (scenario === "malformed") process.stdout.write('not json\nnull\n42\n{"broken":\n');
 		partial();
-		if (scenario === "cancel" || scenario === "ignore-term" || scenario === "stall") return;
+		if (scenario === "cancel" || scenario === "ignore-term" || scenario === "stall" || scenario === "steerable") return;
 		if (scenario === "noise") {
 			let n = 0;
 			const timer = setInterval(() => {

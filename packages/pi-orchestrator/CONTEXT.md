@@ -43,6 +43,9 @@ The submission of an async Run's Terminal outcome to its parent conversation, co
 ### Delivery retry
 An explicit request to resubmit a retained outcome whose insertion is unconfirmed, with possible duplicate delivery. It never repeats the Worker's task.
 
+### Steer
+An explicit message from the Orchestrator into one running Worker, read after its current turn, that redirects the work without ending the Run. The Orchestrator supervises by pulling a one-line Status per Run, never the Worker's transcript. Distinct from Cancel.
+
 ### Cancel
 The explicit stop of one accepted Run, including a Queued run, producing a cancelled Terminal outcome. Distinct from stopping the entire session and suppressing result pushes.
 

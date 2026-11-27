@@ -10,7 +10,11 @@ export interface RunProgress {
 	contextTokens: number;
 	inputTokens: number;
 	outputTokens: number;
+	/** Short label of the Worker's latest tool call, for on-demand supervision. */
+	lastTool?: string;
 }
+/** Sends one supervision message into a running Worker; resolves with an error text on refusal. */
+export type SteerHandle = (message: string) => Promise<{ ok: true } | { ok: false; error: string }>;
 export interface RunningTask extends RunProgress {
 	id: string;
 	agent: string;
@@ -57,6 +61,7 @@ export interface RunWatcherStartInput {
 	start(opts: {
 		signal: AbortSignal;
 		registerKill(kill: () => void): void;
+		registerSteer?(steer: SteerHandle): void;
 		onProgress(progress: RunProgress): void;
 	}): Promise<SingleResult>;
 }
@@ -74,9 +79,11 @@ export interface RunWatcher {
 	start(input: RunWatcherStartInput): RunHandle;
 	/** Reserve the entire batch before any member's start function is called. */
 	startMany(inputs: RunWatcherStartInput[]): RunHandle[];
-	entries(): Array<AcceptedRun & { elapsedMs: number; deliveryError?: string }>;
+	entries(): Array<AcceptedRun & { elapsedMs: number; deliveryError?: string; progress: RunProgress }>;
 	snapshot(): RunningTask[];
 	cancel(runId: number): { ok: true } | { ok: false; error: string };
+	/** Redirect a running Worker without cancelling it. Queued and finished runs refuse. */
+	steer(runId: number, message: string): Promise<{ ok: true } | { ok: false; error: string }>;
 	abortAll(): void;
 	confirmDeliveries(deliveryIds: ReadonlySet<string>): void;
 	retryDelivery(runId: number): { ok: true } | { ok: false; error: string };
@@ -101,6 +108,7 @@ export function createRunWatcher(deps: RunWatcherDeps): RunWatcher {
 		acceptedAt: number;
 		controller: AbortController;
 		kill?: () => void;
+		steer?: SteerHandle;
 		killIssued: boolean;
 		cancelled: boolean;
 		aborted: boolean;
@@ -215,6 +223,7 @@ export function createRunWatcher(deps: RunWatcherDeps): RunWatcher {
 							record.kill = handle;
 							if (record.cancelled || record.aborted) kill(record);
 						},
+						registerSteer: (handle) => { record.steer ??= handle; },
 						onProgress: (progress) => {
 							if (record.settled) return;
 							record.progress = { ...progress };
@@ -317,6 +326,7 @@ export function createRunWatcher(deps: RunWatcherDeps): RunWatcher {
 		entries: () => [...records.values()].filter((r) => !r.aborted).map((r) => ({
 			runId: r.input.runId, agent: r.input.agent, task: r.input.task, mode: r.input.mode,
 			state: r.state, elapsedMs: Math.max(0, deps.now() - r.acceptedAt), deliveryError: r.deliveryError,
+			progress: { ...r.progress },
 		})),
 		snapshot: () => [...records.values()].filter((r) => !r.aborted).map((r) => ({
 			id: r.input.widgetKey, agent: r.input.agent, task: r.input.task, mode: r.input.mode,
@@ -335,6 +345,15 @@ export function createRunWatcher(deps: RunWatcherDeps): RunWatcher {
 			}
 			publish();
 			return { ok: true };
+		},
+		async steer(runId, message) {
+			const record = records.get(runId);
+			if (!record || record.settled || record.aborted) return { ok: false, error: `No running run with id ${runId}. Finished runs cannot be steered; dispatch a follow-up instead.` };
+			if (!record.started) return { ok: false, error: `Run ${runId} is queued and has no Worker yet. Cancel it and dispatch the corrected task.` };
+			if (record.cancelled) return { ok: false, error: `Run ${runId} is being cancelled.` };
+			if (!record.steer) return { ok: false, error: `Run ${runId} is starting and cannot receive messages yet; try again shortly.` };
+			try { return await record.steer(message); }
+			catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
 		},
 		abortAll() {
 			aborting = true;

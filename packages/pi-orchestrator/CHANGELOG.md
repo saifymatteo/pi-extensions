@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `{action: "steer", runId, message}` redirects a running Worker (too long, out of scope, wrong approach) without cancelling it. The Worker reads the message after its current turn and keeps its context. Queued and finished runs refuse.
+- `{action: "status"}` shows each running Worker's turn count and latest tool call, so the orchestrator can supervise on demand without reading the Worker's transcript.
+
+### Fixed
+
+- Cancelled and failed async Results no longer repeat "Cancelled by orchestrator." and the `Subagent session:` line.
+
 ## [0.14.0] - 2026-11-25
 
 ### Changed

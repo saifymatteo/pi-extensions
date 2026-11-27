@@ -202,6 +202,22 @@ test("real child: budget steers once, allows five grace turns, then kills with p
 	h.assertClean();
 });
 
+test("real child: orchestrator steer reaches the live Worker and is refused after settle", { timeout: 8000 }, async (t) => {
+	let steer: ((message: string) => Promise<{ ok: boolean; error?: string }>) | undefined;
+	let first: Promise<{ ok: boolean; error?: string }> | undefined;
+	const h = harness(t, "steerable", {
+		registerSteer: (fn) => { steer = fn; first = fn("stay inside src/"); },
+	});
+	const result = await runSingleAgent(h.options);
+	assert.equal(result.completedNormally, true, JSON.stringify(result));
+	assert.deepEqual(await first, { ok: true });
+	const sent = h.audit().commands.filter((c: { type: string }) => c.type === "steer");
+	assert.equal(sent.length, 1);
+	assert.match(sent[0].message, /orchestrator.*stay inside src\//);
+	assert.equal((await steer!("too late")).ok, false);
+	h.assertClean();
+});
+
 test("real child: idempotent cancellation escalates ignored SIGTERM after 3 seconds", { timeout: 8000, skip: process.platform === "win32" ? "Windows terminates SIGTERM immediately" : false }, async (t) => {
 	let kill: (() => void) | undefined;
 	let cancelledAt = 0;

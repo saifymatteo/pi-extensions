@@ -40,7 +40,7 @@ import { Box, Container, Markdown, Spacer, Text, truncateToWidth, visibleWidth }
 import { Type } from "typebox";
 import type { AgentConfig } from "./agents.ts";
 import { toolMatchesAnyMatcher } from "./config.ts";
-import { createRunWatcher, type RunDelivery, type RunHandle, type RunWatcher, type RunWatcherStartInput, type RunningTask } from "./run-lifecycle.ts";
+import { createRunWatcher, type RunDelivery, type RunHandle, type RunWatcher, type RunWatcherStartInput, type RunningTask, type SteerHandle } from "./run-lifecycle.ts";
 export { createRunWatcher, type RunDelivery, type RunWatcher } from "./run-lifecycle.ts";
 
 const MAX_PARALLEL_TASKS = 8;
@@ -986,7 +986,11 @@ export interface RunSingleAgentOptions {
 		contextTokens: number;
 		inputTokens: number;
 		outputTokens: number;
+		lastTool?: string;
 	}) => void;
+	/** Called once the task prompt is sent, with a handle that steers the live
+	 *  child over RPC `steer` (orchestrator supervision). */
+	registerSteer?: (steer: SteerHandle) => void;
 	/** Internal launch seam; tests still use real spawn, stdio and cleanup. */
 	invocation?: { command: string; argsPrefix: string[] };
 	/** Sub-session policy (ADR-0011): whether the child keeps a persistent pi
@@ -1020,6 +1024,7 @@ export async function runSingleAgent(opts: RunSingleAgentOptions): Promise<Singl
 		onProgress,
 		sessionOpts,
 		registerKill,
+		registerSteer,
 	} = opts;
 	const agent = agents.find((a) => a.name === agentName);
 
@@ -1080,9 +1085,11 @@ export async function runSingleAgent(opts: RunSingleAgentOptions): Promise<Singl
 	};
 
 
+	let lastTool: string | undefined;
 	const emitUpdate = () => {
 		try {
 			onProgress?.({
+				...(lastTool ? { lastTool } : {}),
 				turns: currentResult.usage.turns,
 				toolTurns: currentResult.usage.toolTurns,
 				contextTokens: currentResult.usage.contextTokens,
@@ -1276,6 +1283,8 @@ export async function runSingleAgent(opts: RunSingleAgentOptions): Promise<Singl
 					currentResult.messages.push(msg);
 
 					if (msg.role === "assistant") {
+						const call = [...(msg.content ?? [])].reverse().find((part) => part.type === "toolCall");
+						if (call?.type === "toolCall") lastTool = truncateWithEllipsis(formatToolCall(call.name, call.arguments ?? {}, (_c, text) => text), 80);
 						const usage = msg.usage;
 						if (usage) {
 							currentResult.usage.input += usage.input || 0;
@@ -1436,7 +1445,20 @@ export async function runSingleAgent(opts: RunSingleAgentOptions): Promise<Singl
 				// Kick off the task once the session is linked. Sending via stdin
 				// is why stdin is a pipe; a rejected prompt is failed via the
 				// "init" response above.
-				if (!closed && !killing && !signal?.aborted) sendRpc(proc, { id: "init", type: "prompt", message: `Task: ${task}` });
+				if (closed || killing || signal?.aborted) return;
+				sendRpc(proc, { id: "init", type: "prompt", message: `Task: ${task}` });
+				let steerCount = 0;
+				try {
+					registerSteer?.(async (message) => {
+						if (closed || killing || settled) return { ok: false, error: "The Worker already finished or is shutting down." };
+						const resp = await rpcWaiters.command(
+							{ type: "steer", message: `Message from the orchestrator that delegated this task: ${message}` },
+							`steer-${++steerCount}`,
+						);
+						if (resp?.success) return { ok: true };
+						return { ok: false, error: resp?.error ? `Worker refused the message: ${resp.error}` : "The Worker did not confirm the message (it may have finished)." };
+					});
+				} catch { /* a broken owner hook only loses steering */ }
 			});
 		});
 
@@ -1503,12 +1525,13 @@ export function buildDelegateParams(fleetNames: string[], asyncDefault: boolean 
 	return Type.Object({
 		action: Type.Optional(
 			Type.String({
-				enum: ["list", "sessions", "status", "cancel", "retry-delivery"],
+				enum: ["list", "sessions", "status", "steer", "cancel", "retry-delivery"],
 				description:
-					"Discovery/control actions: {action: 'list'} returns the current fleet; {action: 'sessions'} lists this session's persistent subagent sub-sessions; {action: 'status'} lists live runs; {action: 'cancel', runId} stops one queued/running run; {action: 'retry-delivery', runId} explicitly resubmits a retained Result (may duplicate a delayed message, never reruns the Worker). Use these instead of polling.",
+					"Discovery/control actions: {action: 'list'} returns the current fleet; {action: 'sessions'} lists this session's persistent subagent sub-sessions; {action: 'status'} lists live runs with turns and latest tool call; {action: 'steer', runId, message} redirects a running Worker that runs long, drifts out of scope, or takes the wrong approach (delivered after its current turn; it keeps its context); {action: 'cancel', runId} stops one queued/running run; {action: 'retry-delivery', runId} explicitly resubmits a retained Result (may duplicate a delayed message, never reruns the Worker). Use these instead of polling.",
 			}),
 		),
-		runId: Type.Optional(Type.Number({ description: "Run id (required for cancel and retry-delivery)" })),
+		runId: Type.Optional(Type.Number({ description: "Run id (required for steer, cancel and retry-delivery)" })),
+		message: Type.Optional(Type.String({ description: "Steering instruction for a running Worker (steer action)" })),
 		async: Type.Optional(
 			Type.Boolean({
 				description: asyncDefault
@@ -1575,12 +1598,14 @@ function deliveryText(delivery: RunDelivery): string {
 		: failed
 			? `✗ Run ${delivery.runId} — ${delivery.agent} — failed${r.stopReason ? ` (${r.stopReason})` : ""}`
 			: `✓ Run ${delivery.runId} — ${delivery.agent} — completed`;
+	// getResultOutput already carries the session note and, for a cancelled
+	// run, the "Cancelled by orchestrator." reason; add neither twice.
 	const body = delivery.cancelled
-		? `Cancelled by orchestrator.\n\n${getResultOutput(r)}`
+		? getResultOutput(r)
 		: failed
 			? `Agent ${r.stopReason || "failed"}: ${getResultOutput(r)}`
-			: getFinalOutput(r.messages) || "(no output)";
-	return `${header}\n\n${withTouchedFiles(withSessionNote(r, body), r.messages)}`;
+			: withSessionNote(r, getFinalOutput(r.messages) || "(no output)");
+	return `${header}\n\n${withTouchedFiles(body, r.messages)}`;
 }
 
 export interface DelegateDeps {
@@ -1974,11 +1999,22 @@ export function registerDelegateTool(pi: any, deps: DelegateDeps): void {
 			}
 			if (params?.action === "status") {
 				const entries = watcher.entries();
-				const listing = entries.map((e) => `- run ${e.runId} · ${e.agent} · ${e.state} · "${truncateWithEllipsis(e.task.replace(/\s+/g, " "), MAX_TASK_SUMMARY_CHARS)}" · ${formatElapsed(e.elapsedMs)}${e.deliveryError ? ` · ${e.deliveryError}` : ""}`).join("\n");
+				const activity = (e: typeof entries[number]) => e.state !== "running" ? "" : ` · ${e.progress.turns} turn${e.progress.turns === 1 ? "" : "s"}${e.progress.lastTool ? ` · last: ${e.progress.lastTool}` : ""}`;
+				const listing = entries.map((e) => `- run ${e.runId} · ${e.agent} · ${e.state} · "${truncateWithEllipsis(e.task.replace(/\s+/g, " "), MAX_TASK_SUMMARY_CHARS)}" · ${formatElapsed(e.elapsedMs)}${activity(e)}${e.deliveryError ? ` · ${e.deliveryError}` : ""}`).join("\n");
 				return {
 					content: [{ type: "text", text: entries.length
 						? `Runs (${entries.length}):\n${listing}\n\nQueued/running outcomes are pushed automatically — no polling. Delivery-pending means insertion is unconfirmed, not necessarily failed. {action: "retry-delivery", runId} explicitly resubmits a retained Result and may duplicate a delayed message; it never reruns the Worker.`
 						: '(no live runs or retained Results — dispatch with {agent, task}; {action: "sessions"} lists finished transcripts.)' }],
+					details: details("single"),
+				};
+			}
+			if (params?.action === "steer") {
+				const message = typeof params.message === "string" ? params.message.trim() : "";
+				if (!Number.isSafeInteger(params.runId) || params.runId < 1 || !message) return error('steer requires {action: "steer", runId: <number>, message: "<instruction>"}. Use {action: "status"} to list runs.');
+				const out = await watcher.steer(params.runId, message);
+				if (out.ok === false) return error(`steer failed: ${out.error}`);
+				return {
+					content: [{ type: "text", text: `Message queued for run ${params.runId}; the Worker reads it after its current turn and keeps its context. Its Result still arrives as usual.` }],
 					details: details("single"),
 				};
 			}
@@ -2020,7 +2056,7 @@ export function registerDelegateTool(pi: any, deps: DelegateDeps): void {
 				return {
 					runId, agent: task.agent, task: task.task, mode,
 					widgetKey: fleetKey(runId, mode, index), pushResult: !!asyncMode,
-					start: ({ signal: ownedSignal, registerKill, onProgress }) => runAgentCall({
+					start: ({ signal: ownedSignal, registerKill, registerSteer, onProgress }) => runAgentCall({
 						defaultCwd: deps.getCwd(), dispatchDefaults, agents,
 						agentName: task.agent, task: task.task,
 						maxTurns: agent.maxTurns ?? deps.getMaxTurns?.() ?? DEFAULT_MAX_TURNS,
@@ -2028,7 +2064,7 @@ export function registerDelegateTool(pi: any, deps: DelegateDeps): void {
 						blockedTools: [...new Set([...(deps.getChildBlockedTools?.() ?? []), ...(agent.blockTools ?? [])])],
 						extensions, parentPrompt, getAllTools: () => pi.getAllTools(),
 						cwd: task.cwd, step: hasChain ? index + 1 : undefined,
-						signal: ownedSignal, registerKill, onProgress, onUpdate: partial,
+						signal: ownedSignal, registerKill, registerSteer, onProgress, onUpdate: partial,
 						makeDetails: (results) => details(mode, results),
 						sessionOpts: { persist: deps.getChildSessions?.() ?? true, parentSessionFile: deps.getParentSessionFile?.(ctx) },
 					}),

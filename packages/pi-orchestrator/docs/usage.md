@@ -49,7 +49,8 @@ These actions never launch Workers:
 |---|---|
 | `{action: "list"}` | Show the current fleet. |
 | `{action: "sessions"}` | List the current parent's persistent subagent transcripts, newest first. |
-| `{action: "status"}` | Show queued and active runs, plus pending or failed outcome delivery. |
+| `{action: "status"}` | Show queued and active runs (running ones with turn count and latest tool call), plus pending or failed outcome delivery. |
+| `{action: "steer", runId, message}` | Redirect a running Worker that runs long, drifts out of scope, or takes the wrong approach. The message lands after its current turn; the Worker keeps its context and its Result arrives as usual. Queued and finished runs refuse. |
 | `{action: "cancel", runId}` | Cancel one run, including queued work; its cancelled outcome is still returned or delivered. |
 | `{action: "retry-delivery", runId}` | Explicitly resubmit a retained async outcome, never rerun the Worker. An earlier ambiguous submission may cause duplicates; confirmed insertion is never resent. |
 

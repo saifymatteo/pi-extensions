@@ -4,6 +4,10 @@ Release notes are recorded from 0.1.3 onward.
 
 ## [Unreleased]
 
+### Added
+
+- pi-orchestrator: `delegate` gains a `steer` action to redirect a running Worker without cancelling it, and `status` shows each Worker's turns and latest tool call.
+
 ## [0.1.29] - 2026-11-27
 
 ### Added
