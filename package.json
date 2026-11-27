@@ -93,5 +93,9 @@
 		"CHANGELOG.md",
 		"NOTICE.md",
 		"LICENSE"
-	]
+	],
+	"overrides": {
+		"undici": "^8.12.4",
+		"minimatch": "^11.0.3"
+	}
 }
