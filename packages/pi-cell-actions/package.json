@@ -1,6 +1,6 @@
 {
   "name": "@saifymatteo/pi-cell-actions",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "AGPL-3.0-only",
   "description": "Hover a transcript cell for a ⋯ menu: copy messages, code, tables (Markdown/TSV/CSV) and tool calls; run shell blocks",
   "engines": {

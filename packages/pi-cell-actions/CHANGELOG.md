@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-27
+
+### Changed
+
+- First release published from GitHub Actions through npm trusted publishing; no code changes.
+
 ## [0.1.0] - 2026-11-27
 
 ### Added
