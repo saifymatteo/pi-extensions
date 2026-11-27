@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-27
+
 ### Added
 
 - `{action: "steer", runId, message}` redirects a running Worker (too long, out of scope, wrong approach) without cancelling it. The Worker reads the message after its current turn and keeps its context. Queued and finished runs refuse.
